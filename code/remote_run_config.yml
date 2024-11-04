@@ -1,0 +1,31 @@
+# Put your `run_remote.sh` configs in this YAML file
+training:
+    learning_rate: 0.0001
+    num_epochs: 500
+    batch_size: 1024
+    eval_batch_size: 1024
+    log_per_step: 5
+    wandb: True
+    checkpoint_per_epoch: 1
+    eval_per_epoch: 5
+    # checkpoint_per_epoch: 1000 # i.e. no checkpoint
+    # load_from: /kmh-nfs-us-mount/logs/sqa/sqa_NCSNv2/20241101_030317_2ml2nf_kmh-tpuvm-v2-32-1__b_lr_ep_torchvision_r50_eval/checkpoint_5684
+model:
+    name: NCSNv2_base
+    # name: 助教模型
+    activation: elu
+    ngf: 64
+dataset:
+    prefetch_factor: 2
+    num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
+sampling:
+    sigma_begin: 28
+    sigma_end: 0.01
+    n_noise_levels: 75
+    ema: True
+    ema_decay: 0.999
+    eps: 0.00005
+    T: 5
+    save_dir: null
+
+# NOTE: you cannot add more hierarchy structure without modifying default.py and load_config.py

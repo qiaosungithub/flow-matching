@@ -1,0 +1,8 @@
+pillow
+clu
+tensorflow==2.17
+torch<=2.4
+torchvision
+wandb
+tensorflow_datasets
+matplotlib==3.9.2
