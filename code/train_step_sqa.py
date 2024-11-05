@@ -11,10 +11,15 @@ class NNXTrainState(FlaxTrainState):
   useless_variable_state: Any
   # NOTE: is_training can't be a attr, since it can't be replicated
 
-def train_step_compute(train_state:NNXTrainState, arg_batch, t_batch, target_batch):
+def criterion(pred, target):
+  # L2 lossp
+  # return jnp.mean((pred - target) ** 2, axis=0).mean()
+  return jnp.mean((pred - target) ** 2, axis=0).sum()
+
+def train_step_compute(state:NNXTrainState, arg_batch, t_batch, target_batch):
 
   def loss_fn(real_params):
-    preds, new_batch_stats, new_rng_params = train_state.apply_fn(train_state.graphdef, real_params, train_state.rng_states, train_state.batch_stats, train_state.useless_variable_state, True, arg_batch, t_batch) # True: is_training
+    preds, new_batch_stats, new_rng_params = state.apply_fn(state.graphdef, real_params, train_state.rng_states, train_state.batch_stats, train_state.useless_variable_state, True, arg_batch, t_batch) # True: is_training
     loss = criterion(preds, target_batch)
     # customized weight decay (don't apply to bias)
     return loss, (new_batch_stats, new_rng_params)

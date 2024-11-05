@@ -18,7 +18,7 @@ from flax import jax_utils as ju
 from utils.metric_utils import tang_reduce, MyMetrics, Avger
 from torch.utils.data import DataLoader
 from utils.utils import train_set_, val_set_, get_sigmas, save_img, corruption
-import ncsnv2
+import ncsnv2, models
 
 from utils.display_utils import show_dict, display_model, count_params
 from functools import partial
@@ -26,7 +26,7 @@ from flax.training.train_state import TrainState as FlaxTrainState
 import flax.nnx as nn
 from langevin import langevin, langevin_masked
 from 数据集 import create_split, prepare_batch_data_sqa
-from train_step_sqa import train_step_sqa, solve_diffeq
+from train_step_sqa import train_step_compute, solve_diffeq
 
 import orbax.checkpoint as ocp
 from flax.training import checkpoints
@@ -96,14 +96,6 @@ def create_model(*, model_cls, half_precision, config, **kwargs):
     config=config,
     **kwargs)
 
-def criterion(pred, target):
-  # L2 lossp
-  # return jnp.mean((pred - target) ** 2, axis=0).mean()
-  return jnp.mean((pred - target) ** 2, axis=0).mean()
-
-# def restore_checkpoint(state, workdir):
-#   return checkpoints.restore_checkpoint(workdir, state)
-
 def restore_checkpoint(model_init_fn, state, workdir):
   abstract_model = nn.eval_shape(lambda: model_init_fn(rngs=nn.Rngs(0)))
   rng_states = state.rng_states
@@ -171,26 +163,26 @@ def sync_batch_stats(state: NNXTrainState):
     return state
   return state.replace(batch_stats=cross_replica_mean(state.batch_stats))
 
-def get_no_weight_decay_dict(params):
-  def modify_value_based_on_key(obj):
-    if not isinstance(obj, dict):
-      return obj
-    for k,v in obj.items():
-      if not isinstance(v,dict):
-        if k in {'cls','pos_emb','bias','scale'}:
-          obj[k] = False
-        else:
-          obj[k] = True
-    return obj
-  def is_leaf(obj):
-    if not isinstance(obj, dict):
-      return True
-    modify_value_based_on_key(obj)
-    b = isinstance(obj, dict) and all([not isinstance(v, dict) for v in obj.values()])
-    return b
-  u = jax.tree_util.tree_map(lambda x:False,params)
-  modified_tree = jax.tree_util.tree_map(partial(modify_value_based_on_key), u, is_leaf=is_leaf)
-  return modified_tree
+# def get_no_weight_decay_dict(params):
+#   def modify_value_based_on_key(obj):
+#     if not isinstance(obj, dict):
+#       return obj
+#     for k,v in obj.items():
+#       if not isinstance(v,dict):
+#         if k in {'cls','pos_emb','bias','scale'}:
+#           obj[k] = False
+#         else:
+#           obj[k] = True
+#     return obj
+#   def is_leaf(obj):
+#     if not isinstance(obj, dict):
+#       return True
+#     modify_value_based_on_key(obj)
+#     b = isinstance(obj, dict) and all([not isinstance(v, dict) for v in obj.values()])
+#     return b
+#   u = jax.tree_util.tree_map(lambda x:False,params)
+#   modified_tree = jax.tree_util.tree_map(partial(modify_value_based_on_key), u, is_leaf=is_leaf)
+#   return modified_tree
 
 def create_train_state(
   config: ml_collections.ConfigDict, model, learning_rate_fn
@@ -269,20 +261,20 @@ def prepare_batch(batch, rng, training_config):
 
 p_train_step = jax.pmap(train_step_compute,axis_name='batch')
 p_solve_diffeq = jax.pmap(
-  partial(solve_diffeq,see_steps=see_steps),
-  axis_name='batch')
+  partial(solve_diffeq,see_steps=10),
+  axis_name='batch') # default: see_steps=10
 
-def sample_step(state:NNXTrainState, image_size, config, epoch, verbose=False, see_steps:int=10):
+def sample_step(state:NNXTrainState, image_size, config, epoch, verbose=False, see_steps:int=10, use_wandb=False):
   '''
   config: is the sampling config
   '''
   log_for_0(f"start generating samples for epoch {epoch}")
   device_count = jax.local_device_count()
   init_x = jax.random.normal(jax.random.key(0), (device_count, 64 // device_count, image_size, image_size, 3)) # (8, 8, 32, 32, 3)
-  result = p_solve_diffeq(init_x,train_state) # (8, 10, 8, 32, 32, 3)
+  result = p_solve_diffeq(init_x, state) # (8, 10, 8, 32, 32, 3)
 
-  from input_pipeline import MEAN_RGB, STDDEV_RGB
-  result = result * (jnp.array(STDDEV_RGB)/255.).reshape(1,1,1,1,1,3) + (jnp.array(MEAN_RGB)/255.).reshape(1,1,1,1,1,3)
+  # from input_pipeline import MEAN_RGB, STDDEV_RGB
+  # result = result * (jnp.array(STDDEV_RGB)/255.).reshape(1,1,1,1,1,3) + (jnp.array(MEAN_RGB)/255.).reshape(1,1,1,1,1,3)
 
   result = result.transpose(0,2,1,3,4,5)
   result = result.reshape((result.shape[0] * result.shape[1], *result.shape[2:])) # (num_samples, see_steps, image_size, image_size, 3)
@@ -303,6 +295,36 @@ def sample_step(state:NNXTrainState, image_size, config, epoch, verbose=False, s
 
   log_for_0(f"saved samples for epoch {epoch}")
 
+# def denoising_step(state:NNXTrainState, ground_truth, config, epoch, verbose=False, see_steps:int=10, use_wandb=False):
+#   '''
+#   config: is the sampling config
+#   '''
+#   log_for_0(f"start generating samples for epoch {epoch}")
+#   device_count = jax.local_device_count()
+#   init_x = jax.random.normal(jax.random.key(0), (device_count, 64 // device_count, image_size, image_size, 3)) # (8, 8, 32, 32, 3)
+#   result = p_solve_diffeq(init_x, state) # (8, 10, 8, 32, 32, 3)
+
+#   # from input_pipeline import MEAN_RGB, STDDEV_RGB
+#   # result = result * (jnp.array(STDDEV_RGB)/255.).reshape(1,1,1,1,1,3) + (jnp.array(MEAN_RGB)/255.).reshape(1,1,1,1,1,3)
+
+#   result = result.transpose(0,2,1,3,4,5)
+#   result = result.reshape((result.shape[0] * result.shape[1], *result.shape[2:])) # (num_samples, see_steps, image_size, image_size, 3)
+
+#   if jax.process_index() == 0:
+#     # flow_path = path.replace('.png','_flow.png')
+#     # gen_path = path.replace('.png','_gen.png')
+#     flow_dir = config.save_dir + "flow/"
+#     gen_dir = config.save_dir + "gen/"
+#     im1 = save_img(result[:9].reshape(-1,*result.shape[-3:]), flow_dir, im_name=f"{epoch}.png", grid=(10, see_steps))
+#     im2 = save_img(result[:,-1], gen_dir, im_name=f"{epoch}.png", grid=(8, 8))
+
+#     if use_wandb:
+#       wandb.log({
+#         'flow': wandb.Image(im1),
+#         'gen': wandb.Image(im2)
+#       })
+
+#   log_for_0(f"saved samples for epoch {epoch}")
 # def denoising_eval_step(state:NNXTrainState, rng_init, sigmas, config, ground_truth, type_, epoch):
 
 #   assert type_ in {"even", "lower"}
@@ -452,7 +474,7 @@ def train_and_evaluate(
   global_seed(training_config.seed)
 
   image_size = dataset_config.image_size
-  assert image_size == 28
+  # assert image_size == 28
 
   log_for_0('config.batch_size: {}'.format(training_config.batch_size))
 
@@ -474,7 +496,7 @@ def train_and_evaluate(
   train_set = train_set_(root=dataset_config.root)
   val_set = val_set_(root=dataset_config.root)
 
-  train_loader, steps_per_epoch = create_split(
+  train_loader, train_steps = create_split(
     train_set, local_batch_size, 'train', dataset_config
   )
 
@@ -484,25 +506,16 @@ def train_and_evaluate(
 
   eval_loader = DataLoader(val_set, batch_size=training_config.eval_batch_size, shuffle=True, drop_last=False, pin_memory=True)
 
-  log_for_0('steps_per_epoch: {}'.format(steps_per_epoch))
+  log_for_0('steps_per_epoch: {}'.format(train_steps))
 
   if training_config.steps_per_eval != -1:
     steps_per_eval = training_config.steps_per_eval
 
   ########### Create Model ###########
-  # TODO: change the ncsnv2 filename
-  ####### 我不会!!!!!!!!!!!!!!
-  model_cls = getattr(ncsnv2, model_config.name)
+  model_cls = getattr(models, model_config.name)
   rngs = nn.Rngs(training_config.seed, params=training_config.seed + 114, dropout=training_config.seed + 514, evaluation=training_config.seed + 1919)
   dtype = get_dtype(model_config.half_precision)
-  # TODO: change the API
-  model_init_fn = partial(
-    model_cls, 
-    dtype=dtype, 
-    ngf=model_config.ngf, 
-    n_noise_levels=sampling_config.n_noise_levels, 
-    config=config
-  )
+  model_init_fn = partial(model_cls, dtype=dtype)
   model = model_init_fn(rngs=rngs)
   show_dict(f'number of model parameters:{count_params(model)}')
   show_dict(display_model(model))
@@ -511,9 +524,9 @@ def train_and_evaluate(
   # base_lr = training_config.learning_rate * training_config.batch_size / 256.
   base_lr = training_config.learning_rate
   learning_rate_fn = create_learning_rate_fn(
-      train_config=training_config,
-      base_learning_rate=base_lr,
-      steps_per_epoch=train_steps,
+    train_config=training_config,
+    base_learning_rate=base_lr,
+    steps_per_epoch=train_steps,
   )
 
   ########### Create Train State ###########
@@ -526,25 +539,16 @@ def train_and_evaluate(
       raise ValueError('Checkpoint path {} does not exist'.format(training_config.load_from))
     state = restore_checkpoint(model_init_fn ,state, training_config.load_from)
     # sanity check, as in Kaiming's code
-    assert state.step > 0 and state.step % steps_per_epoch == 0, ValueError('Got an invalid checkpoint with step {}'.format(state.step))
-  epoch_offset = state.step // steps_per_epoch  # sanity check for resuming
+    assert state.step > 0 and state.step % train_steps == 0, ValueError('Got an invalid checkpoint with step {}'.format(state.step))
+  epoch_offset = state.step // train_steps  # sanity check for resuming
 
   state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
   model_avg = state.params
   yierbayiyiliuqi = len(train_loader.dataset) # this equals to 60000
   # print("yierbayiyiliuqi: ", yierbayiyiliuqi)
 
-  # use pmap to parallel training
-  sigmas = get_sigmas(sampling_config)
-  # p_train_step = jax.pmap(
-  #   functools.partial(train_step_sqa, rng_init=rngs, sigmas=sigmas),
-  #   axis_name='batch',
-  # )
-
-
-  
-
   ########### Training Loop ###########
+  sample_step(state, image_size, sampling_config, epoch_offset, use_wandb=training_config.wandb)
   log_for_0('Initial compilation, this might take some minutes...')
 
   last_model = None
@@ -554,6 +558,7 @@ def train_and_evaluate(
     p_update_model_avg = jax.pmap(partial(_update_model_avg, ema_decay=sampling_config.ema_decay), axis_name='batch')
 
   for epoch in range(epoch_offset, training_config.num_epochs):
+
     ########### Train ###########
     timer = Timer()
     if jax.process_count() > 1:
@@ -563,10 +568,10 @@ def train_and_evaluate(
     for n_batch, batch in enumerate(train_loader):
 
       images = batch[0].reshape(-1, config.dataset.channels, config.dataset.image_size, config.dataset.image_size)
-      step = epoch * steps_per_epoch + n_batch
+      step = epoch * train_steps + n_batch + 1
       ep = step * training_config.batch_size / yierbayiyiliuqi
       # print("images.shape: ", images.shape)
-      images = prepare_batch_data_sqa(images)
+      arg_batch, t_batch, target_batch = prepare_batch(batch, rngs, training_config)
 
       # print("batch['image'].shape:", batch['image'].shape)
       # assert False
@@ -606,25 +611,24 @@ def train_and_evaluate(
       # print(batch["image"].shape)
 
       # state, metrics = p_train_step(state, images) # here is the training step
-      state, metrics = train_step_sqa(state, images, rngs, sigmas)
+      state, metrics = p_train_step(state, arg_batch, t_batch, target_batch)
       
       if epoch == epoch_offset and n_batch == 0:
         log_for_0('Initial compilation completed. Reset timer.')
 
-      if training_config.get('log_per_step'):
-        if (step + 1) % training_config.log_per_step == 0:
-          if index == 0:
-            tang_reduce(metrics) 
-            step_per_sec = training_config.log_per_step / timer.elapse_with_reset()
-            loss_to_display = metrics['loss']
-            if training_config.wandb:
-              wandb.log({'train_ep:': ep, 
-                        'train_loss': loss_to_display, 
-                        # 'lr': learning_rate_fn(step), 
-                        'step': step, 
-                        'step_per_sec': step_per_sec})
-            # log_for_0('epoch: {} step: {} loss: {}, step_per_sec: {}'.format(ep, step, loss_to_display, step_per_sec))
-            log_for_0('step: {} loss: {}, step_per_sec: {}'.format(step, loss_to_display, step_per_sec))
+      if training_config.get('log_per_step') and step % training_config.log_per_step == 0:
+        if index == 0:
+          tang_reduce(metrics) 
+          step_per_sec = training_config.log_per_step / timer.elapse_with_reset()
+          loss_to_display = metrics['loss']
+          if training_config.wandb:
+            wandb.log({'train_ep:': ep, 
+                      'train_loss': loss_to_display, 
+                      # 'lr': learning_rate_fn(step), 
+                      'step': step, 
+                      'step_per_sec': step_per_sec})
+          # log_for_0('epoch: {} step: {} loss: {}, step_per_sec: {}'.format(ep, step, loss_to_display, step_per_sec))
+          log_for_0('step: {} loss: {}, step_per_sec: {}'.format(step, loss_to_display, step_per_sec))
       if sampling_config.get('ema_decay'):
         # EMA
         model_avg = p_update_model_avg(model_avg, state.params)
@@ -640,38 +644,17 @@ def train_and_evaluate(
     if epoch == training_config.num_epochs - 1:
       state = state.replace(params=model_avg)
 
-    ########### Eval ###########
+    ########### Sampling ###########
     if (epoch + 1) % training_config.eval_per_epoch == 0:
-      log_for_0('Eval epoch {}...'.format(epoch))
+      log_for_0('Generation for epoch {}...'.format(epoch))
       # sync batch statistics across replicas
       eval_state = sync_batch_stats(state)
       eval_state = eval_state.replace(params=model_avg)
-      average_metrics = MyMetrics(reduction=Avger)
-      sample_step(eval_state, rngs, sigmas, sampling_config, epoch)
-      for n_eval_batch, eval_batch in enumerate(eval_loader):
-        images = eval_batch[0].reshape(-1, config.dataset.channels, config.dataset.image_size, config.dataset.image_size)
-        ground_truth = prepare_batch_data_sqa(images) # 
-        if n_eval_batch == 0:
-          mse_lower = denoising_eval_step(eval_state, rngs, sigmas, sampling_config, ground_truth, "lower", epoch)
-        if n_eval_batch == 1:
-          mse_even = denoising_eval_step(eval_state, rngs, sigmas, sampling_config, ground_truth, "even", epoch)
-          break
-        # if (n_eval_batch + 1) % config.log_per_step == 0:
-        #   if index == 0:
-        #     log_for_0('eval: {}/{}'.format(n_eval_batch + 1, steps_per_eval))
-        # eval_image = prepare_batch_data_sqa(eval_batch[0], local_batch_size)
+      sample_step(eval_state, image_size, sampling_config, epoch, use_wandb=training_config.wandb)
 
-        # metrics = p_eval_step(state, eval_batch) # here is the eval step
-        # # print("metrics' labels shape:", metrics['labels'].shape)
-        # assert metrics['labels'].shape[-1] == NUM_CLASSES
-        # eval_metrics.append(metrics)
-      # print("mse_lower: ", mse_lower)
-      mse_lower = jnp.mean(mse_lower)
-      mse_even = jnp.mean(mse_even)
-
-      if index == 0 and training_config.wandb:
-        wandb.log({'mse_lower': mse_lower, 'mse_even': mse_even, 'epoch': epoch})
-        log_for_0('epoch: {}; mse_lower: {}, mse_even: {}'.format(epoch, mse_lower, mse_even))
+      # if index == 0 and training_config.wandb:
+      #   wandb.log({'mse_lower': mse_lower, 'mse_even': mse_even, 'epoch': epoch})
+      #   log_for_0('epoch: {}; mse_lower: {}, mse_even: {}'.format(epoch, mse_lower, mse_even))
 
 
   # Wait until computations are done before exiting

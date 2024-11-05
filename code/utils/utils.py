@@ -95,7 +95,7 @@ transform = transforms.Compose([
     # convert PIL image to tensor:
     transforms.ToTensor(),
     # add uniform noise:
-    transforms.Lambda(lambda x: (x + torch.rand_like(x).div_(256.))),
+    # transforms.Lambda(lambda x: (x + torch.rand_like(x).div_(256.))),
     # rescale to [0.0001, 0.9999]:
     transforms.Lambda(lambda x: rescale(x, 0.0001, 0.9999)),
 ])
