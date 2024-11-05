@@ -17,5 +17,4 @@ python3 main.py \
     --workdir=${LOGDIR} \
     --mode=local_debug \
     --config=configs/load_config.py:local_debug \
-    --config.dataset.root=${MNIST} \
 2>&1 | grep --invert-match Could

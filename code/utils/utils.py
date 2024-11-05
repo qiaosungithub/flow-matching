@@ -252,6 +252,8 @@ def save_img(img:jnp.ndarray, dir, im_name, grid=(1, 1)):
     
     if C == 1:
         canvas = canvas.squeeze(axis=-1) 
+
+    canvas = np.clip(canvas, 0, 1)
     
     img_path = os.path.join(dir, im_name)
     plt.imsave(img_path, canvas, cmap='gray' if C == 1 else None)

@@ -1,60 +1,57 @@
 # Copied from Kaiming He's resnet_jax repository
 
-import time
 from typing import Any
 
+from flax.training.train_state import TrainState as FlaxTrainState
 from flax.training import checkpoints
-from flax.training import dynamic_scale as dynamic_scale_lib
+import orbax.checkpoint as ocp
 import jax, os, wandb
 from jax import lax, random
 import jax.numpy as jnp
 import ml_collections
 import optax
-
 import torch
 import numpy as np
-from utils.logging_util import log_for_0, Timer
-from flax import jax_utils as ju
-from utils.metric_utils import tang_reduce, MyMetrics, Avger
-from torch.utils.data import DataLoader
-from utils.utils import train_set_, val_set_, get_sigmas, save_img, corruption
-import ncsnv2, models
-
-from utils.display_utils import show_dict, display_model, count_params
-from functools import partial
-from flax.training.train_state import TrainState as FlaxTrainState
 import flax.nnx as nn
-from langevin import langevin, langevin_masked
-from 数据集 import create_split, prepare_batch_data_sqa
+from functools import partial
+import tensorflow as tf
+import tensorflow_datasets as tfds
+
+from flax import jax_utils as ju
+from torch.utils.data import DataLoader
+from utils.logging_util import log_for_0, Timer
+from utils.metric_utils import tang_reduce, MyMetrics, Avger
+from utils.utils import save_img
+from utils.display_utils import show_dict, display_model, count_params
+
+import ncsnv2, models
+from input_pipeline import create_split
 from train_step_sqa import train_step_compute, solve_diffeq
 
-import orbax.checkpoint as ocp
-from flax.training import checkpoints
-
 def constant_lr_fn(base_learning_rate):
-    return optax.constant_schedule(base_learning_rate)
+  return optax.constant_schedule(base_learning_rate)
 
 def poly_decay_lr_fn(base_learning_rate, warmup_steps, total_steps):
-    warmup_fn = optax.linear_schedule(
-        init_value=1e-8,
-        end_value=base_learning_rate,
-        transition_steps=warmup_steps,
-    )
-    decay_fn = optax.polynomial_schedule(init_value=base_learning_rate, end_value=1e-8, power=1, transition_steps=total_steps-warmup_steps)
-    return optax.join_schedules([warmup_fn, decay_fn], boundaries=[warmup_steps])
+  warmup_fn = optax.linear_schedule(
+    init_value=1e-8,
+    end_value=base_learning_rate,
+    transition_steps=warmup_steps,
+  )
+  decay_fn = optax.polynomial_schedule(init_value=base_learning_rate, end_value=1e-8, power=1, transition_steps=total_steps-warmup_steps)
+  return optax.join_schedules([warmup_fn, decay_fn], boundaries=[warmup_steps])
 
 def create_learning_rate_fn(
-    train_config: ml_collections.ConfigDict,
-    base_learning_rate: float,
-    steps_per_epoch: int,
+  train_config: ml_collections.ConfigDict,
+  base_learning_rate: float,
+  steps_per_epoch: int,
 ):
-    """Create learning rate schedule."""
-    if train_config.scheduler == 'poly':
-        return poly_decay_lr_fn(base_learning_rate, train_config.warmup_steps, train_config.num_epochs * steps_per_epoch)
-    elif train_config.scheduler == 'constant':
-        return constant_lr_fn(base_learning_rate)
-    else:
-        raise ValueError('Unknown learning rate scheduler {}'.format(train_config.scheduler))
+  """Create learning rate schedule."""
+  if train_config.scheduler == 'poly':
+    return poly_decay_lr_fn(base_learning_rate, train_config.warmup_steps, train_config.num_epochs * steps_per_epoch)
+  elif train_config.scheduler == 'constant':
+    return constant_lr_fn(base_learning_rate)
+  else:
+    raise ValueError('Unknown learning rate scheduler {}'.format(train_config.scheduler))
 
 class NNXTrainState(FlaxTrainState):
   batch_stats: Any
@@ -250,9 +247,9 @@ def create_train_state(
 
 def prepare_batch(batch, rng, training_config):
   # NOTE: there are two batch sizes: image shape is [b1, b2, 32, 32, 3].
-  b1, b2 = batch['image'].shape[:2]
+  b1, b2 = batch["image"].shape[:2]
   sigma_m = training_config.sigma_min
-  x = batch['image']
+  x = batch["image"]
   eps = jax.random.normal(rng.train_eps(), x.shape)
   t = jax.random.uniform(rng.train_eps(), (b1, b2, 1, 1, 1))
   psi_t = (1 - (1 - sigma_m) * t) * eps + t * x
@@ -284,7 +281,7 @@ def sample_step(state:NNXTrainState, image_size, config, epoch, verbose=False, s
     # gen_path = path.replace('.png','_gen.png')
     flow_dir = config.save_dir + "flow/"
     gen_dir = config.save_dir + "gen/"
-    im1 = save_img(result[:9].reshape(-1,*result.shape[-3:]), flow_dir, im_name=f"{epoch}.png", grid=(10, see_steps))
+    im1 = save_img(result[:10].reshape(-1,*result.shape[-3:]), flow_dir, im_name=f"{epoch}.png", grid=(10, see_steps))
     im2 = save_img(result[:,-1], gen_dir, im_name=f"{epoch}.png", grid=(8, 8))
 
     if use_wandb:
@@ -484,32 +481,59 @@ def train_and_evaluate(
   log_for_0(f"save directory: {sampling_config.save_dir}")
 
   ########### Create DataLoaders ###########
-  if training_config.batch_size % jax.process_count() > 0:
-    raise ValueError('Batch size must be divisible by the number of processes')
-  local_batch_size = training_config.batch_size // jax.process_count()
-  log_for_0('local_batch_size: {}'.format(local_batch_size))
-  log_for_0('jax.local_device_count: {}'.format(jax.local_device_count()))
+  # if training_config.batch_size % jax.process_count() > 0:
+  #   raise ValueError('Batch size must be divisible by the number of processes')
+  # local_batch_size = training_config.batch_size // jax.process_count()
+  # log_for_0('local_batch_size: {}'.format(local_batch_size))
+  # log_for_0('jax.local_device_count: {}'.format(jax.local_device_count()))
 
-  if local_batch_size % jax.local_device_count() > 0:
-    raise ValueError('Local batch size must be divisible by the number of local devices')
+  # if local_batch_size % jax.local_device_count() > 0:
+  #   raise ValueError('Local batch size must be divisible by the number of local devices')
 
-  train_set = train_set_(root=dataset_config.root)
-  val_set = val_set_(root=dataset_config.root)
+  # train_set = train_set_(root=dataset_config.root)
+  # val_set = val_set_(root=dataset_config.root)
 
-  train_loader, train_steps = create_split(
-    train_set, local_batch_size, 'train', dataset_config
-  )
-
-  # eval_loader, steps_per_eval = create_split(
-  #   val_set, local_batch_size, 'val', config
+  # train_loader, train_steps = create_split(
+  #   train_set, local_batch_size, 'train', dataset_config
   # )
 
-  eval_loader = DataLoader(val_set, batch_size=training_config.eval_batch_size, shuffle=True, drop_last=False, pin_memory=True)
+  # # eval_loader, steps_per_eval = create_split(
+  # #   val_set, local_batch_size, 'val', config
+  # # )
 
-  log_for_0('steps_per_epoch: {}'.format(train_steps))
+  # eval_loader = DataLoader(val_set, batch_size=training_config.eval_batch_size, shuffle=True, drop_last=False, pin_memory=True)
 
-  if training_config.steps_per_eval != -1:
-    steps_per_eval = training_config.steps_per_eval
+  # log_for_0('steps_per_epoch: {}'.format(train_steps))
+
+  # if training_config.steps_per_eval != -1:
+  #   steps_per_eval = training_config.steps_per_eval
+
+  input_type = tf.bfloat16 if model_config.half_precision else tf.float32
+  dataset_builder = tfds.builder(dataset_config.name)
+  assert training_config.batch_size % jax.process_count() == 0, ValueError('Batch size must be divisible by the number of devices')
+  local_batch_size = training_config.batch_size // jax.process_count()
+  log_for_0('local_batch_size: {}'.format(local_batch_size))
+  log_for_0('global batch_size: {}'.format(training_config.batch_size))
+  train_loader, train_steps, yierbayiyiliuqi = create_split(
+    dataset_builder,
+    dataset_config=dataset_config,
+    training_config=training_config,
+    local_batch_size=local_batch_size,
+    input_type=input_type,
+    train=False if dataset_config.fake_data else True
+  )
+  # val_loader, val_steps, _ = create_split(
+  #   dataset_builder,
+  #   dataset_config=dataset_config,
+  #   training_config=training_config,
+  #   local_batch_size=local_batch_size,
+  #   input_type=input_type,
+  #   train=False
+  # )
+  if dataset_config.fake_data:
+    log_for_0('Note: using fake data')
+  log_for_0('train_steps: {}'.format(train_steps))
+  # log_for_0('eval_steps: {}'.format(val_steps))
 
   ########### Create Model ###########
   model_cls = getattr(models, model_config.name)
@@ -544,8 +568,6 @@ def train_and_evaluate(
 
   state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
   model_avg = state.params
-  yierbayiyiliuqi = len(train_loader.dataset) # this equals to 60000
-  # print("yierbayiyiliuqi: ", yierbayiyiliuqi)
 
   ########### Training Loop ###########
   sample_step(state, image_size, sampling_config, epoch_offset, use_wandb=training_config.wandb)
@@ -561,13 +583,10 @@ def train_and_evaluate(
 
     ########### Train ###########
     timer = Timer()
-    if jax.process_count() > 1:
-      train_loader.sampler.set_epoch(epoch)
     log_for_0('epoch {}...'.format(epoch))
     timer.reset()
-    for n_batch, batch in enumerate(train_loader):
+    for n_batch, batch in zip(range(train_steps), train_loader):
 
-      images = batch[0].reshape(-1, config.dataset.channels, config.dataset.image_size, config.dataset.image_size)
       step = epoch * train_steps + n_batch + 1
       ep = step * training_config.batch_size / yierbayiyiliuqi
       # print("images.shape: ", images.shape)
@@ -668,6 +687,7 @@ def train_and_evaluate(
 def just_evaluate(
     config: ml_collections.ConfigDict, workdir: str
   ):
+  raise NotImplementedError
   ########### Initialize ###########
   rank = index = jax.process_index()
   log_for_0('Generating samples for workdir: {}'.format(workdir))
@@ -677,7 +697,6 @@ def just_evaluate(
   sampling_config = config.sampling
   dtype = jnp.bfloat16 if model_config.half_precision else jnp.float32
   global_seed(training_config.seed)
-  sigmas = get_sigmas(sampling_config)
   image_size = dataset_config.image_size
 
   ########### Create Model ###########

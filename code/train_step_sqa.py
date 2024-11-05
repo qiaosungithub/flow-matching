@@ -19,7 +19,7 @@ def criterion(pred, target):
 def train_step_compute(state:NNXTrainState, arg_batch, t_batch, target_batch):
 
   def loss_fn(real_params):
-    preds, new_batch_stats, new_rng_params = state.apply_fn(state.graphdef, real_params, train_state.rng_states, train_state.batch_stats, train_state.useless_variable_state, True, arg_batch, t_batch) # True: is_training
+    preds, new_batch_stats, new_rng_params = state.apply_fn(state.graphdef, real_params, state.rng_states, state.batch_stats, state.useless_variable_state, True, arg_batch, t_batch) # True: is_training
     loss = criterion(preds, target_batch)
     # customized weight decay (don't apply to bias)
     return loss, (new_batch_stats, new_rng_params)

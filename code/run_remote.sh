@@ -9,12 +9,12 @@ echo Running at $VM_NAME $ZONE
 
 now=`date '+%Y%m%d_%H%M%S'`
 export salt=`head /dev/urandom | tr -dc a-z0-9 | head -c6`
-JOBNAME=${TASKNAME}/${now}_${salt}_${VM_NAME}_${CONFIG}_b${batch}_lr${lr}_ep${ep}_torchvision_r50_eval
+JOBNAME=${TASKNAME}/${now}_${salt}_${VM_NAME}_${CONFIG}_b${batch}_lr${lr}_ep${ep}_eval
 
 LOGDIR=/$DATA_ROOT/logs/$USER/$JOBNAME
 
 sudo mkdir -p ${LOGDIR}
-sudo chmod 777 ${LOGDIR}
+sudo chmod 777 -R ${LOGDIR}
 echo 'Log dir: '$LOGDIR
 echo 'Staging dir: '$STAGEDIR
 
@@ -35,11 +35,11 @@ echo 'Current dir: '
 pwd
 which python
 which pip3
+export TFDS_DATA_DIR=${TFDS_DATA_DIR}
 python3 main.py \
     --workdir=${LOGDIR} \
     --mode=remote_run \
     --config=configs/load_config.py:remote_run \
-    --config.dataset.root=${MNIST} \
 " 2>&1 | tee -a $LOGDIR/output.log
 
 ############# No need to modify [END] #############

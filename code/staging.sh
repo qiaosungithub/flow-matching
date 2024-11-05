@@ -15,7 +15,7 @@ rsync -av . $STAGEDIR --exclude=tmp --exclude=.git --exclude=__pycache__ --exclu
 cp -r /kmh-nfs-ssd-eu-mount/code/hanhong/MyFile/research_utils/Jax/zhh $STAGEDIR
 echo 'Done staging.'
 
-chmod 777 $STAGEDIR
+sudo chmod 777 -R $STAGEDIR
 
 cd $STAGEDIR
 echo 'Current dir: '`pwd`

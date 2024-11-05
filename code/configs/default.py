@@ -60,6 +60,7 @@ def get_config():
   dataset.prefetch_factor = 2
   dataset.pin_memory = False
   dataset.cache = True
+  dataset.fake_data = False
 
   # Training
   config.training = training = ml_collections.ConfigDict()
@@ -68,7 +69,7 @@ def get_config():
   training.batch_size = 128
   training.eval_batch_size = 500
   training.shuffle_buffer_size = 16 * 128
-  # config.prefetch = 10
+  training.prefetch = 10
   training.weight_decay = 0.0 
 
   training.num_epochs = 100
