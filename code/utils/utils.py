@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import jax
 import torch
 from functools import partial
+from PIL import Image
 
 def save_model(save_path,
                model,
@@ -228,6 +229,9 @@ def mkdir(path):
         os.makedirs(path)
 
 def save_img(img:jnp.ndarray, dir, im_name, grid=(1, 1)):
+    """
+    img: shape (N, H, W, C); more dims are supported
+    """
     if jax.process_index() != 0:
         return
     if len(img.shape) > 4:
@@ -251,3 +255,10 @@ def save_img(img:jnp.ndarray, dir, im_name, grid=(1, 1)):
     
     img_path = os.path.join(dir, im_name)
     plt.imsave(img_path, canvas, cmap='gray' if C == 1 else None)
+
+    # transfer canvas to PIL image
+    # canvas is float type, transfer to uint8
+    canvas = (canvas * 255).astype(np.uint8)
+    canvas = Image.fromarray(canvas)
+
+    return canvas
