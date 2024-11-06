@@ -484,7 +484,6 @@ def train_and_evaluate(
       partial(sample_for_fid, image_size=image_size, rng_init=random.PRNGKey(0), device_bs=fid_config.device_batch_size),
       axis_name='batch'
     )
-  # TODO: 这里的Rng??????????????
 
   ########### Create DataLoaders ###########
   # if training_config.batch_size % jax.process_count() > 0:
@@ -543,7 +542,7 @@ def train_and_evaluate(
 
   ########### Create Model ###########
   model_cls = getattr(models, model_config.name)
-  rngs = nn.Rngs(training_config.seed, params=training_config.seed + 114, dropout=training_config.seed + 514, evaluation=training_config.seed + 1919)
+  rngs = nn.Rngs(training_config.seed, params=training_config.seed + 114, dropout=training_config.seed + 514, evaluation=training_config.seed + 19198)
   dtype = get_dtype(model_config.half_precision)
   model_init_fn = partial(model_cls, dtype=dtype)
   model = model_init_fn(rngs=rngs)
@@ -633,48 +632,44 @@ def train_and_evaluate(
       # print("batch['image'].shape:", batch['image'].shape)
       # assert False
 
-      # here is code for us to visualize the images
-      import matplotlib.pyplot as plt
-      import numpy as np
-      import os
-      images = batch["image"]
-      print(f"images.shape: {images.shape}", flush=True)
+      # # here is code for us to visualize the images
+      # import matplotlib.pyplot as plt
+      # import numpy as np
+      # import os
+      # images = batch["image"]
+      # print(f"images.shape: {images.shape}", flush=True)
 
-      from input_pipeline import MEAN_RGB, STDDEV_RGB
+      # from input_pipeline import MEAN_RGB, STDDEV_RGB
 
-      # save batch["image"] to ./images/{epoch}/i.png
-      rank = jax.process_index()
+      # # save batch["image"] to ./images/{epoch}/i.png
+      # rank = jax.process_index()
 
-      # if os.path.exists(f"/kmh-nfs-us-mount/staging/sqa/images/{n_batch}/{rank}") == False:
-      #   os.makedirs(f"/kmh-nfs-us-mount/staging/sqa/images/{n_batch}/{rank}")
-      path = f"/kmh-nfs-ssd-eu-mount/logs/sqa/flow-matching/sqa_flow-matching/dataset_images/{n_batch}/{rank}"
-      if os.path.exists(path) == False:
-        os.makedirs(path)
-      for i in range(images[0].shape[0]):
-        # print the max and min of the image
-        # print(f"max: {np.max(images[0][i])}, min: {np.min(images[0][i])}")
-        # img_test = images[0][:100]
-        # save_img(img_test, f"/kmh-nfs-ssd-eu-mount/code/qiao/flow-matching/sqa_flow-matching/dataset_images/{n_batch}/{rank}", im_name=f"{i}.png", grid=(10, 10))
-        # break
-        # use the max and min to normalize the image to [0, 1]
-        img = images[0][i]
-        img = img * (jnp.array(STDDEV_RGB)/255.).reshape(1,1,3) + (jnp.array(MEAN_RGB)/255.).reshape(1,1,3)
-        # print(f"max: {np.max(img)}, min: {np.min(img)}")
-        img = jnp.clip(img, 0, 1)
-        # img = (img - np.min(img)) / (np.max(img) - np.min(img))
-        # img = img.squeeze(-1)
-        plt.imsave(path+f"/{i}.png", img) # if MNIST, add cmap='gray'
-        # if i>6: break
+      # # if os.path.exists(f"/kmh-nfs-us-mount/staging/sqa/images/{n_batch}/{rank}") == False:
+      # #   os.makedirs(f"/kmh-nfs-us-mount/staging/sqa/images/{n_batch}/{rank}")
+      # path = f"/kmh-nfs-ssd-eu-mount/logs/sqa/flow-matching/sqa_flow-matching/dataset_images/{n_batch}/{rank}"
+      # if os.path.exists(path) == False:
+      #   os.makedirs(path)
+      # for i in range(images[0].shape[0]):
+      #   # print the max and min of the image
+      #   # print(f"max: {np.max(images[0][i])}, min: {np.min(images[0][i])}")
+      #   # img_test = images[0][:100]
+      #   # save_img(img_test, f"/kmh-nfs-ssd-eu-mount/code/qiao/flow-matching/sqa_flow-matching/dataset_images/{n_batch}/{rank}", im_name=f"{i}.png", grid=(10, 10))
+      #   # break
+      #   # use the max and min to normalize the image to [0, 1]
+      #   img = images[0][i]
+      #   img = img * (jnp.array(STDDEV_RGB)/255.).reshape(1,1,3) + (jnp.array(MEAN_RGB)/255.).reshape(1,1,3)
+      #   # print(f"max: {np.max(img)}, min: {np.min(img)}")
+      #   img = jnp.clip(img, 0, 1)
+      #   # img = (img - np.min(img)) / (np.max(img) - np.min(img))
+      #   # img = img.squeeze(-1)
+      #   plt.imsave(path+f"/{i}.png", img) # if MNIST, add cmap='gray'
+      #   # if i>6: break
 
-      print(f"saving images for n_batch {n_batch}, done.")
-      if n_batch > 0:
-        exit(114514)
-      continue
+      # print(f"saving images for n_batch {n_batch}, done.")
+      # if n_batch > 0:
+      #   exit(114514)
+      # continue
 
-
-      # print(batch["image"].shape)
-
-      # state, metrics = p_train_step(state, images) # here is the training step
       state, metrics = p_train_step(state, arg_batch, t_batch, target_batch)
       
       if epoch == epoch_offset and n_batch == 0:
