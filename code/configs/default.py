@@ -83,6 +83,15 @@ def get_config():
   training.seed = 3407  # init random seed
   training.load_from = None
 
+  # Eval fid
+  config.fid = fid = ml_collections.ConfigDict()
+  fid.num_samples = 50000
+  fid.fid_per_epoch = 500
+  fid.on_use = True
+  fid.eval_only = True
+  fid.device_batch_size = 128
+  fid.cache_ref = '/kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz'
+
   # sampling
   config.sampling = sampling = ml_collections.ConfigDict()
   sampling.sigma_begin = 28

@@ -22,7 +22,10 @@ dataset:
     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
 sampling:
     ema: True
-    ema_decay: 0.99
+    ema_decay: 0.999
     save_dir: null
+fid:
+    eval_only: True
+    fid_per_epoch: 10
 
 # NOTE: you cannot add more hierarchy structure without modifying default.py and load_config.py

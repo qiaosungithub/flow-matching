@@ -23,10 +23,12 @@ from utils.logging_util import log_for_0, Timer
 from utils.metric_utils import tang_reduce, MyMetrics, Avger
 from utils.utils import save_img
 from utils.display_utils import show_dict, display_model, count_params
+import utils.fid_util as fid_util
+import utils.sample_util as sample_util
 
 import ncsnv2, models
 from input_pipeline import create_split
-from train_step_sqa import train_step_compute, solve_diffeq
+from train_step_sqa import p_train_step, p_solve_diffeq, sample_for_fid
 
 def constant_lr_fn(base_learning_rate):
   return optax.constant_schedule(base_learning_rate)
@@ -256,12 +258,8 @@ def prepare_batch(batch, rng, training_config):
   target = x - (1 - sigma_m) * eps
   return psi_t, t.reshape(b1, b2), target
 
-p_train_step = jax.pmap(train_step_compute,axis_name='batch')
-p_solve_diffeq = jax.pmap(
-  partial(solve_diffeq,see_steps=10),
-  axis_name='batch') # default: see_steps=10
 
-def sample_step(state:NNXTrainState, image_size, config, epoch, verbose=False, see_steps:int=10, use_wandb=False):
+def sample_step(state:NNXTrainState, image_size, config, epoch, see_steps:int=10, use_wandb=False):
   '''
   config: is the sampling config
   '''
@@ -465,6 +463,7 @@ def train_and_evaluate(
   model_config = config.model 
   dataset_config = config.dataset
   sampling_config = config.sampling
+  fid_config = config.fid
   if rank == 0 and training_config.wandb:
     wandb.init(project='sqa_FM', dir=workdir)
     wandb.config.update(config.to_dict())
@@ -479,6 +478,16 @@ def train_and_evaluate(
   if sampling_config.save_dir is None:
     sampling_config.save_dir = workdir + "/images/"
   log_for_0(f"save directory: {sampling_config.save_dir}")
+
+  vis_sample_idx = jax.process_index() * jax.local_device_count() + jnp.arange(jax.local_device_count())  # for visualization
+  log_for_0(f"vis_sample_idx: {vis_sample_idx}")
+
+  if fid_config.on_use:
+    p_sample_for_fid = jax.pmap(
+      partial(sample_for_fid, image_size=image_size, rng_init=random.PRNGKey(0), device_bs=fid_config.device_batch_size),
+      axis_name='batch'
+    )
+  # TODO: 这里的Rng??????????????
 
   ########### Create DataLoaders ###########
   # if training_config.batch_size % jax.process_count() > 0:
@@ -568,6 +577,38 @@ def train_and_evaluate(
 
   state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
   model_avg = state.params
+
+  ########### FID ###########
+  def run_p_sample_step(p_sample_step, state, sample_idx):
+    # redefine the interface
+    images = p_sample_step(state, sample_idx=sample_idx)
+    # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
+    jax.random.normal(random.key(0), ()).block_until_ready()
+    images = images.reshape(-1, image_size, image_size, 3)
+    # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
+    return images  # images have been all gathered
+  
+  # ------------------------------------------------------------------------------------
+  if config.fid.on_use:  # we will evaluate fid    
+    inception_net = fid_util.build_jax_inception()
+    stats_ref = fid_util.get_reference(config.fid.cache_ref, inception_net)
+
+    if not config.fid.eval_only: # debug
+      samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_for_fid, run_p_sample_step)
+      mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
+      fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
+      log_for_0(f'w/o ema: FID at {samples_all.shape[0]} samples: {fid_score}')
+
+      samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_for_fid, run_p_sample_step)
+      mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
+      fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
+      log_for_0(f' w/ ema: FID at {samples_all.shape[0]} samples: {fid_score}')
+      return None
+
+    # debugging here
+    # samples_dir = '/kmh-nfs-us-mount/logs/kaiminghe/results-edm/edm-cifar10-32x32-uncond-vp'
+    # samples = sample_util.get_samples_from_dir(samples_dir, config)
+  # ------------------------------------------------------------------------------------
 
   ########### Training Loop ###########
   sample_step(state, image_size, sampling_config, epoch_offset, use_wandb=training_config.wandb)
@@ -675,6 +716,30 @@ def train_and_evaluate(
       #   wandb.log({'mse_lower': mse_lower, 'mse_even': mse_even, 'epoch': epoch})
       #   log_for_0('epoch: {}; mse_lower: {}, mse_even: {}'.format(epoch, mse_lower, mse_even))
 
+    ########### FID ###########
+    if config.fid.on_use and (
+      (epoch + 1) % config.fid.fid_per_epoch == 0
+      or epoch == config.num_epochs
+      # or epoch == 0
+    ):
+      samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_for_fid, run_p_sample_step)
+      mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
+      fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
+      log_for_0(f'w/o ema: FID at {samples_all.shape[0]} samples: {fid_score}')
+
+      # ema results are much better
+      eval_state = sync_batch_stats(state)
+      eval_state = eval_state.replace(params=model_avg)
+      samples_all = sample_util.generate_samples_for_fid_eval(eval_state, workdir, config, p_sample_for_fid, run_p_sample_step)
+      mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
+      fid_score_ema = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
+      log_for_0(f'w/ ema: FID at {samples_all.shape[0]} samples: {fid_score}')
+
+      if training_config.wandb:
+        wandb.log({
+          'FID': fid_score,
+          'FID_ema': fid_score_ema
+        })
 
   # Wait until computations are done before exiting
   jax.random.normal(jax.random.key(0), ()).block_until_ready()

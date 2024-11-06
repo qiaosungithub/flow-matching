@@ -23,5 +23,9 @@ sampling:
     ema: True
     ema_decay: 0.999
     save_dir: /kmh-nfs-ssd-eu-mount/code/qiao/flow-matching/sqa-flow-matching/images/
+fid:
+    eval_only: True
+    fid_per_epoch: 1
+    num_samples: 1000
 
 # NOTE: you cannot add more hierarchy structure without modifying default.py and load_config.py
