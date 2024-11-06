@@ -41,14 +41,14 @@ fi
 
 if [[ $ZONE == *"europe"* ]]; then
     export DATA_ROOT="kmh-nfs-ssd-eu-mount"
-    export TFDS_DATA_DIR='gs://kmh-gcp/tensorflow_datasets'  # use this for imagenet
-    # export TFDS_DATA_DIR='/kmh-nfs-ssd-eu-mount/code/hanhong/dot/tensorflow_datasets'
+    # export TFDS_DATA_DIR='gs://kmh-gcp/tensorflow_datasets'  # use this for imagenet
+    export TFDS_DATA_DIR='/kmh-nfs-ssd-eu-mount/code/hanhong/dot/tensorflow_datasets'
     export USE_CONDA=1
 else
     export DATA_ROOT="kmh-nfs-us-mount"
     export USE_CONDA=2
-    export TFDS_DATA_DIR='gs://kmh-gcp-us-central2/tensorflow_datasets'  # use this for imagenet
-    # export TFDS_DATA_DIR='/kmh-nfs-us-mount/staging/zhh/data/tensorflow_datasets'
+    # export TFDS_DATA_DIR='gs://kmh-gcp-us-central2/tensorflow_datasets'  # use this for imagenet
+    export TFDS_DATA_DIR='/kmh-nfs-us-mount/staging/zhh/data/tensorflow_datasets'
 fi
 
 if [[ $USE_CONDA == 1 ]]; then
