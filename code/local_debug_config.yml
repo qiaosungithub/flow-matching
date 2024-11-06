@@ -86,6 +86,7 @@ sampling:
     ema_decay: 0.999
     save_dir: /kmh-nfs-ssd-eu-mount/code/qiao/flow-matching/sqa-flow-matching/images/
 fid:
+    on_use: False
     eval_only: True
     fid_per_epoch: 1
     num_samples: 1000

@@ -10,6 +10,8 @@ sudo chmod 777 ${LOGDIR}
 source $CONDA_INIT_SH_PATH
 # remember to use your own conda environment
 conda activate $OWN_CONDA_ENV_NAME
+# export TFDS_DATA_DIR='/kmh-nfs-ssd-eu-mount/code/hanhong/dot/tensorflow_datasets'
+export TFDS_DATA_DIR='gs://kmh-gcp/tensorflow_datasets' # this is for imagenet
 
 echo "start running main"
 
