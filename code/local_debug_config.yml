@@ -76,7 +76,7 @@ training:
 model:
     name: UNet_for_32
 dataset:
-    name: imagenet2012
+    name: imagenet2012:5.*.*
     # root: /kmh-nfs-ssd-eu-mount/code/qiao/data/MNIST/
     image_size: 32
     prefetch_factor: 2
