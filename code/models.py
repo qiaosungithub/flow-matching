@@ -124,6 +124,10 @@ AvgPool2 = partial(nn.avg_pool, window_shape=(2,2), strides=(2,2))
 def NeuralUpsample2(channel, rngs):
     return nn.ConvTranspose(channel, channel, kernel_size=(2,2), strides=(2,2), padding='SAME', rngs=rngs)
 
+def show_max_and_min(x, pos):
+    print("At position", pos, flush=True)
+    print('max:', jnp.max(x), 'min:', jnp.min(x), flush=True)
+
 class UNet(nn.Module):
 
     def __init__(
@@ -169,9 +173,12 @@ class UNet(nn.Module):
         return layers
 
     def __call__(self,x,t):
+        # show_max_and_min(x, "0")
         x = self.init_conv(x)
+        # show_max_and_min(x, "1")
         # t *= 100
         t = self.t_emb(t)
+        # show_max_and_min(t, "2")
         xs = []
         for i in range(len(self.up.layers)):
             if i % 2 == 0:
@@ -179,9 +186,11 @@ class UNet(nn.Module):
                 xs.append(x)
             else:
                 x = self.up.layers[i](x)
+            # show_max_and_min(x, f"up layer {i}")
             # print(f'up layer {i}, x.shape:', x.shape)
             # print('x stats:', x.min(), x.max(), x.mean(), x.std())
         x = self.middle(x,t)
+        # show_max_and_min(x, "middle")
         # print('middle layer x.shape:', x.shape)
         # print('x stats:', x.min(), x.max(), x.mean(), x.std())
         for i in range(len(self.down.layers)):
@@ -190,9 +199,12 @@ class UNet(nn.Module):
                 x = self.down.layers[i](x,t)
             else:
                 x = self.down.layers[i](x)
+            # show_max_and_min(x, f"down layer {i}")
             # print(f'down layer {i}, x.shape:', x.shape)
             # print('x stats:', x.min(), x.max(), x.mean(), x.std())
-        return self.end(x)
+        x = self.end(x)
+        # show_max_and_min(x, "end")
+        return x
 
 UNet_debug = partial(
     UNet,
@@ -258,13 +270,15 @@ UNet_for_128 = partial( # 83247875 params
 if __name__ == '__main__':
     print('Hello world',flush=True)
     # model = UNet_debug(rngs=nn.Rngs(0))
-    model = UNet_for_mnist(rngs=nn.Rngs(0))
+    # model = UNet_for_mnist(rngs=nn.Rngs(0))
+    model = UNet_for_32(rngs=nn.Rngs(0))
     # model = UNet_for_64(rngs=nn.Rngs(0))
     # model = UNet_for_128(rngs=nn.Rngs(0))
-    udu.show_dict(f'number of model parameters:{udu.count_params(model)}' )
-    udu.show_dict(udu.display_model(model))
-    exit()
-    x = jnp.ones((7, 32, 32, 3))
+    # udu.show_dict(f'number of model parameters:{udu.count_params(model)}' )
+    # udu.show_dict(udu.display_model(model))
+    # exit()
+    # x = jnp.ones((7, 32, 32, 3))
+    x = jax.random.uniform(jax.random.PRNGKey(0), (7, 32, 32, 3))
     t = jax.random.uniform(jax.random.PRNGKey(0), (7,))
     y = model(x, t)
     print(y.shape)

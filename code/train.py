@@ -542,7 +542,7 @@ def train_and_evaluate(
 
   ########### Create Model ###########
   model_cls = getattr(models, model_config.name)
-  rngs = nn.Rngs(training_config.seed, params=training_config.seed + 114, dropout=training_config.seed + 514, evaluation=training_config.seed + 19198)
+  rngs = nn.Rngs(training_config.seed, params=training_config.seed + 114, dropout=training_config.seed + 514, evaluation=training_config.seed + 1919)
   dtype = get_dtype(model_config.half_precision)
   model_init_fn = partial(model_cls, dtype=dtype)
   model = model_init_fn(rngs=rngs)
