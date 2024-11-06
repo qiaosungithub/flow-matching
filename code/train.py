@@ -732,7 +732,7 @@ def train_and_evaluate(
       fid_score_ema = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
       log_for_0(f'w/ ema: FID at {samples_all.shape[0]} samples: {fid_score}')
 
-      if training_config.wandb:
+      if training_config.wandb and rank == 0:
         wandb.log({
           'FID': fid_score,
           'FID_ema': fid_score_ema
