@@ -268,8 +268,8 @@ def sample_step(state:NNXTrainState, image_size, config, epoch, see_steps:int=10
   init_x = jax.random.normal(jax.random.key(0), (device_count, 64 // device_count, image_size, image_size, 3)) # (8, 8, 32, 32, 3)
   result = p_solve_diffeq(init_x, state) # (8, 10, 8, 32, 32, 3)
 
-  # from input_pipeline import MEAN_RGB, STDDEV_RGB
-  # result = result * (jnp.array(STDDEV_RGB)/255.).reshape(1,1,1,1,1,3) + (jnp.array(MEAN_RGB)/255.).reshape(1,1,1,1,1,3)
+  from input_pipeline import MEAN_RGB, STDDEV_RGB
+  result = result * (jnp.array(STDDEV_RGB)/255.).reshape(1,1,1,1,1,3) + (jnp.array(MEAN_RGB)/255.).reshape(1,1,1,1,1,3)
 
   result = result.transpose(0,2,1,3,4,5)
   result = result.reshape((result.shape[0] * result.shape[1], *result.shape[2:])) # (num_samples, see_steps, image_size, image_size, 3)
