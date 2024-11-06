@@ -479,9 +479,6 @@ def train_and_evaluate(
     sampling_config.save_dir = workdir + "/images/"
   log_for_0(f"save directory: {sampling_config.save_dir}")
 
-  vis_sample_idx = jax.process_index() * jax.local_device_count() + jnp.arange(jax.local_device_count())  # for visualization
-  log_for_0(f"vis_sample_idx: {vis_sample_idx}")
-
   if fid_config.on_use:
     p_sample_for_fid = jax.pmap(
       partial(sample_for_fid, image_size=image_size, rng_init=random.PRNGKey(0), device_bs=fid_config.device_batch_size),
@@ -719,7 +716,7 @@ def train_and_evaluate(
     ########### FID ###########
     if config.fid.on_use and (
       (epoch + 1) % config.fid.fid_per_epoch == 0
-      or epoch == config.num_epochs
+      or epoch == training_config.num_epochs
       # or epoch == 0
     ):
       samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_for_fid, run_p_sample_step)

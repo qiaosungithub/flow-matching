@@ -1,8 +1,9 @@
 pillow
 clu
-tensorflow==2.17
+tensorflow==2.15.0
 torch<=2.4
 torchvision
 wandb
 tensorflow_datasets
 matplotlib==3.9.2
+keras==2.15.0
