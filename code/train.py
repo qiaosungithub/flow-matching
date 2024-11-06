@@ -681,7 +681,7 @@ def train_and_evaluate(
           if training_config.wandb:
             wandb.log({'train_ep:': ep, 
                       'train_loss': loss_to_display, 
-                      # 'lr': learning_rate_fn(step), 
+                      'lr': learning_rate_fn(step), 
                       'step': step, 
                       'step_per_sec': step_per_sec})
           # log_for_0('epoch: {} step: {} loss: {}, step_per_sec: {}'.format(ep, step, loss_to_display, step_per_sec))
@@ -730,7 +730,7 @@ def train_and_evaluate(
       samples_all = sample_util.generate_samples_for_fid_eval(eval_state, workdir, config, p_sample_for_fid, run_p_sample_step)
       mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
       fid_score_ema = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
-      log_for_0(f'w/ ema: FID at {samples_all.shape[0]} samples: {fid_score}')
+      log_for_0(f'w/ ema: FID at {samples_all.shape[0]} samples: {fid_score_ema}')
 
       if training_config.wandb and rank == 0:
         wandb.log({
