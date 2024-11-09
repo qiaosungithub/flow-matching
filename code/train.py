@@ -396,7 +396,7 @@ def sample_step(state:NNXTrainState, image_size, config, epoch, see_steps:int=10
 ########### Checkpointer ###########
 checkpointer = ocp.StandardCheckpointer()
 def _restore(ckpt_path, item, **restore_kwargs):
-    return ocp.StandardCheckpointer.restore(checkpointer, ckpt_path, target=item)
+  return ocp.StandardCheckpointer.restore(checkpointer, ckpt_path, target=item)
 setattr(checkpointer, 'restore', _restore)
 
 def save_checkpoint(state:NNXTrainState, workdir):
