@@ -28,7 +28,7 @@ import utils.sample_util as sample_util
 
 import ncsnv2, models
 from input_pipeline import create_split
-from train_step_sqa import p_train_step, p_solve_diffeq, sample_for_fid
+from train_step_sqa import p_train_step, p_solve_diffeq, sample_for_fid, generate
 
 def constant_lr_fn(base_learning_rate):
   return optax.constant_schedule(base_learning_rate)
@@ -264,27 +264,31 @@ def sample_step(state:NNXTrainState, image_size, config, epoch, see_steps:int=10
   config: is the sampling config
   '''
   log_for_0(f"start generating samples for epoch {epoch}")
-  device_count = jax.local_device_count()
-  init_x = jax.random.normal(jax.random.key(0), (device_count, 64 // device_count, image_size, image_size, 3)) # (8, 8, 32, 32, 3)
-  result = p_solve_diffeq(init_x, state) # (8, 10, 8, 32, 32, 3)
+  # device_count = jax.local_device_count()
+  # init_x = jax.random.normal(jax.random.key(0), (device_count, 64 // device_count, image_size, image_size, 3)) # (8, 8, 32, 32, 3)
+  # result = p_solve_diffeq(init_x, state) # (8, 10, 8, 32, 32, 3)
 
-  from input_pipeline import MEAN_RGB, STDDEV_RGB
-  result = result * (jnp.array(STDDEV_RGB)/255.).reshape(1,1,1,1,1,3) + (jnp.array(MEAN_RGB)/255.).reshape(1,1,1,1,1,3)
+  # from input_pipeline import MEAN_RGB, STDDEV_RGB
+  # result = result * (jnp.array(STDDEV_RGB)/255.).reshape(1,1,1,1,1,3) + (jnp.array(MEAN_RGB)/255.).reshape(1,1,1,1,1,3)
 
-  result = result.transpose(0,2,1,3,4,5)
-  result = result.reshape((result.shape[0] * result.shape[1], *result.shape[2:])) # (num_samples, see_steps, image_size, image_size, 3)
+  # result = result.transpose(0,2,1,3,4,5)
+  # result = result.reshape((result.shape[0] * result.shape[1], *result.shape[2:])) # (num_samples, see_steps, image_size, image_size, 3)
+  dtype = get_dtype(config.half_precision)
+  result = generate(state, dtype, 64, config, image_size)
+  print("result.shape: ", result.shape, flush=True)
 
   if jax.process_index() == 0:
     # flow_path = path.replace('.png','_flow.png')
     # gen_path = path.replace('.png','_gen.png')
-    flow_dir = config.save_dir + "flow/"
+    # flow_dir = config.save_dir + "flow/"
     gen_dir = config.save_dir + "gen/"
-    im1 = save_img(result[:10].reshape(-1,*result.shape[-3:]), flow_dir, im_name=f"{epoch}.png", grid=(10, see_steps))
-    im2 = save_img(result[:,-1], gen_dir, im_name=f"{epoch}.png", grid=(8, 8))
+    # im1 = save_img(result[:10].reshape(-1,*result.shape[-3:]), flow_dir, im_name=f"{epoch}.png", grid=(10, see_steps))
+    # im2 = save_img(result[:,-1], gen_dir, im_name=f"{epoch}.png", grid=(8, 8))
+    im2 = save_img(result, gen_dir, im_name=f"{epoch}.png", grid=(8, 8))
 
     if use_wandb:
       wandb.log({
-        'flow': wandb.Image(im1),
+        # 'flow': wandb.Image(im1),
         'gen': wandb.Image(im2)
       })
 

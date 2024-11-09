@@ -79,3 +79,33 @@ def sample_for_fid(state:NNXTrainState, sample_idx, rng_init, device_bs, image_s
   samples = samples[1] # (device_bs, image_size, image_size, 3)
   # samples = lax.all_gather(samples, axis_name='batch') # TODO: what is the shape?
   return samples
+
+def generate(state:NNXTrainState, dtype, n_sample, config, image_size):
+  """
+  Generate samples from the model
+  config: sampling config
+  we do not use rng
+  """
+
+  # prepare schedule
+  # num_steps = model.n_T
+  num_steps = config.n_T
+  step_indices = jnp.arange(num_steps, dtype=dtype)
+  t_steps = step_indices / num_steps  # t_i = i / N
+  t_steps = jnp.concatenate([t_steps, jnp.ones((1,), dtype=dtype)], axis=0)  # t_N = 1; no need to round_sigma
+
+  # initialize noise
+  x_shape = (n_sample, image_size, image_size, 3)
+  # rng_used, rng = jax.random.split(rng, 2)
+  rng = jax.random.PRNGKey(0)
+  x_0 = jax.random.normal(rng, x_shape, dtype=dtype)
+
+  def step_fn(i, inputs):
+    x_i = inputs
+    t_cur = t_steps[i] * jnp.ones((n_sample,), dtype=dtype)
+    v_i = state.apply_fn(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state, False, x_i, t_cur)
+    outputs = x_i + v_i * (t_steps[i + 1] - t_steps[i])
+    return outputs
+
+  outputs = jax.lax.fori_loop(0, num_steps, step_fn, x_0)
+  return outputs

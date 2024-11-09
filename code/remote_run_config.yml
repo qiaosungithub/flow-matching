@@ -55,6 +55,7 @@ sampling:
     ema: True
     ema_decay: 0.999
     save_dir: null
+    n_T: 40
 fid:
     eval_only: True
     fid_per_epoch: 40

@@ -102,6 +102,7 @@ def get_config():
   sampling.eps = 5e-5
   sampling.T = 5
   sampling.save_dir = '/kmh-nfs-ssd-eu-mount/code/qiao/NCSN/sqa_NCSN/images/'
+  sampling.n_T = 18
 
   ################ WARNING ################
   # DO NOT DIRECTLY MODIFY THIS FILE, IN  #
