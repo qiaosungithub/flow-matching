@@ -80,6 +80,14 @@ def sample_for_fid(state:NNXTrainState, sample_idx, rng_init, device_bs, image_s
   # samples = lax.all_gather(samples, axis_name='batch') # TODO: what is the shape?
   return samples
 
+def fast_generate(state:NNXTrainState, t_cur, inputs, delta_t):
+  x_i = inputs
+  v_i, _, _ = state.apply_fn(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state, False, x_i, t_cur)
+  outputs = x_i + v_i * delta_t
+  return outputs
+
+p_fast_generate = jax.pmap(fast_generate, axis_name='batch')
+
 def generate(state:NNXTrainState, dtype, n_sample, config, image_size):
   """
   Generate samples from the model
@@ -88,6 +96,7 @@ def generate(state:NNXTrainState, dtype, n_sample, config, image_size):
   """
 
   # prepare schedule
+  num_replicas = jax.device_count()
   # num_steps = model.n_T
   num_steps = config.n_T
   step_indices = jnp.arange(num_steps, dtype=dtype)
@@ -99,13 +108,19 @@ def generate(state:NNXTrainState, dtype, n_sample, config, image_size):
   # rng_used, rng = jax.random.split(rng, 2)
   rng = jax.random.PRNGKey(0)
   x_0 = jax.random.normal(rng, x_shape, dtype=dtype)
+  x_0 = x_0.reshape((1, *x_shape)).repeat(num_replicas, axis=0)
+  # shape (32, 64, 32, 32, 3)
 
   def step_fn(i, inputs):
-    x_i = inputs
-    t_cur = t_steps[i] * jnp.ones((n_sample,), dtype=dtype)
-    v_i = state.apply_fn(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state, False, x_i, t_cur)
-    outputs = x_i + v_i * (t_steps[i + 1] - t_steps[i])
+    t_cur = t_steps[i] * jnp.ones((num_replicas, n_sample,), dtype=dtype)
+    delta_t = t_steps[i + 1] - t_steps[i]
+    delta_t = delta_t * jnp.ones((num_replicas, ), dtype=dtype)
+    outputs = p_fast_generate(state, t_cur, inputs, delta_t)
+    # x_i = inputs
+    # v_i = state.apply_fn(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state, False, x_i, t_cur)
+    # outputs = x_i + v_i * (t_steps[i + 1] - t_steps[i])
     return outputs
 
   outputs = jax.lax.fori_loop(0, num_steps, step_fn, x_0)
+  outputs = outputs[0]  # shape (n_sample, image_size, image_size, 3)
   return outputs

@@ -259,7 +259,7 @@ def prepare_batch(batch, rng, training_config):
   return psi_t, t.reshape(b1, b2), target
 
 
-def sample_step(state:NNXTrainState, image_size, config, epoch, see_steps:int=10, use_wandb=False):
+def sample_step(state:NNXTrainState, image_size, config, epoch, see_steps:int=10, use_wandb=False, dtype=None):
   '''
   config: is the sampling config
   '''
@@ -273,7 +273,6 @@ def sample_step(state:NNXTrainState, image_size, config, epoch, see_steps:int=10
 
   # result = result.transpose(0,2,1,3,4,5)
   # result = result.reshape((result.shape[0] * result.shape[1], *result.shape[2:])) # (num_samples, see_steps, image_size, image_size, 3)
-  dtype = get_dtype(config.half_precision)
   result = generate(state, dtype, 64, config, image_size)
   print("result.shape: ", result.shape, flush=True)
 
@@ -611,7 +610,7 @@ def train_and_evaluate(
   # ------------------------------------------------------------------------------------
 
   ########### Training Loop ###########
-  sample_step(state, image_size, sampling_config, epoch_offset, use_wandb=training_config.wandb)
+  sample_step(state, image_size, sampling_config, epoch_offset, use_wandb=training_config.wandb, dtype=dtype)
   log_for_0('Initial compilation, this might take some minutes...')
 
   last_model = None
