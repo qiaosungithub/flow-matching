@@ -40,7 +40,7 @@ training:
     log_per_step: 20
     sigma_min: 0.0
     wandb: True
-    checkpoint_per_epoch: 1000
+    checkpoint_per_epoch: 10000
     eval_per_epoch: 20
     # load_from: /kmh-nfs-us-mount/logs/sqa/sqa_NCSNv2/20241101_030317_2ml2nf_kmh-tpuvm-v2-32-1__b_lr_ep_torchvision_r50_eval/checkpoint_5684
 model:

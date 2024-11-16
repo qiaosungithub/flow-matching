@@ -96,7 +96,7 @@ def generate(state:NNXTrainState, dtype, n_sample, config, image_size):
   """
 
   # prepare schedule
-  num_replicas = jax.device_count()
+  num_replicas = jax.local_device_count()
   # num_steps = model.n_T
   num_steps = config.n_T
   step_indices = jnp.arange(num_steps, dtype=dtype)
@@ -121,6 +121,8 @@ def generate(state:NNXTrainState, dtype, n_sample, config, image_size):
     # outputs = x_i + v_i * (t_steps[i + 1] - t_steps[i])
     return outputs
 
-  outputs = jax.lax.fori_loop(0, num_steps, step_fn, x_0)
-  outputs = outputs[0]  # shape (n_sample, image_size, image_size, 3)
+  # outputs = jax.lax.fori_loop(0, num_steps, step_fn, x_0)
+  for i in range(num_steps):
+    x_0 = step_fn(i, x_0)
+  outputs = x_0[0]  # shape (n_sample, image_size, image_size, 3)
   return outputs
