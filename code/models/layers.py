@@ -6,7 +6,7 @@ import math
 import jax.numpy as jnp
 import jax
 
-from normalization import *
+from models.normalization import *
 
 知道 = ValueError
 

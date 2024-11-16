@@ -26,7 +26,7 @@ from utils.display_utils import show_dict, display_model, count_params
 import utils.fid_util as fid_util
 import utils.sample_util as sample_util
 
-import ncsnv2, models
+import models.models as models
 from input_pipeline import create_split
 from train_step_sqa import p_train_step, p_solve_diffeq, sample_for_fid, generate
 
