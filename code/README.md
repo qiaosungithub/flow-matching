@@ -1,3 +1,3 @@
-# improve NCSN version 2
+# Flow Matching
 
-we only change the noise level and other hyperparameters.
+This code is copied from Kaiming's rectified flow, but we want to change it into nnx for further use.

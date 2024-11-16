@@ -27,6 +27,7 @@ import utils.fid_util as fid_util
 import utils.sample_util as sample_util
 
 import models.models as models
+import models.schedule_flow as schedule_flow
 from input_pipeline import create_split
 from train_step_sqa import p_train_step, p_solve_diffeq, sample_for_fid, generate
 
