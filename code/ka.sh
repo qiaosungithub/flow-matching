@@ -20,7 +20,8 @@ fi
 # export VM_NAME=kmh-tpuvm-v2-32-1
 # export VM_NAME=kmh-tpuvm-v2-32-2
 # export VM_NAME=kmh-tpuvm-v2-32-3
-export VM_NAME=kmh-tpuvm-v2-32-5
+export VM_NAME=kmh-tpuvm-v2-32-4
+# export VM_NAME=kmh-tpuvm-v2-32-5
 # export VM_NAME=kmh-tpuvm-v2-32-6
 # export VM_NAME=kmh-tpuvm-v2-32-7
 # export VM_NAME=kmh-tpuvm-v3-32-1
@@ -32,7 +33,11 @@ export VM_NAME=kmh-tpuvm-v2-32-5
 if [[ $VM_NAME == *"v3"* ]]; then
     export ZONE=europe-west4-a
 else
-    export ZONE=us-central1-a
+    if [[ $VM_NAME == *"v2-32-4"* ]]; then
+        export ZONE=europe-west4-a
+    else
+        export ZONE=us-central1-a
+    fi
 fi
 
 # DATA_ROOT: the disk mounted

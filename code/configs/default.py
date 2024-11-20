@@ -43,44 +43,43 @@ def get_config():
 
   # Model
   config.model = model = ml_collections.ConfigDict()
-  model.name = 'NCSNv2'
-  model.half_precision = False
-  model.spec_norm = False
-  model.normalization = "InstanceNorm++"
-  model.activation = "elu"
-  model.ngf = 64
+  model.image_size = 32
+  model.out_channels = 1
+
+  model.base_width = 64
+  model.n_T = 18  # inference stepss
+  model.dropout = 0.0
+
+  model.use_aug_label = False
+
+  model.net_type = 'ncsnpp'
+
+  config.aug = aug = ml_collections.ConfigDict()
+  aug.use_edm_aug = False
+
+  # Consistency training
+  config.ct = ct = ml_collections.ConfigDict()
+  ct.start_ema = 0.9
+  ct.start_scales = 2
+  ct.end_scales = 150
 
   # Dataset
   config.dataset = dataset = ml_collections.ConfigDict()
   dataset.name = 'MNIST'
-  dataset.image_size = 28
-  dataset.channels = 1
   dataset.root = '/kmh-nfs-ssd-eu-mount/code/qiao/data/MNIST/'
   dataset.num_workers = 4
   dataset.prefetch_factor = 2
   dataset.pin_memory = False
   dataset.cache = True
   dataset.fake_data = False
+  dataset.out_channels = 0 # from model
+  dataset.steps_per_epoch = -1
 
   # Training
   config.training = training = ml_collections.ConfigDict()
-  training.learning_rate = 0.1
-  # config.momentum = 0.9
-  training.batch_size = 128
-  training.eval_batch_size = 500
-  training.shuffle_buffer_size = 16 * 128
-  training.prefetch = 10
-  training.weight_decay = 0.0 
-
-  training.num_epochs = 100
-  training.wandb = True
-  training.log_per_step = 100
-  training.log_per_epoch = -1
-  training.eval_per_epoch = 1
   training.checkpoint_per_epoch = 20
   training.checkpoint_max_keep = 2
   training.steps_per_eval = -1
-  training.seed = 3407  # init random seed
   training.load_from = None
 
   # Eval fid
@@ -88,9 +87,43 @@ def get_config():
   fid.num_samples = 50000
   fid.fid_per_epoch = 500
   fid.on_use = True
-  fid.eval_only = True
+  fid.eval_only = False
   fid.device_batch_size = 128
   fid.cache_ref = '/kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz'
+
+  # Training
+  config.optimizer = 'sgd'
+
+  config.learning_rate = 0.1
+  config.lr_schedule = 'cosine'  # 'cosine'/'cos', 'const'
+
+  config.weight_decay = 0.0001  
+  config.adam_b1 = 0.9
+  config.adam_b2 = 0.95
+
+  config.warmup_epochs = 5.
+  config.momentum = 0.9
+  config.batch_size = 1024
+  config.shuffle_buffer_size = 16 * 1024
+  config.prefetch = 10
+
+  config.num_epochs = 100
+  config.log_per_step = 100
+  config.log_per_epoch = -1
+  config.eval_per_epoch = 1000
+  config.visualize_per_epoch = 1
+  config.checkpoint_per_epoch = 200
+
+  config.steps_per_eval = -1
+
+  config.restore = ''
+  config.pretrain = ''
+
+  config.half_precision = False
+
+  config.seed = 0  # init random seed
+
+  config.wandb = True
 
   # sampling
   config.sampling = sampling = ml_collections.ConfigDict()

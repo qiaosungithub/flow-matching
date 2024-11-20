@@ -1,7 +1,24 @@
-# Copied from Kaiming He's resnet_jax repository
+# Copyright 2024 The Flax Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
+from functools import partial
+import time
 from typing import Any
 
+from absl import logging
+from flax import jax_utils as ju
+from flax.training import common_utils
 from flax.training.train_state import TrainState as FlaxTrainState
 from flax.training import checkpoints
 import orbax.checkpoint as ocp
@@ -13,12 +30,16 @@ import optax
 import torch
 import numpy as np
 import flax.nnx as nn
-from functools import partial
 import tensorflow as tf
 import tensorflow_datasets as tfds
-
-from flax import jax_utils as ju
+from PIL import Image
 from torch.utils.data import DataLoader
+
+from utils.info_util import print_params
+from utils.vis_util import make_grid_visualization, visualize_cifar_batch
+from utils.ckpt_util import restore_checkpoint, restore_pretrained, save_checkpoint
+from utils.frozen_util import extract_trainable_parameters, merge_params
+# from utils.trainstate_util import TrainState
 from utils.logging_util import log_for_0, Timer
 from utils.metric_utils import tang_reduce, MyMetrics, Avger
 from utils.utils import save_img
@@ -28,8 +49,34 @@ import utils.sample_util as sample_util
 
 import models.models as models
 import models.schedule_flow as schedule_flow
+import models.models_ddpm as models_ddpm
+from models.models_ddpm import generate, edm_ema_scales_schedules
 from input_pipeline import create_split
-from train_step_sqa import p_train_step, p_solve_diffeq, sample_for_fid, generate
+# from train_step_sqa import p_train_step, p_solve_diffeq, sample_for_fid, generate
+
+NUM_CLASSES = 10
+
+def create_model(*, model_cls, half_precision, config, **kwargs):
+  platform = jax.local_devices()[0].platform
+  if half_precision:
+    if platform == 'tpu':
+      model_dtype = jnp.bfloat16
+    else:
+      model_dtype = jnp.float16
+  else:
+    model_dtype = jnp.float32
+  return model_cls(
+    dtype=model_dtype, 
+    ngf=config.model.ngf, 
+    n_noise_levels=config.sampling.n_noise_levels,
+    config=config,
+    **kwargs)
+
+def compute_metrics(dict_losses):
+  metrics = dict_losses.copy()
+  metrics = lax.all_gather(metrics, axis_name='batch')
+  metrics = jax.tree_map(lambda x: x.flatten(), metrics)  # (batch_size,)
+  return metrics
 
 def constant_lr_fn(base_learning_rate):
   return optax.constant_schedule(base_learning_rate)
@@ -44,17 +91,32 @@ def poly_decay_lr_fn(base_learning_rate, warmup_steps, total_steps):
   return optax.join_schedules([warmup_fn, decay_fn], boundaries=[warmup_steps])
 
 def create_learning_rate_fn(
-  train_config: ml_collections.ConfigDict,
+  config: ml_collections.ConfigDict,
   base_learning_rate: float,
   steps_per_epoch: int,
 ):
   """Create learning rate schedule."""
-  if train_config.scheduler == 'poly':
-    return poly_decay_lr_fn(base_learning_rate, train_config.warmup_steps, train_config.num_epochs * steps_per_epoch)
-  elif train_config.scheduler == 'constant':
-    return constant_lr_fn(base_learning_rate)
+  warmup_fn = optax.linear_schedule(
+    init_value=0.0,
+    end_value=base_learning_rate,
+    transition_steps=config.warmup_epochs * steps_per_epoch,
+  )
+  if config.lr_schedule == 'poly':
+    sched_fn = poly_decay_lr_fn(base_learning_rate, config.warmup_steps, config.num_epochs * steps_per_epoch)
+  elif config.lr_schedule in ['constant', 'const']:
+    sched_fn = constant_lr_fn(base_learning_rate)
+  elif config.lr_schedule in ['cosine', 'cos']:
+    cosine_epochs = max(config.num_epochs - config.warmup_epochs, 1)
+    sched_fn = optax.cosine_decay_schedule(
+      init_value=base_learning_rate, decay_steps=cosine_epochs * steps_per_epoch
+    )
   else:
-    raise ValueError('Unknown learning rate scheduler {}'.format(train_config.scheduler))
+    raise ValueError('Unknown learning rate scheduler {}'.format(config.lr_schedule))
+  schedule_fn = optax.join_schedules(
+      schedules=[warmup_fn, sched_fn],
+      boundaries=[config.warmup_epochs * steps_per_epoch],
+  )
+  return schedule_fn
 
 class NNXTrainState(FlaxTrainState):
   batch_stats: Any
@@ -62,6 +124,114 @@ class NNXTrainState(FlaxTrainState):
   graphdef: Any
   useless_variable_state: Any
   # NOTE: is_training can't be a attr, since it can't be replicated
+
+def train_step(state: NNXTrainState, batch, rng_init, learning_rate_fn, ema_scales_fn, config):
+  """
+  Perform a single training step.
+  ---
+  batch: a dict, with image, label, augment_label
+  """
+
+  # ResNet has no dropout; but maintain rng_dropout for future usage
+  # TODO: rngs here?
+  rng_step = random.fold_in(rng_init, state.step)
+  rng_device = random.fold_in(rng_step, lax.axis_index(axis_name='batch'))
+  rng_gen, rng_dropout = random.split(rng_device)
+
+  # trainable_params, frozen_params = get_trainable(state.params, config)
+
+  ema_decay, scales = ema_scales_fn(state.step)
+
+  def loss_fn(params_to_train):
+    """loss function used for training."""
+    
+    # # merge
+    # params = merge_params(params_to_train, frozen_params)
+
+    outputs, new_model_state = state.apply_fn(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'], batch['label'], batch['augment_label'])
+    loss, new_batch_stats, new_rng_states, dict_losses, images = outputs
+
+    return loss, (new_batch_stats, new_rng_states, dict_losses, images)
+
+  step = state.step
+  dynamic_scale = None
+  lr = learning_rate_fn(step)
+
+  if dynamic_scale:
+    raise NotImplementedError
+  else:
+    grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
+    # aux, grads = grad_fn(state.params)
+    aux, grads = grad_fn(state.params)
+    # Re-use same axis_name as in the call to `pmap(...train_step...)` below.
+    grads = lax.pmean(grads, axis_name='batch')
+
+  # for simplicity, we don't all gather images
+  # loss = aux[0]
+  new_batch_stats, new_rng_states, dict_losses, images = aux[1]
+  metrics = compute_metrics(dict_losses)
+  metrics['lr'] = lr
+
+  new_state = state.apply_gradients(
+    grads=grads, batch_stats=new_batch_stats, rng_states=new_rng_states
+  )
+
+  # -------------------------------------------------------
+  # # handle ema:
+  # params = {
+  #   'net': new_state.params['net'],
+  #   'net_ema': jax.tree_map(
+  #       lambda old, new: old * ema_decay + new * (1.0 - ema_decay),
+  #       new_state.params['net_ema'],
+  #       new_state.params['net'],)
+  # }
+  # new_state = new_state.replace(params=params)
+  # TODO: do ema in another place, modify metrics??
+  metrics['ema_decay'] = ema_decay
+  metrics['scales'] = scales
+  # -------------------------------------------------------
+
+  # -------------------------------------------------------
+  # sanity
+  # ema_outputs, _ = state.apply_fn(
+  #     {'params': {'net': new_state.params['net_ema'],
+  #                 'net_ema': new_state.params['net_ema'],},
+  #      'batch_stats': state.batch_stats},
+  #     batch['image'],
+  #     batch['label'],
+  #     mutable=['batch_stats'],
+  #     rngs=dict(gen=rng_gen),
+  # )
+  # _, ema_dict_losses, _ = ema_outputs
+  # ema_metrics = compute_metrics(ema_dict_losses)
+
+  # metrics['ema_loss_train'] = ema_metrics['loss_train']
+  # metrics['delta_loss_train'] = metrics['loss_train'] - ema_metrics['loss_train']
+  # -------------------------------------------------------
+
+  return new_state, metrics, images
+
+# def get_trainable(params, config):
+#   # seperate the ema network
+#   trainable_prefixes = ['net/',]
+#   trainable_params, frozen_params = extract_trainable_parameters(params, trainable_prefixes)
+
+#   # sanity check
+#   assert list(frozen_params.keys()) == ['net_ema']
+#   assert jax.tree_structure(trainable_params['net']) == jax.tree_structure(frozen_params['net_ema'])
+#   return trainable_params, frozen_params
+
+def sample_step(params, sample_idx, model, rng_init, device_batch_size):
+  """
+  sample_idx: each random sampled image corrresponds to a seed
+  """
+  rng_sample = random.fold_in(rng_init, sample_idx)  # fold in sample_idx
+  # TODO: rewrite generate
+  images = generate(params, model, rng_sample, n_sample=device_batch_size)
+
+  images_all = lax.all_gather(images, axis_name='batch')  # each device has a copy  
+  images_all = images_all.reshape(-1, *images_all.shape[2:])
+  return images_all
 
 def global_seed(seed):
   torch.manual_seed(seed)
@@ -80,74 +250,64 @@ def get_dtype(half_precision):
     model_dtype = jnp.float32
   return model_dtype
 
-def create_model(*, model_cls, half_precision, config, **kwargs):
-  platform = jax.local_devices()[0].platform
-  if half_precision:
-    if platform == 'tpu':
-      model_dtype = jnp.bfloat16
-    else:
-      model_dtype = jnp.float16
-  else:
-    model_dtype = jnp.float32
-  return model_cls(
-    dtype=model_dtype, 
-    ngf=config.model.ngf, 
-    n_noise_levels=config.sampling.n_noise_levels,
-    config=config,
-    **kwargs)
 
-def restore_checkpoint(model_init_fn, state, workdir):
-  abstract_model = nn.eval_shape(lambda: model_init_fn(rngs=nn.Rngs(0)))
-  rng_states = state.rng_states
-  abs_state = nn.state(abstract_model)
-  params, batch_stats, others = abs_state.split(nn.Param, nn.BatchStat, ...)
-  useful_abs_state = nn.State.merge(params, batch_stats)
-  fake_state = {
-    'mo_xing': useful_abs_state,
-    'you_hua_qi': state.opt_state,
-    'step': 0
-  }
-  loaded_state = checkpoints.restore_checkpoint(workdir, target=fake_state,orbax_checkpointer=checkpointer)
-  merged_params = loaded_state['mo_xing']
-  opt_state = loaded_state['you_hua_qi']
-  step = loaded_state['step']
-  params, batch_stats, _ = merged_params.split(nn.Param, nn.BatchStat, nn.VariableState)
-  return state.replace(
-    params=params,
-    rng_states=rng_states,
-    batch_stats=batch_stats,
-    opt_state=opt_state,
-    step=step
-  )
+# def restore_checkpoint(model_init_fn, state, workdir):
+#   abstract_model = nn.eval_shape(lambda: model_init_fn(rngs=nn.Rngs(0)))
+#   rng_states = state.rng_states
+#   abs_state = nn.state(abstract_model)
+#   params, batch_stats, others = abs_state.split(nn.Param, nn.BatchStat, ...)
+#   useful_abs_state = nn.State.merge(params, batch_stats)
+#   fake_state = {
+#     'mo_xing': useful_abs_state,
+#     'you_hua_qi': state.opt_state,
+#     'step': 0
+#   }
+#   loaded_state = checkpoints.restore_checkpoint(workdir, target=fake_state,orbax_checkpointer=checkpointer)
+#   merged_params = loaded_state['mo_xing']
+#   opt_state = loaded_state['you_hua_qi']
+#   step = loaded_state['step']
+#   params, batch_stats, _ = merged_params.split(nn.Param, nn.BatchStat, nn.VariableState)
+#   return state.replace(
+#     params=params,
+#     rng_states=rng_states,
+#     batch_stats=batch_stats,
+#     opt_state=opt_state,
+#     step=step
+#   )
 
 checkpointer = ocp.StandardCheckpointer()
 def _restore(ckpt_path, item, **restore_kwargs):
   return ocp.StandardCheckpointer.restore(checkpointer, ckpt_path, target=item)
 setattr(checkpointer, 'restore', _restore)
 
-# def save_checkpoint(state, workdir):
-#   state = jax.device_get(jax.tree_util.tree_map(lambda x: x[0], state))
-#   step = int(state.step)
-#   if jax.process_index() == 0:
-#     log_for_0('Saving checkpoint step %d.', step)
-#   checkpoints.save_checkpoint_multiprocess(workdir, state, step, keep=2)
-
-def save_checkpoint(state:NNXTrainState, workdir):
+def save_checkpoint(state, workdir):
+  """
+  Kaiming's linen version
+  TODO: whether it works or not?
+  """
   state = jax.device_get(jax.tree_util.tree_map(lambda x: x[0], state))
   step = int(state.step)
-  log_for_0('Saving checkpoint to {}, with step {}'.format(workdir, step))
-  merged_params: nn.State = state.params
-  # 不能把rng merge进去！
-  # if len(state.rng_states) > 0:
-  #     merged_params = nn.State.merge(merged_params, state.rng_states)
-  if len(state.batch_stats) > 0:
-    merged_params = nn.State.merge(merged_params, state.batch_stats)
-  checkpoints.save_checkpoint_multiprocess(workdir, {
-    'mo_xing': merged_params,
-    'you_hua_qi': state.opt_state,
-    'step': step
-  }, step, keep=2, orbax_checkpointer=checkpointer)
-  # NOTE: this is tang, since "keep=2" means keeping the most recent 3 checkpoints.
+  if jax.process_index() == 0:
+    log_for_0('Saving checkpoint step %d.', step)
+  checkpoints.save_checkpoint_multiprocess(workdir, state, step, keep=2)
+
+# TODO: zhh's version
+# def save_checkpoint(state:NNXTrainState, workdir):
+#   state = jax.device_get(jax.tree_util.tree_map(lambda x: x[0], state))
+#   step = int(state.step)
+#   log_for_0('Saving checkpoint to {}, with step {}'.format(workdir, step))
+#   merged_params: nn.State = state.params
+#   # 不能把rng merge进去！
+#   # if len(state.rng_states) > 0:
+#   #     merged_params = nn.State.merge(merged_params, state.rng_states)
+#   if len(state.batch_stats) > 0:
+#     merged_params = nn.State.merge(merged_params, state.batch_stats)
+#   checkpoints.save_checkpoint_multiprocess(workdir, {
+#     'mo_xing': merged_params,
+#     'you_hua_qi': state.opt_state,
+#     'step': step
+#   }, step, keep=2, orbax_checkpointer=checkpointer)
+#   # NOTE: this is tang, since "keep=2" means keeping the most recent 3 checkpoints.
 
 # pmean only works inside pmap because it needs an axis name.
 # This function will average the inputs across all devices.
@@ -185,7 +345,7 @@ def sync_batch_stats(state: NNXTrainState):
 #   return modified_tree
 
 def create_train_state(
-  config: ml_collections.ConfigDict, model, learning_rate_fn
+  config: ml_collections.ConfigDict, model, image_size, learning_rate_fn
 ):
   """
   Create initial training state, including the model and optimizer.
@@ -194,49 +354,61 @@ def create_train_state(
   # print("here we are in the function 'create_train_state' in train.py; ready to define optimizer")
   graphdef, params, batch_stats, rng_states, useless_variable_states = nn.split(model, nn.Param, nn.BatchStat, nn.RngState, nn.VariableState)
 
-  def apply_fn(graphdef2, params2, rng_states2, batch_stats2, useless_, is_training, x, t):
+  # print_params(params) # TODO: can we print the params here?
+
+  def apply_fn(graphdef2, params2, rng_states2, batch_stats2, useless_, is_training, images, labels, augment_labels):
+    """
+    input:
+      images
+      labels
+      augment_labels: we condition our network on the augment_labels
+    ---
+    output:
+      loss_train
+      new_batch_stats
+      new_rng_states
+      dict_losses: TODO: what is this?
+      images: for debug
+    """
     merged_model = nn.merge(graphdef2, params2, rng_states2, batch_stats2, useless_)
     if is_training:
       merged_model.train()
     else:
       merged_model.eval()
     del params2, rng_states2, batch_stats2, useless_
-    out = merged_model(x, t)
+    loss_train, dict_losses, images = merged_model.forward(images, labels, augment_labels) # TODO: can we call forward here?
     new_batch_stats, new_rng_states, _ = nn.state(merged_model, nn.BatchStat, nn.RngState, ...)
-    return out, new_batch_stats, new_rng_states
+    return loss_train, new_batch_stats, new_rng_states, dict_losses, images
 
   # here is the optimizer
 
-  # if config.optimizer == 'sgd':
-  #   if config.weight_decay != 0.0:
-  #     print("Warning from sqa: weight decay is not supported in SGD")
-  #   if config.grad_norm_clip != "None":
-  #     print("Warning from sqa: grad norm clipping is not supported in SGD")
-  #   tx = optax.sgd(
-  #     learning_rate=learning_rate_fn,
-  #     momentum=config.momentum,
-  #     nesterov=True,
-  #   )
-  # elif config.optimizer == 'adamw':
-  #   grad_norm_clip = None if config.grad_norm_clip == "None" else config.grad_norm_clip
-  #   tx = optax.adamw(
-  #     learning_rate=learning_rate_fn,
-  #     b1=0.9,
-  #     b2=0.999,
-  #     eps=1e-8,
-  #     weight_decay=config.weight_decay,
-  #     # grad_norm_clip=grad_norm_clip, # None if no clipping
-  #   )
-  # else:
-  #   raise ValueError(f'Unknown optimizer: {config.optimizer}, choose from "sgd" or "adamw"')
-  # use adamw optimizer
-  tx = optax.adamw(
-    learning_rate=learning_rate_fn,
-    b1=0.9,
-    b2=0.95,
-    eps=1e-8,
-    weight_decay=config.weight_decay,
-  )
+  if config.optimizer == 'sgd':
+    log_for_0('Using SGD')
+    tx = optax.sgd(
+      learning_rate=learning_rate_fn,
+      momentum=config.momentum,
+      nesterov=True,
+    )
+  elif config.optimizer == 'adamw':
+    log_for_0(f'Using AdamW with wd {config.weight_decay}')
+    tx = optax.adamw(
+      learning_rate=learning_rate_fn,
+      b1=config.adam_b1,
+      b2=config.adam_b2,
+      weight_decay=config.weight_decay,
+      # mask=mask_fn,  # TODO{km}
+    )
+  elif config.optimizer == 'radam':
+    log_for_0(f'Using RAdam with wd {config.weight_decay}')
+    assert config.weight_decay == 0.0
+    tx = optax.radam(
+      learning_rate=learning_rate_fn,
+      b1=config.adam_b1,
+      b2=config.adam_b2,
+    )
+  else:
+    raise ValueError(f'Unknown optimizer: {config.optimizer}')
+  
   state = NNXTrainState.create(
     graphdef=graphdef,
     apply_fn=apply_fn,
@@ -248,10 +420,10 @@ def create_train_state(
   )
   return state
 
-def prepare_batch(batch, rng, training_config):
+def prepare_batch(batch, rng, config):
   # NOTE: there are two batch sizes: image shape is [b1, b2, 32, 32, 3].
   b1, b2 = batch["image"].shape[:2]
-  sigma_m = training_config.sigma_min
+  sigma_m = config.sigma_min
   x = batch["image"]
   eps = jax.random.normal(rng.train_eps(), x.shape)
   t = jax.random.uniform(rng.train_eps(), (b1, b2, 1, 1, 1))
@@ -259,40 +431,85 @@ def prepare_batch(batch, rng, training_config):
   target = x - (1 - sigma_m) * eps
   return psi_t, t.reshape(b1, b2), target
 
+def prepare_batch_data(batch, config, batch_size=None):
+  """Reformat a input batch from TF Dataloader.
+  
+  Args:
+    batch: dict
+      image: shape (b1, b2, h, w, c)
+      label: shape (b1, b2) TODO: check this
+    batch_size = expected batch_size of this node, for eval's drop_last=False only
+  """
+  image, label = batch["image"], batch["label"]
 
-def sample_step(state:NNXTrainState, image_size, config, epoch, see_steps:int=10, use_wandb=False, dtype=None):
-  '''
-  config: is the sampling config
-  '''
-  log_for_0(f"start generating samples for epoch {epoch}")
-  # device_count = jax.local_device_count()
-  # init_x = jax.random.normal(jax.random.key(0), (device_count, 64 // device_count, image_size, image_size, 3)) # (8, 8, 32, 32, 3)
-  # result = p_solve_diffeq(init_x, state) # (8, 10, 8, 32, 32, 3)
+  if config.aug.use_edm_aug:
+    raise NotImplementedError
+    augment_pipe = AugmentPipe(p=0.12, xflip=1e8, yflip=1, scale=1, rotate_frac=1, aniso=1, translate_frac=1)
+    image, augment_label = augment_pipe(image)
+  else:
+    augment_label = None
 
-  # from input_pipeline import MEAN_RGB, STDDEV_RGB
-  # result = result * (jnp.array(STDDEV_RGB)/255.).reshape(1,1,1,1,1,3) + (jnp.array(MEAN_RGB)/255.).reshape(1,1,1,1,1,3)
+  # pad the batch if smaller than batch_size
+  if batch_size is not None and batch_size > image.shape[0]:
+    raise ValueError("not supported")
+    image = np.cat([image, np.zeros((batch_size - image.shape[0],) + image.shape[1:], dtype=image.dtype)], axis=0)
+    label = np.cat([label, -np.ones((batch_size - label.shape[0],), dtype=label.dtype)], axis=0)
+    assert augment_label is None  # don't support padding augment_label
 
-  # result = result.transpose(0,2,1,3,4,5)
-  # result = result.reshape((result.shape[0] * result.shape[1], *result.shape[2:])) # (num_samples, see_steps, image_size, image_size, 3)
-  result = generate(state, dtype, 64, config, image_size)
-  print("result.shape: ", result.shape, flush=True)
+  # reshape (host_batch_size, 3, height, width) to
+  # (local_devices, device_batch_size, height, width, 3)
+  local_device_count = jax.local_device_count()
+  assert image.shape[0] == local_device_count
 
-  if jax.process_index() == 0:
-    # flow_path = path.replace('.png','_flow.png')
-    # gen_path = path.replace('.png','_gen.png')
-    # flow_dir = config.save_dir + "flow/"
-    gen_dir = config.save_dir + "gen/"
-    # im1 = save_img(result[:10].reshape(-1,*result.shape[-3:]), flow_dir, im_name=f"{epoch}.png", grid=(10, see_steps))
-    # im2 = save_img(result[:,-1], gen_dir, im_name=f"{epoch}.png", grid=(8, 8))
-    im2 = save_img(result, gen_dir, im_name=f"{epoch}.png", grid=(8, 8))
+  if config.model.use_aug_label:
+    assert config.aug.use_edm_aug
+    augment_label = augment_label.reshape((local_device_count, -1) + augment_label.shape[1:])
+    augment_label = augment_label.numpy()
+  else:
+    augment_label = None
 
-    if use_wandb:
-      wandb.log({
-        # 'flow': wandb.Image(im1),
-        'gen': wandb.Image(im2)
-      })
+  return_dict = {
+    'image': image,
+    'label': label,
+    'augment_label': augment_label,
+  }
 
-  log_for_0(f"saved samples for epoch {epoch}")
+  return return_dict
+
+
+# def sample_step(state:NNXTrainState, image_size, config, epoch, see_steps:int=10, use_wandb=False, dtype=None):
+#   '''
+#   config: is the sampling config
+#   '''
+#   log_for_0(f"start generating samples for epoch {epoch}")
+#   # device_count = jax.local_device_count()
+#   # init_x = jax.random.normal(jax.random.key(0), (device_count, 64 // device_count, image_size, image_size, 3)) # (8, 8, 32, 32, 3)
+#   # result = p_solve_diffeq(init_x, state) # (8, 10, 8, 32, 32, 3)
+
+#   # from input_pipeline import MEAN_RGB, STDDEV_RGB
+#   # result = result * (jnp.array(STDDEV_RGB)/255.).reshape(1,1,1,1,1,3) + (jnp.array(MEAN_RGB)/255.).reshape(1,1,1,1,1,3)
+
+#   # result = result.transpose(0,2,1,3,4,5)
+#   # result = result.reshape((result.shape[0] * result.shape[1], *result.shape[2:])) # (num_samples, see_steps, image_size, image_size, 3)
+#   result = generate(state, dtype, 64, config, image_size)
+#   print("result.shape: ", result.shape, flush=True)
+
+#   if jax.process_index() == 0:
+#     # flow_path = path.replace('.png','_flow.png')
+#     # gen_path = path.replace('.png','_gen.png')
+#     # flow_dir = config.save_dir + "flow/"
+#     gen_dir = config.save_dir + "gen/"
+#     # im1 = save_img(result[:10].reshape(-1,*result.shape[-3:]), flow_dir, im_name=f"{epoch}.png", grid=(10, see_steps))
+#     # im2 = save_img(result[:,-1], gen_dir, im_name=f"{epoch}.png", grid=(8, 8))
+#     im2 = save_img(result, gen_dir, im_name=f"{epoch}.png", grid=(8, 8))
+
+#     if use_wandb:
+#       wandb.log({
+#         # 'flow': wandb.Image(im1),
+#         'gen': wandb.Image(im2)
+#       })
+
+#   log_for_0(f"saved samples for epoch {epoch}")
 
 # def denoising_step(state:NNXTrainState, ground_truth, config, epoch, verbose=False, see_steps:int=10, use_wandb=False):
 #   '''
@@ -397,55 +614,55 @@ def sample_step(state:NNXTrainState, image_size, config, epoch, see_steps:int=10
 
 #   return mse
 
-########### Checkpointer ###########
-checkpointer = ocp.StandardCheckpointer()
-def _restore(ckpt_path, item, **restore_kwargs):
-  return ocp.StandardCheckpointer.restore(checkpointer, ckpt_path, target=item)
-setattr(checkpointer, 'restore', _restore)
+# ########### Checkpointer ###########
+# checkpointer = ocp.StandardCheckpointer()
+# def _restore(ckpt_path, item, **restore_kwargs):
+#   return ocp.StandardCheckpointer.restore(checkpointer, ckpt_path, target=item)
+# setattr(checkpointer, 'restore', _restore)
 
-def save_checkpoint(state:NNXTrainState, workdir):
-  # TODO: this function currently emits lots of "background messages". Try to suppress them
-  state = jax.device_get(jax.tree_util.tree_map(lambda x: x[0], state))
-  step = int(state.step)
-  log_for_0('Saving checkpoint to {}, with step {}'.format(workdir, step))
-  merged_params: nn.State = state.params
-  # 不能把rng merge进去！
-  # if len(state.rng_states) > 0:
-  #     merged_params = nn.State.merge(merged_params, state.rng_states)
-  if len(state.batch_stats) > 0:
-    merged_params = nn.State.merge(merged_params, state.batch_stats)
-  checkpoints.save_checkpoint_multiprocess(workdir, {
-    'mo_xing': merged_params,
-    'you_hua_qi': state.opt_state,
-    'step': step
-  }, step, keep=2, orbax_checkpointer=checkpointer)
-  # TODO: FATAL: this "keep" param seems not being used. This must be fixed ASAP!
+# def save_checkpoint(state:NNXTrainState, workdir):
+#   # TODO: this function currently emits lots of "background messages". Try to suppress them
+#   state = jax.device_get(jax.tree_util.tree_map(lambda x: x[0], state))
+#   step = int(state.step)
+#   log_for_0('Saving checkpoint to {}, with step {}'.format(workdir, step))
+#   merged_params: nn.State = state.params
+#   # 不能把rng merge进去！
+#   # if len(state.rng_states) > 0:
+#   #     merged_params = nn.State.merge(merged_params, state.rng_states)
+#   if len(state.batch_stats) > 0:
+#     merged_params = nn.State.merge(merged_params, state.batch_stats)
+#   checkpoints.save_checkpoint_multiprocess(workdir, {
+#     'mo_xing': merged_params,
+#     'you_hua_qi': state.opt_state,
+#     'step': step
+#   }, step, keep=2, orbax_checkpointer=checkpointer)
+#   # TODO: FATAL: this "keep" param seems not being used. This must be fixed ASAP!
 
-def restore_checkpoint(model_init_fn, state, workdir):
-  abstract_model = nn.eval_shape(lambda: model_init_fn(rngs=nn.Rngs(0)))
-  rng_states = state.rng_states
-  abs_state = nn.state(abstract_model)
-  _, useful_abs_state = abs_state.split(nn.RngState, ...)
-  fake_state = {
-      'mo_xing': useful_abs_state,
-      'you_hua_qi': state.opt_state,
-      'step': 0
-  }
-  loaded_state = checkpoints.restore_checkpoint(workdir, target=fake_state,orbax_checkpointer=checkpointer)
-  merged_params = loaded_state['mo_xing']
-  opt_state = loaded_state['you_hua_qi']
-  step = loaded_state['step']
-  params, batch_stats = merged_params.split(nn.Param, nn.BatchStat, nn.VariableState)
-  return state.replace(
-      params=params,
-      rng_states=rng_states,
-      batch_stats=batch_stats,
-      opt_state=opt_state,
-      step=step
-  )
+# def restore_checkpoint(model_init_fn, state, workdir):
+#   abstract_model = nn.eval_shape(lambda: model_init_fn(rngs=nn.Rngs(0)))
+#   rng_states = state.rng_states
+#   abs_state = nn.state(abstract_model)
+#   _, useful_abs_state = abs_state.split(nn.RngState, ...)
+#   fake_state = {
+#       'mo_xing': useful_abs_state,
+#       'you_hua_qi': state.opt_state,
+#       'step': 0
+#   }
+#   loaded_state = checkpoints.restore_checkpoint(workdir, target=fake_state,orbax_checkpointer=checkpointer)
+#   merged_params = loaded_state['mo_xing']
+#   opt_state = loaded_state['you_hua_qi']
+#   step = loaded_state['step']
+#   params, batch_stats = merged_params.split(nn.Param, nn.BatchStat, nn.VariableState)
+#   return state.replace(
+#       params=params,
+#       rng_states=rng_states,
+#       batch_stats=batch_stats,
+#       opt_state=opt_state,
+#       step=step
+#   )
 
 def _update_model_avg(model_avg, state_params, ema_decay):
-  return jax.tree_util.tree_map(lambda x, y: ema_decay * x + (1 - ema_decay) * y, model_avg, state_params)
+  return jax.tree_util.tree_map(lambda x, y: ema_decay * x + (1.0 - ema_decay) * y, model_avg, state_params)
   # return model_avg
 
 def train_and_evaluate(
@@ -463,36 +680,35 @@ def train_and_evaluate(
 
   ########### Initialize ###########
   rank = index = jax.process_index()
-  training_config = config.training
+  config.dataset.out_channels = config.model.out_channels
   model_config = config.model 
   dataset_config = config.dataset
   sampling_config = config.sampling
   fid_config = config.fid
-  if rank == 0 and training_config.wandb:
+  if rank == 0 and config.wandb:
     wandb.init(project='sqa_FM', dir=workdir)
     wandb.config.update(config.to_dict())
-  global_seed(training_config.seed)
+  global_seed(config.seed)
 
-  image_size = dataset_config.image_size
-  # assert image_size == 28
+  image_size = model_config.image_size
 
-  log_for_0('config.batch_size: {}'.format(training_config.batch_size))
+  log_for_0('config.batch_size: {}'.format(config.batch_size))
 
-  # print("save dir: ", sampling_config.save_dir)
-  if sampling_config.save_dir is None:
-    sampling_config.save_dir = workdir + "/images/"
-  log_for_0(f"save directory: {sampling_config.save_dir}")
+  # # print("save dir: ", sampling_config.save_dir)
+  # if sampling_config.save_dir is None:
+  #   sampling_config.save_dir = workdir + "/images/"
+  # log_for_0(f"save directory: {sampling_config.save_dir}")
 
-  if fid_config.on_use:
-    p_sample_for_fid = jax.pmap(
-      partial(sample_for_fid, image_size=image_size, rng_init=random.PRNGKey(0), device_bs=fid_config.device_batch_size),
-      axis_name='batch'
-    )
+  # if fid_config.on_use:
+  #   p_sample_for_fid = jax.pmap(
+  #     partial(sample_for_fid, image_size=image_size, rng_init=random.PRNGKey(0), device_bs=fid_config.device_batch_size),
+  #     axis_name='batch'
+  #   )
 
   ########### Create DataLoaders ###########
-  # if training_config.batch_size % jax.process_count() > 0:
+  # if config.batch_size % jax.process_count() > 0:
   #   raise ValueError('Batch size must be divisible by the number of processes')
-  # local_batch_size = training_config.batch_size // jax.process_count()
+  # local_batch_size = config.batch_size // jax.process_count()
   # log_for_0('local_batch_size: {}'.format(local_batch_size))
   # log_for_0('jax.local_device_count: {}'.format(jax.local_device_count()))
 
@@ -502,7 +718,7 @@ def train_and_evaluate(
   # train_set = train_set_(root=dataset_config.root)
   # val_set = val_set_(root=dataset_config.root)
 
-  # train_loader, train_steps = create_split(
+  # train_loader, steps_per_epoch = create_split(
   #   train_set, local_batch_size, 'train', dataset_config
   # )
 
@@ -510,23 +726,25 @@ def train_and_evaluate(
   # #   val_set, local_batch_size, 'val', config
   # # )
 
-  # eval_loader = DataLoader(val_set, batch_size=training_config.eval_batch_size, shuffle=True, drop_last=False, pin_memory=True)
+  # eval_loader = DataLoader(val_set, batch_size=config.eval_batch_size, shuffle=True, drop_last=False, pin_memory=True)
 
-  # log_for_0('steps_per_epoch: {}'.format(train_steps))
+  # log_for_0('steps_per_epoch: {}'.format(steps_per_epoch))
 
-  # if training_config.steps_per_eval != -1:
-  #   steps_per_eval = training_config.steps_per_eval
+  # if config.steps_per_eval != -1:
+  #   steps_per_eval = config.steps_per_eval
 
   input_type = tf.bfloat16 if model_config.half_precision else tf.float32
   dataset_builder = tfds.builder(dataset_config.name)
-  assert training_config.batch_size % jax.process_count() == 0, ValueError('Batch size must be divisible by the number of devices')
-  local_batch_size = training_config.batch_size // jax.process_count()
+  assert config.batch_size % jax.process_count() == 0, ValueError('Batch size must be divisible by the number of devices')
+  local_batch_size = config.batch_size // jax.process_count()
+  assert local_batch_size % jax.local_device_count() == 0, ValueError('Local batch size must be divisible by the number of local devices')
   log_for_0('local_batch_size: {}'.format(local_batch_size))
-  log_for_0('global batch_size: {}'.format(training_config.batch_size))
-  train_loader, train_steps, yierbayiyiliuqi = create_split(
+  log_for_0('jax.local_device_count: {}'.format(jax.local_device_count()))
+  log_for_0('global batch_size: {}'.format(config.batch_size))
+  train_loader, steps_per_epoch, yierbayiyiliuqi = create_split(
     dataset_builder,
     dataset_config=dataset_config,
-    training_config=training_config,
+    config=config,
     local_batch_size=local_batch_size,
     input_type=input_type,
     train=False if dataset_config.fake_data else True
@@ -534,54 +752,78 @@ def train_and_evaluate(
   # val_loader, val_steps, _ = create_split(
   #   dataset_builder,
   #   dataset_config=dataset_config,
-  #   training_config=training_config,
+  #   config=config,
   #   local_batch_size=local_batch_size,
   #   input_type=input_type,
   #   train=False
   # )
   if dataset_config.fake_data:
     log_for_0('Note: using fake data')
-  log_for_0('train_steps: {}'.format(train_steps))
+  log_for_0('steps_per_epoch: {}'.format(steps_per_epoch))
   # log_for_0('eval_steps: {}'.format(val_steps))
 
   ########### Create Model ###########
-  model_cls = getattr(models, model_config.name)
-  rngs = nn.Rngs(training_config.seed, params=training_config.seed + 114, dropout=training_config.seed + 514, evaluation=training_config.seed + 1919)
+  model_cls = models_ddpm.SimDDPM
+  rngs = nn.Rngs(config.seed, params=config.seed + 114, dropout=config.seed + 514, evaluation=config.seed + 1919)
   dtype = get_dtype(model_config.half_precision)
-  model_init_fn = partial(model_cls, dtype=dtype)
-  model = model_init_fn(rngs=rngs)
+  model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype)
+  model = model_init_fn(rngs=rngs, **model_config) # TODO: in model's setup, add rng
   show_dict(f'number of model parameters:{count_params(model)}')
   show_dict(display_model(model))
 
   ########### Create LR FN ###########
-  # base_lr = training_config.learning_rate * training_config.batch_size / 256.
-  base_lr = training_config.learning_rate
+  # base_lr = config.learning_rate * config.batch_size / 256.
+  base_lr = config.learning_rate
   learning_rate_fn = create_learning_rate_fn(
-    train_config=training_config,
+    config=config,
     base_learning_rate=base_lr,
-    steps_per_epoch=train_steps,
+    steps_per_epoch=steps_per_epoch,
   )
 
+  ema_scales_fn = partial(edm_ema_scales_schedules, steps_per_epoch=steps_per_epoch, config=config)
+
   ########### Create Train State ###########
-  state = create_train_state(training_config, model, learning_rate_fn)
-  # restore checkpoint
-  if training_config.load_from is not None:
-    if not os.path.isabs(training_config.load_from):
-      raise ValueError('Checkpoint path must be absolute')
-    if not os.path.exists(training_config.load_from):
-      raise ValueError('Checkpoint path {} does not exist'.format(training_config.load_from))
-    state = restore_checkpoint(model_init_fn ,state, training_config.load_from)
-    # sanity check, as in Kaiming's code
-    assert state.step > 0 and state.step % train_steps == 0, ValueError('Got an invalid checkpoint with step {}'.format(state.step))
-  epoch_offset = state.step // train_steps  # sanity check for resuming
+  state = create_train_state(config, model, image_size, learning_rate_fn)
+  # restore checkpoint kaiming
+  # TODO: check whether this works
+  if config.restore != '':
+    log_for_0('Restoring from: {}'.format(config.restore))
+    state = restore_checkpoint(state, config.restore)
+  elif config.pretrain != '':
+    log_for_0('Loading pre-trained from: {}'.format(config.restore))
+    state = restore_pretrained(state, config.pretrain, config)
+  # # restore checkpoint zhh
+  # if config.load_from is not None:
+  #   if not os.path.isabs(config.load_from):
+  #     raise ValueError('Checkpoint path must be absolute')
+  #   if not os.path.exists(config.load_from):
+  #     raise ValueError('Checkpoint path {} does not exist'.format(config.load_from))
+  #   state = restore_checkpoint(model_init_fn ,state, config.load_from)
+  #   # sanity check, as in Kaiming's code
+  #   assert state.step > 0 and state.step % steps_per_epoch == 0, ValueError('Got an invalid checkpoint with step {}'.format(state.step))
+  step_offset = int(state.step)
+  epoch_offset = step_offset // steps_per_epoch  # sanity check for resuming
+  assert epoch_offset * steps_per_epoch == step_offset
 
   state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
   model_avg = state.params
 
+  p_train_step = jax.pmap(
+    partial(train_step, rng_init=rngs, learning_rate_fn=learning_rate_fn, ema_scales_fn=ema_scales_fn, config=config),
+    axis_name='batch',
+  )
+  p_sample_step = jax.pmap(
+    partial(sample_step, model=model, rng_init=rngs, device_batch_size=config.fid.device_batch_size,),
+    axis_name='batch',
+  ) # TODO: change the API
+
+  vis_sample_idx = jax.process_index() * jax.local_device_count() + jnp.arange(jax.local_device_count())  # for visualization
+  log_for_0(f'fixed_sample_idx: {vis_sample_idx}')
+
   ########### FID ###########
   def run_p_sample_step(p_sample_step, state, sample_idx):
     # redefine the interface
-    images = p_sample_step(state, sample_idx=sample_idx)
+    images = p_sample_step(state, sample_idx=sample_idx) # TODO: change the API
     # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
     jax.random.normal(random.key(0), ()).block_until_ready()
     images = images.reshape(-1, image_size, image_size, 3)
@@ -593,13 +835,13 @@ def train_and_evaluate(
     inception_net = fid_util.build_jax_inception()
     stats_ref = fid_util.get_reference(config.fid.cache_ref, inception_net)
 
-    if not config.fid.eval_only: # debug
-      samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_for_fid, run_p_sample_step)
+    if config.fid.eval_only: # debug, this is tang
+      samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step)
       mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
       fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
       log_for_0(f'w/o ema: FID at {samples_all.shape[0]} samples: {fid_score}')
 
-      samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_for_fid, run_p_sample_step)
+      samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step)
       mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
       fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
       log_for_0(f' w/ ema: FID at {samples_all.shape[0]} samples: {fid_score}')
@@ -611,27 +853,27 @@ def train_and_evaluate(
   # ------------------------------------------------------------------------------------
 
   ########### Training Loop ###########
-  sample_step(state, image_size, sampling_config, epoch_offset, use_wandb=training_config.wandb, dtype=dtype)
+  # sample_step(state, image_size, sampling_config, epoch_offset, use_wandb=config.wandb, dtype=dtype)
+  train_metrics_buffer = []
+  train_metrics_last_t = time.time()
   log_for_0('Initial compilation, this might take some minutes...')
 
-  last_model = None
-  if sampling_config.get('ema_decay'):
-    assert sampling_config.ema_decay > 0.0 and sampling_config.ema_decay < 1.0, 'ema_decay should be in (0, 1)'
-    log_for_0('Using EMA with decay {}'.format(sampling_config.ema_decay))
-    p_update_model_avg = jax.pmap(partial(_update_model_avg, ema_decay=sampling_config.ema_decay), axis_name='batch')
+  p_update_model_avg = jax.pmap(_update_model_avg, axis_name='batch')
 
-  for epoch in range(epoch_offset, training_config.num_epochs):
+  for epoch in range(epoch_offset, config.num_epochs):
 
     ########### Train ###########
     timer = Timer()
     log_for_0('epoch {}...'.format(epoch))
     timer.reset()
-    for n_batch, batch in zip(range(train_steps), train_loader):
+    for n_batch, batch in zip(range(steps_per_epoch), train_loader):
 
-      step = epoch * train_steps + n_batch + 1
-      ep = step * training_config.batch_size / yierbayiyiliuqi
-      # print("images.shape: ", images.shape)
-      arg_batch, t_batch, target_batch = prepare_batch(batch, rngs, training_config)
+      step = epoch * steps_per_epoch + n_batch
+      assert config.aug.use_edm_aug == False, "we don't support edm aug for now"
+      batch = prepare_batch_data(batch, config)
+      ep = step * config.batch_size / yierbayiyiliuqi
+      # # print("images.shape: ", images.shape)
+      # arg_batch, t_batch, target_batch = prepare_batch(batch, rngs, config)
 
       # print("batch['image'].shape:", batch['image'].shape)
       # assert False
@@ -674,58 +916,83 @@ def train_and_evaluate(
       #   exit(114514)
       # continue
 
-      state, metrics = p_train_step(state, arg_batch, t_batch, target_batch)
+      state, metrics, vis = p_train_step(state, batch)
       
       if epoch == epoch_offset and n_batch == 0:
+        log_for_0('p_train_step compiled in {}s'.format(time.time() - train_metrics_last_t))
         log_for_0('Initial compilation completed. Reset timer.')
 
-      if training_config.get('log_per_step') and step % training_config.log_per_step == 0:
-        if index == 0:
-          tang_reduce(metrics) 
-          step_per_sec = training_config.log_per_step / timer.elapse_with_reset()
-          loss_to_display = metrics['loss']
-          if training_config.wandb:
-            wandb.log({'train_ep:': ep, 
-                      'train_loss': loss_to_display, 
-                      'lr': learning_rate_fn(step), 
-                      'step': step, 
-                      'step_per_sec': step_per_sec})
+      if config.get('log_per_step'):
+        train_metrics_buffer.append(metrics)
+        if (step + 1) % config.log_per_step == 0:
+          train_metrics = common_utils.get_metrics(train_metrics_buffer)
+          tang_reduce(train_metrics) # do an average
+          step_per_sec = config.log_per_step / timer.elapse_with_reset()
+          loss_to_display = train_metrics['loss_train']
+          if config.wandb and index == 0:
+            wandb.log({
+              'ema_decay': train_metrics['ema_decay'],
+              'ep:': ep, 
+              'loss_train': loss_to_display, 
+              'lr': train_metrics['lr'], 
+              'step': step, 
+              'step_per_sec': step_per_sec})
           # log_for_0('epoch: {} step: {} loss: {}, step_per_sec: {}'.format(ep, step, loss_to_display, step_per_sec))
-          log_for_0('step: {} loss: {}, step_per_sec: {}'.format(step, loss_to_display, step_per_sec))
-      if sampling_config.get('ema_decay'):
-        # EMA
-        model_avg = p_update_model_avg(model_avg, state.params)
+          log_for_0(f'step: {step}, loss: {loss_to_display}, step_per_sec: {step_per_sec}')
+          train_metrics_buffer = []
+
+      # EMA
+      model_avg = p_update_model_avg(model_avg, state.params, ema_decay=ema_scales_fn(step)[0])
 
     ########### Save Checkpt ###########
     # we first save checkpoint, then do eval. Reasons: 1. if eval emits an error, then we still have our model; 2. avoid the program exits before the checkpointer finishes its job.
     # NOTE: when saving checkpoint, should sync batch stats first.
-    state = sync_batch_stats(state)
-    if (epoch + 1) % training_config.checkpoint_per_epoch == 0:
-      # pass
-      # if index == 0:
+
+    # # TODO: whether to keep zhh's checkpointer
+    # state = sync_batch_stats(state)
+    # if (epoch + 1) % config.checkpoint_per_epoch == 0:
+    #   # pass
+    #   # if index == 0:
+    #   save_checkpoint(state, workdir)
+    # if epoch == config.num_epochs - 1:
+    #   state = state.replace(params=model_avg)
+
+    # Kaiming's checkpointer
+    if (
+      (epoch + 1) % config.checkpoint_per_epoch == 0
+      or epoch == config.num_epochs
+      or epoch == 0  # saving at the first epoch for sanity check
+    ):
+      state = sync_batch_stats(state)
+      # TODO{km}: suppress the annoying warning.
       save_checkpoint(state, workdir)
-    if epoch == training_config.num_epochs - 1:
-      state = state.replace(params=model_avg)
+      log_for_0(f'Work dir: {workdir}')  # for monitoring
 
     ########### Sampling ###########
-    if (epoch + 1) % training_config.eval_per_epoch == 0:
-      log_for_0('Generation for epoch {}...'.format(epoch))
+    if (epoch + 1) % config.eval_per_epoch == 0:
+      log_for_0(f'Sample epoch {epoch}...')
       # sync batch statistics across replicas
       eval_state = sync_batch_stats(state)
       eval_state = eval_state.replace(params=model_avg)
-      sample_step(eval_state, image_size, sampling_config, epoch, use_wandb=training_config.wandb)
-
-      # if index == 0 and training_config.wandb:
-      #   wandb.log({'mse_lower': mse_lower, 'mse_even': mse_even, 'epoch': epoch})
-      #   log_for_0('epoch: {}; mse_lower: {}, mse_even: {}'.format(epoch, mse_lower, mse_even))
+      # TODO: change the API
+      vis = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx, ema=False)
+      vis = make_grid_visualization(vis)
+      vis = jax.device_get(vis) # np.ndarray
+      vis = vis[0]
+      # print(vis.shape)
+      # exit("王广廷")
+      canvas = Image.fromarray(vis)
+      if config.wandb and index == 0:
+        wandb.log({'gen': wandb.Image(canvas)})
+      # sample_step(eval_state, image_size, sampling_config, epoch, use_wandb=config.wandb)
 
     ########### FID ###########
     if config.fid.on_use and (
       (epoch + 1) % config.fid.fid_per_epoch == 0
-      or epoch == training_config.num_epochs
+      or epoch == config.num_epochs
       # or epoch == 0
     ):
-      samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_for_fid, run_p_sample_step)
+      samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step)
       mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
       fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
       log_for_0(f'w/o ema: FID at {samples_all.shape[0]} samples: {fid_score}')
@@ -733,21 +1000,27 @@ def train_and_evaluate(
       # ema results are much better
       eval_state = sync_batch_stats(state)
       eval_state = eval_state.replace(params=model_avg)
-      samples_all = sample_util.generate_samples_for_fid_eval(eval_state, workdir, config, p_sample_for_fid, run_p_sample_step)
+      samples_all = sample_util.generate_samples_for_fid_eval(eval_state, workdir, config, p_sample_step, run_p_sample_step)
       mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
       fid_score_ema = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
       log_for_0(f'w/ ema: FID at {samples_all.shape[0]} samples: {fid_score_ema}')
 
-      if training_config.wandb and rank == 0:
+      if config.wandb and rank == 0:
         wandb.log({
           'FID': fid_score,
           'FID_ema': fid_score_ema
         })
 
+      vis = make_grid_visualization(samples_all, to_uint8=False)
+      vis = jax.device_get(vis)
+      vis = vis[0]
+      canvas = Image.fromarray(vis)
+      if config.wandb and index == 0:
+        wandb.log({'gen_fid': wandb.Image(canvas)})
+
   # Wait until computations are done before exiting
   jax.random.normal(jax.random.key(0), ()).block_until_ready()
-  checkpointer.close() # avoid exiting before checkpt is saved
-  if index == 0 and training_config.wandb:
+  if index == 0 and config.wandb:
     wandb.finish()
 
   return state
@@ -759,17 +1032,17 @@ def just_evaluate(
   ########### Initialize ###########
   rank = index = jax.process_index()
   log_for_0('Generating samples for workdir: {}'.format(workdir))
-  training_config = config.training
+  config = config.training
   model_config = config.model 
   dataset_config = config.dataset
   sampling_config = config.sampling
   dtype = jnp.bfloat16 if model_config.half_precision else jnp.float32
-  global_seed(training_config.seed)
+  global_seed(config.seed)
   image_size = dataset_config.image_size
 
   ########### Create Model ###########
   model_cls = getattr(ncsnv2, model_config.name)
-  rngs = nn.Rngs(training_config.seed, params=training_config.seed + 114, dropout=training_config.seed + 514, evaluation=training_config.seed + 1919)
+  rngs = nn.Rngs(config.seed, params=config.seed + 114, dropout=config.seed + 514, evaluation=config.seed + 1919)
   dtype = get_dtype(model_config.half_precision)
   model_init_fn = partial(
     model_cls, 
@@ -782,17 +1055,17 @@ def just_evaluate(
   display_model(model)
 
   ########### Create LR FN ###########
-  # base_lr = training_config.learning_rate * training_config.batch_size / 256.
-  learning_rate_fn = training_config.learning_rate
+  # base_lr = config.learning_rate * config.batch_size / 256.
+  learning_rate_fn = config.learning_rate
 
   ########### Create Train State ###########
-  state = create_train_state(training_config, model, learning_rate_fn)
-  assert training_config.get('load_from',None) is not None, 'Must provide a checkpoint path for evaluation'
-  if not os.path.isabs(training_config.load_from):
+  state = create_train_state(config, model, learning_rate_fn)
+  assert config.get('load_from',None) is not None, 'Must provide a checkpoint path for evaluation'
+  if not os.path.isabs(config.load_from):
     raise ValueError('Checkpoint path must be absolute')
-  if not os.path.exists(training_config.load_from):
-    raise ValueError('Checkpoint path {} does not exist'.format(training_config.load_from))
-  state = restore_checkpoint(model_init_fn ,state, training_config.load_from)
+  if not os.path.exists(config.load_from):
+    raise ValueError('Checkpoint path {} does not exist'.format(config.load_from))
+  state = restore_checkpoint(model_init_fn ,state, config.load_from)
   state_step = int(state.step)
   state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
 

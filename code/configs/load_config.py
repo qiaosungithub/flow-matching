@@ -8,5 +8,8 @@ def get_config(mode_string):
         config_dict = yaml.load(f, Loader=yaml.FullLoader)
     default_config = get_default_config()
     for k,v in config_dict.items():
-        default_config[k].update(v)
+        if isinstance(v, dict):
+            default_config[k].update(v)
+        else:
+            default_config[k] = v
     return default_config
