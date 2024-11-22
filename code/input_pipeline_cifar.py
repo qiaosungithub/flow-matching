@@ -23,8 +23,10 @@ IMAGE_ORIGINAL_SIZE = 224
 CROP_PADDING = 32
 # MEAN_RGB = [0.485 * 255, 0.456 * 255, 0.406 * 255]
 # STDDEV_RGB = [0.229 * 255, 0.224 * 255, 0.225 * 255]
-MEAN_RGB = [0.491 * 255, 0.482 * 255, 0.447 * 255]
-STDDEV_RGB = [0.202 * 255, 0.199 * 255, 0.201 * 255]
+# MEAN_RGB = [0.491 * 255, 0.482 * 255, 0.447 * 255]
+MEAN_RGB = [0.5 * 255, 0.5 * 255, 0.5 * 255]
+# STDDEV_RGB = [0.202 * 255, 0.199 * 255, 0.201 * 255]
+STDDEV_RGB = [0.5 * 255, 0.5 * 255, 0.5 * 255]
 
 
 # def distorted_bounding_box_crop(
@@ -301,10 +303,11 @@ def create_split(
     input_type,
     train,
 ):
+    image_size = dataset_config.get('image_size', training_config.model.image_size)
     iterr = create_input_iter(
         dataset_builder,
         local_batch_size,
-        dataset_config.image_size,
+        image_size,
         input_type,
         train=train,
         cache=dataset_config.cache,

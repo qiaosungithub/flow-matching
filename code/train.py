@@ -38,7 +38,7 @@ from torch.utils.data import DataLoader
 from utils.info_util import print_params
 from utils.vis_util import make_grid_visualization, visualize_cifar_batch
 from utils.ckpt_util import restore_checkpoint, restore_pretrained, save_checkpoint
-from utils.frozen_util import extract_trainable_parameters, merge_params
+# from utils.frozen_util import extract_trainable_parameters, merge_params
 # from utils.trainstate_util import TrainState
 from utils.logging_util import log_for_0, Timer
 from utils.metric_utils import tang_reduce, MyMetrics, Avger
@@ -48,13 +48,25 @@ import utils.fid_util as fid_util
 import utils.sample_util as sample_util
 
 import models.models as models
-import models.schedule_flow as schedule_flow
 import models.models_ddpm as models_ddpm
 from models.models_ddpm import generate, edm_ema_scales_schedules
 from input_pipeline import create_split
 # from train_step_sqa import p_train_step, p_solve_diffeq, sample_for_fid, generate
 
 NUM_CLASSES = 10
+
+def get_input_pipeline(dataset_config):
+    if dataset_config.name == 'imagenet2012:5.*.*':
+        import input_pipeline_imgnet as input_pipeline
+        return input_pipeline
+    elif dataset_config.name == 'cifar10':
+        import input_pipeline_cifar as input_pipeline
+        return input_pipeline
+    elif dataset_config.name == 'mnist':
+        import input_pipeline_mnist as input_pipeline
+        return input_pipeline
+    else:
+        raise ValueError('Unknown dataset {}'.format(dataset_config.name))
 
 def create_model(*, model_cls, half_precision, config, **kwargs):
   platform = jax.local_devices()[0].platform
@@ -125,18 +137,16 @@ class NNXTrainState(FlaxTrainState):
   useless_variable_state: Any
   # NOTE: is_training can't be a attr, since it can't be replicated
 
-def train_step(state: NNXTrainState, batch, rng_init, learning_rate_fn, ema_scales_fn, config):
+
+def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learning_rate_fn, ema_scales_fn, config):
   """
   Perform a single training step.
+  We will pmap this function
   ---
   batch: a dict, with image, label, augment_label
+  noise_batch: the noise_batch for the model
+  t_batch: the t_batch for the model
   """
-
-  # ResNet has no dropout; but maintain rng_dropout for future usage
-  # TODO: rngs here?
-  rng_step = random.fold_in(rng_init, state.step)
-  rng_device = random.fold_in(rng_step, lax.axis_index(axis_name='batch'))
-  rng_gen, rng_dropout = random.split(rng_device)
 
   # trainable_params, frozen_params = get_trainable(state.params, config)
 
@@ -148,7 +158,7 @@ def train_step(state: NNXTrainState, batch, rng_init, learning_rate_fn, ema_scal
     # # merge
     # params = merge_params(params_to_train, frozen_params)
 
-    outputs, new_model_state = state.apply_fn(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'], batch['label'], batch['augment_label'])
+    outputs, new_model_state = state.apply_fn(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'], batch['label'], batch['augment_label'], noise_batch, t_batch)
     loss, new_batch_stats, new_rng_states, dict_losses, images = outputs
 
     return loss, (new_batch_stats, new_rng_states, dict_losses, images)
@@ -176,17 +186,7 @@ def train_step(state: NNXTrainState, batch, rng_init, learning_rate_fn, ema_scal
     grads=grads, batch_stats=new_batch_stats, rng_states=new_rng_states
   )
 
-  # -------------------------------------------------------
-  # # handle ema:
-  # params = {
-  #   'net': new_state.params['net'],
-  #   'net_ema': jax.tree_map(
-  #       lambda old, new: old * ema_decay + new * (1.0 - ema_decay),
-  #       new_state.params['net_ema'],
-  #       new_state.params['net'],)
-  # }
-  # new_state = new_state.replace(params=params)
-  # TODO: do ema in another place, modify metrics??
+  # record ema
   metrics['ema_decay'] = ema_decay
   metrics['scales'] = scales
   # -------------------------------------------------------
@@ -221,16 +221,48 @@ def train_step(state: NNXTrainState, batch, rng_init, learning_rate_fn, ema_scal
 #   assert jax.tree_structure(trainable_params['net']) == jax.tree_structure(frozen_params['net_ema'])
 #   return trainable_params, frozen_params
 
-def sample_step(params, sample_idx, model, rng_init, device_batch_size):
+
+def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn):
+  """
+  Perform a single training step.
+  We will pmap this function
+  ---
+  batch: a dict, with image, label, augment_label
+  rngs: nnx.Rngs
+  train_step_compute_fn: the pmaped version of train_step_compute
+  """
+
+  # # ResNet has no dropout; but maintain rng_dropout for future usage
+  # rng_step = random.fold_in(rng_init, state.step)
+  # rng_device = random.fold_in(rng_step, lax.axis_index(axis_name='batch'))
+  # rng_gen, rng_dropout = random.split(rng_device)
+
+  # trainable_params, frozen_params = get_trainable(state.params, config)
+
+  images = batch['image']
+  print("images.shape: ", images.shape)
+  b1, b2 = images.shape[0], images.shape[1]
+  noise_batch = jax.random.normal(rngs.train(), images.shape)
+  t_batch = jax.random.uniform(rngs.train(), (b1, b2))
+
+  new_state, metrics, images = train_step_compute_fn(state, batch, noise_batch, t_batch)
+
+  return new_state, metrics, images
+
+
+def sample_step(state, sample_idx, model, rng_init, device_batch_size, MEAN_RGB, STDDEV_RGB):
   """
   sample_idx: each random sampled image corrresponds to a seed
+  rng_init: here we do not want nnx.Rngs
   """
   rng_sample = random.fold_in(rng_init, sample_idx)  # fold in sample_idx
-  # TODO: rewrite generate
-  images = generate(params, model, rng_sample, n_sample=device_batch_size)
+  images = generate(state, model, rng_sample, n_sample=device_batch_size)
 
   images_all = lax.all_gather(images, axis_name='batch')  # each device has a copy  
   images_all = images_all.reshape(-1, *images_all.shape[2:])
+
+  images_all = images_all * (jnp.array(STDDEV_RGB)/255.).reshape(1,1,1,3) + (jnp.array(MEAN_RGB)/255.).reshape(1,1,1,3)
+  images_all = (images_all - 0.5) / 0.5
   return images_all
 
 def global_seed(seed):
@@ -275,23 +307,23 @@ def get_dtype(half_precision):
 #     step=step
 #   )
 
-checkpointer = ocp.StandardCheckpointer()
-def _restore(ckpt_path, item, **restore_kwargs):
-  return ocp.StandardCheckpointer.restore(checkpointer, ckpt_path, target=item)
-setattr(checkpointer, 'restore', _restore)
+# checkpointer = ocp.StandardCheckpointer()
+# def _restore(ckpt_path, item, **restore_kwargs):
+#   return ocp.StandardCheckpointer.restore(checkpointer, ckpt_path, target=item)
+# setattr(checkpointer, 'restore', _restore)
 
-def save_checkpoint(state, workdir):
-  """
-  Kaiming's linen version
-  TODO: whether it works or not?
-  """
-  state = jax.device_get(jax.tree_util.tree_map(lambda x: x[0], state))
-  step = int(state.step)
-  if jax.process_index() == 0:
-    log_for_0('Saving checkpoint step %d.', step)
-  checkpoints.save_checkpoint_multiprocess(workdir, state, step, keep=2)
+# def save_checkpoint(state, workdir):
+#   """
+#   Kaiming's linen version
+#   TODO: whether it works or not?
+#   """
+#   state = jax.device_get(jax.tree_util.tree_map(lambda x: x[0], state))
+#   step = int(state.step)
+#   if jax.process_index() == 0:
+#     log_for_0('Saving checkpoint step %d.', step)
+#   checkpoints.save_checkpoint_multiprocess(workdir, state, step, keep=2)
 
-# TODO: zhh's version
+# TODO: zhh's version, Kaiming's version is above, work or not?
 # def save_checkpoint(state:NNXTrainState, workdir):
 #   state = jax.device_get(jax.tree_util.tree_map(lambda x: x[0], state))
 #   step = int(state.step)
@@ -354,9 +386,9 @@ def create_train_state(
   # print("here we are in the function 'create_train_state' in train.py; ready to define optimizer")
   graphdef, params, batch_stats, rng_states, useless_variable_states = nn.split(model, nn.Param, nn.BatchStat, nn.RngState, nn.VariableState)
 
-  # print_params(params) # TODO: can we print the params here?
+  print_params(params) # TODO: can we print the params here?
 
-  def apply_fn(graphdef2, params2, rng_states2, batch_stats2, useless_, is_training, images, labels, augment_labels):
+  def apply_fn(graphdef2, params2, rng_states2, batch_stats2, useless_, is_training, images, labels, augment_labels, noise_batch, t_batch):
     """
     input:
       images
@@ -367,8 +399,8 @@ def create_train_state(
       loss_train
       new_batch_stats
       new_rng_states
-      dict_losses: TODO: what is this?
-      images: for debug
+      dict_losses: contains loss and loss_train, which are the same
+      images: all predictions and images and noises
     """
     merged_model = nn.merge(graphdef2, params2, rng_states2, batch_stats2, useless_)
     if is_training:
@@ -376,7 +408,7 @@ def create_train_state(
     else:
       merged_model.eval()
     del params2, rng_states2, batch_stats2, useless_
-    loss_train, dict_losses, images = merged_model.forward(images, labels, augment_labels) # TODO: can we call forward here?
+    loss_train, dict_losses, images = merged_model.forward(images, labels, augment_labels, noise_batch, t_batch)
     new_batch_stats, new_rng_states, _ = nn.state(merged_model, nn.BatchStat, nn.RngState, ...)
     return loss_train, new_batch_stats, new_rng_states, dict_losses, images
 
@@ -420,16 +452,16 @@ def create_train_state(
   )
   return state
 
-def prepare_batch(batch, rng, config):
-  # NOTE: there are two batch sizes: image shape is [b1, b2, 32, 32, 3].
-  b1, b2 = batch["image"].shape[:2]
-  sigma_m = config.sigma_min
-  x = batch["image"]
-  eps = jax.random.normal(rng.train_eps(), x.shape)
-  t = jax.random.uniform(rng.train_eps(), (b1, b2, 1, 1, 1))
-  psi_t = (1 - (1 - sigma_m) * t) * eps + t * x
-  target = x - (1 - sigma_m) * eps
-  return psi_t, t.reshape(b1, b2), target
+# def prepare_batch(batch, rng, config):
+#   # NOTE: there are two batch sizes: image shape is [b1, b2, 32, 32, 3].
+#   b1, b2 = batch["image"].shape[:2]
+#   sigma_m = config.sigma_min
+#   x = batch["image"]
+#   eps = jax.random.normal(rng.train_eps(), x.shape)
+#   t = jax.random.uniform(rng.train_eps(), (b1, b2, 1, 1, 1))
+#   psi_t = (1 - (1 - sigma_m) * t) * eps + t * x
+#   target = x - (1 - sigma_m) * eps
+#   return psi_t, t.reshape(b1, b2), target
 
 def prepare_batch_data(batch, config, batch_size=None):
   """Reformat a input batch from TF Dataloader.
@@ -441,6 +473,8 @@ def prepare_batch_data(batch, config, batch_size=None):
     batch_size = expected batch_size of this node, for eval's drop_last=False only
   """
   image, label = batch["image"], batch["label"]
+  print("In prepare_batch_data, image.shape: ", image.shape)
+  print("In prepare_batch_data, label.shape: ", label.shape)
 
   if config.aug.use_edm_aug:
     raise NotImplementedError
@@ -733,7 +767,8 @@ def train_and_evaluate(
   # if config.steps_per_eval != -1:
   #   steps_per_eval = config.steps_per_eval
 
-  input_type = tf.bfloat16 if model_config.half_precision else tf.float32
+  input_pipeline = get_input_pipeline(dataset_config)
+  input_type = tf.bfloat16 if config.half_precision else tf.float32
   dataset_builder = tfds.builder(dataset_config.name)
   assert config.batch_size % jax.process_count() == 0, ValueError('Batch size must be divisible by the number of devices')
   local_batch_size = config.batch_size // jax.process_count()
@@ -741,10 +776,10 @@ def train_and_evaluate(
   log_for_0('local_batch_size: {}'.format(local_batch_size))
   log_for_0('jax.local_device_count: {}'.format(jax.local_device_count()))
   log_for_0('global batch_size: {}'.format(config.batch_size))
-  train_loader, steps_per_epoch, yierbayiyiliuqi = create_split(
+  train_loader, steps_per_epoch, yierbayiyiliuqi = input_pipeline.create_split(
     dataset_builder,
     dataset_config=dataset_config,
-    config=config,
+    training_config=config,
     local_batch_size=local_batch_size,
     input_type=input_type,
     train=False if dataset_config.fake_data else True
@@ -764,12 +799,12 @@ def train_and_evaluate(
 
   ########### Create Model ###########
   model_cls = models_ddpm.SimDDPM
-  rngs = nn.Rngs(config.seed, params=config.seed + 114, dropout=config.seed + 514, evaluation=config.seed + 1919)
-  dtype = get_dtype(model_config.half_precision)
+  rngs = nn.Rngs(config.seed, params=config.seed + 114, dropout=config.seed + 514, train=config.seed + 1919)
+  dtype = get_dtype(config.half_precision)
   model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype)
-  model = model_init_fn(rngs=rngs, **model_config) # TODO: in model's setup, add rng
+  model = model_init_fn(rngs=rngs, **model_config)
   show_dict(f'number of model parameters:{count_params(model)}')
-  show_dict(display_model(model))
+  # show_dict(display_model(model))
 
   ########### Create LR FN ###########
   # base_lr = config.learning_rate * config.batch_size / 256.
@@ -808,27 +843,124 @@ def train_and_evaluate(
   state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
   model_avg = state.params
 
-  p_train_step = jax.pmap(
-    partial(train_step, rng_init=rngs, learning_rate_fn=learning_rate_fn, ema_scales_fn=ema_scales_fn, config=config),
-    axis_name='batch',
+  # p_train_step = jax.pmap(
+  #   partial(train_step, rng_init=rngs, learning_rate_fn=learning_rate_fn, ema_scales_fn=ema_scales_fn, config=config),
+  #   axis_name='batch',
+  # )
+
+  p_train_step_compute = jax.pmap(
+    partial(train_step_compute, 
+            learning_rate_fn=learning_rate_fn, ema_scales_fn=ema_scales_fn, 
+            config=config),
+    axis_name='batch'
   )
-  p_sample_step = jax.pmap(
-    partial(sample_step, model=model, rng_init=rngs, device_batch_size=config.fid.device_batch_size,),
-    axis_name='batch',
-  ) # TODO: change the API
 
   vis_sample_idx = jax.process_index() * jax.local_device_count() + jnp.arange(jax.local_device_count())  # for visualization
   log_for_0(f'fixed_sample_idx: {vis_sample_idx}')
 
   ########### FID ###########
-  def run_p_sample_step(p_sample_step, state, sample_idx):
-    # redefine the interface
-    images = p_sample_step(state, sample_idx=sample_idx) # TODO: change the API
-    # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
-    jax.random.normal(random.key(0), ()).block_until_ready()
-    images = images.reshape(-1, image_size, image_size, 3)
-    # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
-    return images  # images have been all gathered
+  if config.model.ode_solver == 'jax':
+    p_sample_step = jax.pmap(
+      partial(sample_step, model=model, rng_init=random.PRNGKey(0), device_batch_size=config.fid.device_batch_size,),
+      axis_name='batch', MEAN_RGB=input_pipeline.MEAN_RGB, STDDEV_RGB=input_pipeline.STDDEV_RGB
+    )
+
+    # ------------------------------------------------------------
+    # log_for_0('Compiling p_sample_step...')
+    # t_start = time.time()
+    # lowered = p_sample_step.lower(
+    #   params={'params': {'net': state.params['net']}, 'batch_stats': {}},
+    #   sample_idx=vis_sample_idx,)
+    # p_sample_step = lowered.compile()
+    # log_for_0('p_sample_step compiled in {}s'.format(time.time() - t_start))
+    def run_p_sample_step(p_sample_step, state, sample_idx):
+      """
+      state: train state
+      """
+      # redefine the interface
+      images = p_sample_step(state, sample_idx=sample_idx)
+      # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
+      jax.random.normal(random.key(0), ()).block_until_ready()
+      images = images.reshape(-1, image_size, image_size, 3)
+      # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
+      return images  # images have been all gathered
+    
+  elif config.model.ode_solver == 'scipy':
+    raise NotImplementedError("我还没写")
+    from utils.rk45_util import get_rk45_functions
+    run_p_sample_step, p_sample_step = get_rk45_functions(model, config, state, rngs)
+
+
+    # # ==================================================================================================================================
+    # def flow_step(model, params, x, t):
+    #   u_pred = model.apply(
+    #       params,  # which is {'params': state.params, 'batch_stats': state.batch_stats},
+    #       x, t,
+    #       rngs={},
+    #       train=False,
+    #       method=model.forward_flow_pred_function,
+    #       mutable=['batch_stats'],
+    #   )
+    #   return u_pred
+
+    # p_flow_step = jax.pmap(
+    #   functools.partial(flow_step, model=model,),
+    #   axis_name='batch',
+    # )
+
+    # x_fake = jnp.ones((jax.local_device_count(), config.fid.device_batch_size, image_size, image_size, config.model.out_channels), jnp.float32)
+    # t_fake = jnp.ones((jax.local_device_count(), config.fid.device_batch_size), jnp.float32)
+    # lowered = p_flow_step.lower(
+    #   params={'params': {'net': state.params['net']}, 'batch_stats': {}},
+    #   x=x_fake,
+    #   t=t_fake,
+    # )
+    # logging.info('Compiling p_flow_step...')
+    # t_start = time.time()
+    # p_flow_step = lowered.compile()
+    # logging.info('p_flow_step compiled in {}s'.format(time.time() - t_start))
+    # # out = p_flow_step(params={'params': {'net': state.params['net']}, 'batch_stats': {}}, x=x_fake, t=t_fake)[0]
+    # p_sample_step = p_flow_step  # rename for legacy
+
+    # rng_init = rng
+    # def run_p_sample_step(p_sample_step, state, sample_idx, ema=False):
+    #   # this is the ode solver for one stage
+    #   image_size = config.model.image_size
+    #   net_key = 'net_ema' if ema else 'net'
+    #   def ode_func(t, x):
+    #     x = jnp.array(x)
+    #     x = x.reshape((jax.local_device_count(), -1, image_size, image_size, config.model.out_channels))
+    #     # t = t.reshape((jax.local_device_count(), -1))
+    #     t = jnp.ones(x.shape[:2], jnp.float32) * t
+    #     out = p_sample_step(params={'params': {'net': state.params[net_key]}, 'batch_stats': {}}, x=x, t=t)[0]
+    #     jax.random.normal(jax.random.key(0), ()).block_until_ready()
+    #     out = np.array(out)
+    #     out = out.reshape((-1,))
+    #     return out
+
+    #   x_shape = (jax.local_device_count(), config.fid.device_batch_size, image_size, image_size, config.model.out_channels)
+
+    #   x_init = []
+    #   for i in sample_idx:
+    #     rng_i = random.fold_in(rng_init, i)
+    #     x_init.append(jax.random.normal(rng_i, x_shape[1:], jnp.float32))
+    #   x_init = jnp.stack(x_init, axis=0)  # [4, b, 32, 32, 3]
+    #   x = np.array(x_init).flatten()
+
+    #   # Black-box ODE solver for the probability flow ODE
+    #   solution = integrate.solve_ivp(ode_func, (1e-3, 1.0), x, rtol=1e-5, atol=1e-5, method='RK45')
+    #   x = solution.y[:, -1]
+    #   x = x.reshape((jax.local_device_count() * config.fid.device_batch_size, image_size, image_size, config.model.out_channels))
+    #   images = x
+
+    #   nfe = solution.nfev
+    #   logging.info('nfe: {}'.format(nfe))
+
+    #   return images
+    # # ==================================================================================================================================
+
+  else:
+    raise NotImplementedError
   
   # ------------------------------------------------------------------------------------
   if config.fid.on_use:  # we will evaluate fid    
@@ -916,7 +1048,7 @@ def train_and_evaluate(
       #   exit(114514)
       # continue
 
-      state, metrics, vis = p_train_step(state, batch)
+      state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute)
       
       if epoch == epoch_offset and n_batch == 0:
         log_for_0('p_train_step compiled in {}s'.format(time.time() - train_metrics_last_t))
@@ -974,7 +1106,7 @@ def train_and_evaluate(
       # sync batch statistics across replicas
       eval_state = sync_batch_stats(state)
       eval_state = eval_state.replace(params=model_avg)
-      # TODO: change the API
+      # TODO: 不知道
       vis = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx, ema=False)
       vis = make_grid_visualization(vis)
       vis = jax.device_get(vis) # np.ndarray

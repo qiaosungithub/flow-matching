@@ -20,23 +20,33 @@
 from absl import logging
 from typing import Any, Sequence
 
-from flax import linen as nn
+# from flax import linen as nn
+import flax.nnx as nn
 import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
+from flax.training.train_state import TrainState as FlaxTrainState
 
 from functools import partial
 
-from models.models_unet import ContextUnet
+# from models.models_unet import ContextUnet
 from models.models_ncsnpp_edm import NCSNpp as NCSNppEDM
-from models.models_ncsnpp import NCSNpp
-import models.jcm.sde_lib as sde_lib
+# from models.models_ncsnpp import NCSNpp
+# import models.jcm.sde_lib as sde_lib
 from models.jcm.sde_lib import batch_mul
 
 
 
 ModuleDef = Any
+
+
+class NNXTrainState(FlaxTrainState):
+  batch_stats: Any
+  rng_states: Any
+  graphdef: Any
+  useless_variable_state: Any
+  # NOTE: is_training can't be a attr, since it can't be replicated
 
 
 def ct_ema_scales_schedules(step, config, steps_per_epoch):
@@ -54,7 +64,8 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
 
 
 def edm_ema_scales_schedules(step, config, steps_per_epoch):
-  ema_halflife_kimg = 500  # from edm
+  # ema_halflife_kimg = 500  # from edm
+  ema_halflife_kimg = 50000  # log(0.5) / log(0.999999) * 128 / 1000 = 88722 kimg, from flow
   ema_halflife_nimg = ema_halflife_kimg * 1000
 
   ema_rampup_ratio = 0.05
@@ -66,41 +77,40 @@ def edm_ema_scales_schedules(step, config, steps_per_epoch):
 
 
 # move this out from model for JAX compilation
-def generate(params, model, rng, n_sample):
+def generate(state: NNXTrainState, model, rng, n_sample):
   """
   Generate samples from the model
+
+  Here we tend to not use nnx.Rngs
+  state: maybe a train state
   """
 
   # prepare schedule
   num_steps = model.n_T
-  step_indices = jnp.arange(num_steps, dtype=model.dtype)
-  t_steps = model.apply(
-    {},
-    indices=step_indices,
-    scales=num_steps,
-    method=model.compute_t,
-  )
-  t_steps = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
 
   # initialize noise
   x_shape = (n_sample, model.image_size, model.image_size, model.out_channels)
   rng_used, rng = jax.random.split(rng, 2)
-  latents = jax.random.normal(rng_used, x_shape, dtype=model.dtype)  # x_T ~ N(0, 1), sample initial noise
+  # sample from prior
+  x_prior = jax.random.normal(rng_used, x_shape, dtype=model.dtype)
   
-  x_i = latents * t_steps[0]
+  x_i = x_prior
 
   def step_fn(i, inputs):
     x_i, rng = inputs
     rng_this_step = jax.random.fold_in(rng, i)
-    rng_z, rng_dropout = jax.random.split(rng_this_step, 2)
-    x_i, _ = model.apply(
-        params,  # which is {'params': state.params, 'batch_stats': state.batch_stats},
-        x_i, rng_z, i, t_steps,
-        # rngs={'dropout': rng_dropout},  # we don't do dropout in eval
-        rngs={},
-        method=model.sample_one_step,
-        mutable=['batch_stats'],
-    )
+    rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
+    # x_i, _ = model.apply(
+    #   params,  # which is {'params': state.params, 'batch_stats': state.batch_stats},
+    #   x_i, rng_z, i,
+    #   # rngs={'dropout': rng_dropout},  # we don't do dropout in eval
+    #   rngs={},
+    #   method=model.sample_one_step,
+    #   mutable=['batch_stats'],
+    # )
+
+    merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
+    x_i, _ = merged_model.sample_one_step(x_i, rng_z, i)
     outputs = (x_i, rng)
     return outputs
 
@@ -111,36 +121,64 @@ def generate(params, model, rng, n_sample):
 
 class SimDDPM(nn.Module):
   """Simple DDPM."""
-  image_size: int
-  base_width: int
-  num_classes: int = 10
-  out_channels: int = 1
-  P_std: float = 1.2
-  P_mean: float = -1.2
-  n_T: int = 18  # inference steps
-  net_type: str = 'ncsnpp'
-  dropout: float = 0.0
-  dtype: Any = jnp.float32
-  use_aug_label: bool = False
 
-  def setup(self):
+  def __init__(self,
+    image_size,
+    base_width,
+    num_classes = 10,
+    out_channels = 1,
+    P_std = 1.2,
+    P_mean = -1.2,
+    n_T = 18,  # inference steps
+    net_type = 'ncsnpp',
+    dropout = 0.0,
+    dtype = jnp.float32,
+    use_aug_label = False,
+    average_loss = False,
+    eps=1e-3,
+    h_init=0.035,
+    sampler='euler',
+    ode_solver='jax',
+    rngs=None,
+    **kwargs
+  ):
+    self.image_size = image_size
+    self.base_width = base_width
+    self.num_classes = num_classes
+    self.out_channels = out_channels
+    self.P_std = P_std
+    self.P_mean = P_mean
+    self.n_T = n_T
+    self.net_type = net_type
+    self.dropout = dropout
+    self.dtype = dtype
+    self.use_aug_label = use_aug_label
+    self.average_loss = average_loss
+    self.eps = eps
+    self.h_init = h_init
+    self.sampler = sampler
+    self.ode_solver = ode_solver
+    self.rngs = rngs
 
-    sde = sde_lib.KVESDE(
-      t_min=0.002,
-      t_max=80.0,
-      N=18,  # config.model.num_scales
-      rho=7.0,
-      data_std=0.5,
-    )
-    self.sde = sde
+    # sde = sde_lib.KVESDE(
+    #   t_min=0.002,
+    #   t_max=80.0,
+    #   N=18,  # config.model.num_scales
+    #   rho=7.0,
+    #   data_std=0.5,
+    # )
+    # self.sde = sde
+    # This is not used in flow matching
 
     if self.net_type == 'context':
+      raise NotImplementedError
       net_fn = partial(ContextUnet,
         in_channels=self.out_channels,
         n_feat=self.base_width,
         n_classes=self.num_classes,
         image_size=self.image_size,)
     elif self.net_type == 'ncsnpp':
+      raise NotImplementedError
       net_fn = partial(NCSNpp,
         base_width=self.base_width,
         image_size=self.image_size,
@@ -149,13 +187,16 @@ class SimDDPM(nn.Module):
       net_fn = partial(NCSNppEDM,
         base_width=self.base_width,
         image_size=self.image_size,
-        dropout=self.dropout)
+        out_channels=self.out_channels,
+        dropout=self.dropout,
+        rngs=self.rngs)
     else:
       raise ValueError(f'Unknown net type: {self.net_type}')
 
-    # declare two networks
-    self.net = net_fn(name='net')
-    self.net_ema = net_fn(name='net_ema')
+    # # declare two networks
+    # self.net = net_fn(name='net')
+    # self.net_ema = net_fn(name='net_ema')
+    self.net = net_fn()
 
 
   def get_visualization(self, list_imgs):
@@ -176,11 +217,26 @@ class SimDDPM(nn.Module):
     }
     return loss_train, dict_losses
 
-  def sample_one_step(self, x_i, rng, i, t_steps):
+  def sample_one_step(self, x_i, rng, i):
+
+    if self.sampler == 'euler':
+      x_next = self.sample_one_step_euler(x_i, i)  # t_next is not used
+    elif self.sampler == 'heun':
+      x_next = self.sample_one_step_heun(x_i, i)  # t_next is not used
+    else:
+      raise NotImplementedError
+
+    return x_next
+
+  def sample_one_step_heun(self, x_i, i):
 
     x_cur = x_i
-    t_cur = t_steps[i]
-    t_next = t_steps[i + 1]
+
+    t_cur = i / self.n_T  # t start from 0 (t = 0 is noise here)
+    t_cur = t_cur * (1 - self.eps) + self.eps
+
+    t_next = (i + 1) / self.n_T  # t start from 0 (t = 0 is noise here)
+    t_next = t_next * (1 - self.eps) + self.eps
 
     # TODO{kaiming}: revisit S_churn
     t_hat = t_cur
@@ -191,20 +247,35 @@ class SimDDPM(nn.Module):
     
     # TODO: ema net?
     # Euler step.
-    denoised = self.forward_edm_denoising_function(x_hat, t_hat, train=False)
-    d_cur = batch_mul(x_hat - denoised, 1. / t_hat)
-    x_next = x_hat + batch_mul(d_cur, t_next - t_hat)
+    u_pred = self.forward_flow_pred_function(x_i, t_hat, train=False)
+    d_cur = u_pred
+    x_next = x_hat + batch_mul(u_pred, t_next - t_hat)
 
     # Apply 2nd order correction
-    denoised = self.forward_edm_denoising_function(x_next, t_next, train=False)
-    d_prime = batch_mul(x_next - denoised, 1. / jnp.maximum(t_next, 1e-8))  # won't take effect if t_next is 0 (last step)
+    u_pred = self.forward_flow_pred_function(x_next, t_next, train=False)
+    d_prime = u_pred
     x_next_ = x_hat + batch_mul(0.5 * d_cur + 0.5 * d_prime, t_next - t_hat)
 
     x_next = jnp.where(i < self.n_T - 1, x_next_, x_next)
 
     return x_next
 
+  def sample_one_step_euler(self, x_i, i):
+    # i: loop from 0 to self.n_T - 1
+    t = i / self.n_T  # t start from 0 (t = 0 is noise here)
+    t = t * (1 - self.eps) + self.eps
+    t = jnp.repeat(t, x_i.shape[0])
+
+    u_pred = self.forward_flow_pred_function(x_i, t, train=False)
+
+    # move one step
+    dt = 1. / self.n_T
+    x_next = x_i + u_pred * dt
+
+    return x_next
+
   def compute_t(self, indices, scales):
+    raise NotImplementedError # this is not used in flow matching
     sde = self.sde
     t = sde.t_max ** (1 / sde.rho) + indices / (scales - 1) * (
         sde.t_min ** (1 / sde.rho) - sde.t_max ** (1 / sde.rho)
@@ -235,6 +306,7 @@ class SimDDPM(nn.Module):
     return denoiser
 
   def forward_edm_denoising_function(self, x, sigma, augment_label=None, train: bool = True):  # EDM
+    raise NotImplementedError
     c_skip = self.sde.data_std ** 2 / (sigma ** 2 + self.sde.data_std ** 2)
     c_out = sigma * self.sde.data_std / jnp.sqrt(sigma ** 2 + self.sde.data_std ** 2)
 
@@ -250,42 +322,83 @@ class SimDDPM(nn.Module):
     D_x = batch_mul(x, c_skip) + batch_mul(F_x, c_out)
     return D_x
 
-  def forward(self, imgs, labels, augment_label, train: bool = True):
+  def forward_flow_pred_function(self, z, t, augment_label=None, train: bool = True):  # EDM
+
+    t_cond = jnp.log(t * 999)
+    # t_cond = t
+    u_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
+    return u_pred
+
+  def forward(self, imgs, labels, augment_label, noise_batch, t_batch, train: bool = True):
+    """
+    You should first sample the noise and t and input them
+    """
     imgs = imgs.astype(self.dtype)
     gt = imgs
     x = imgs
     bz = imgs.shape[0]
 
+    assert noise_batch.shape == x.shape
+    assert t_batch.shape == (bz,)
+    t_batch = t_batch.reshape(bz, 1, 1, 1)
+
     # -----------------------------------------------------------------
 
-    rnd_normal = jax.random.normal(self.make_rng('gen'), [bz, 1, 1, 1], dtype=self.dtype)
-    sigma = jnp.exp(rnd_normal * self.P_std + self.P_mean)
+    # sample from data
+    x_data = x
+    # sample from prior (noise)
+    x_prior = noise_batch
 
-    weight = (sigma ** 2 + self.sde.data_std ** 2) / (sigma * self.sde.data_std) ** 2
+    # sample t step
+    t = t_batch
+    eps = 1e-3
+    t = t * (1 - eps) + eps
 
-    noise = jax.random.normal(self.make_rng('gen'), x.shape, dtype=self.dtype) * sigma
+    # create v target
+    v_target = x_data - x_prior
 
-    xn = x + noise
-    D_xn = self.forward_edm_denoising_function(xn, sigma, augment_label)
+    # create z (as the network input)
+    # z = batch_mul(1 - t, x_data) + batch_mul(t, x_prior)
+    z = batch_mul(t, x_data) + batch_mul(1 - t, x_prior)
 
-    loss = (D_xn - gt)**2
-    loss = weight * loss
-    loss = jnp.sum(loss, axis=(1, 2, 3))  # sum over pixels
+    # forward network
+    u_pred = self.forward_flow_pred_function(z, t)
+
+
+    # loss
+    loss = (v_target - u_pred)**2
+    if self.average_loss:
+      loss = jnp.mean(loss, axis=(1, 2, 3))  # mean over pixels
+    else:
+      loss = jnp.sum(loss, axis=(1, 2, 3))  # sum over pixels
     loss = loss.mean()  # mean over batch
-    
+
     loss_train = loss
 
     dict_losses = {}
     dict_losses['loss'] = loss  # legacy
     dict_losses['loss_train'] = loss_train
 
-    images = self.get_visualization([gt, xn, D_xn])
+    # prepare some visualization
+    # if we can pred u, then we can reconstruct x_data from x_prior
+    # x_data_pred = z + batch_mul(t, u_pred)
+    x_data_pred = z + batch_mul(1 - t, u_pred)
+    
+
+    images = self.get_visualization(
+      [gt,
+       v_target,  # target of network (known)
+       u_pred,
+       z,  # input to network (known)
+       x_data_pred,
+      ])
+
     return loss_train, dict_losses, images
 
   def __call__(self, imgs, labels, train: bool = False):
     # initialization only
     t = jnp.ones((imgs.shape[0],))
-    augment_label = jnp.ones((imgs.shape[0], 9)) if self.use_aug_label else None  # fixed augment_dim
-    out = self.net(imgs, t, augment_label)
+    augment_label = jnp.ones((imgs.shape[0], 9)) if self.use_aug_label else None  # fixed augment_dim # TODO: what is this?
+    out = self.net(imgs, t, augment_label) # TODO: whether to add train=train
     out_ema = None   # no need to initialize it here
     return out, out_ema

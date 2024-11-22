@@ -32,33 +32,46 @@
 # Here is for CIFAR10:
 
 training:
-    learning_rate: 0.00002
-    scheduler: poly # constant
-    warmup_steps: 45000
-    num_epochs: 2000
-    batch_size: 1024
-    log_per_step: 20
-    sigma_min: 0.0
-    wandb: True
     checkpoint_per_epoch: 10000
-    eval_per_epoch: 20
-    # load_from: /kmh-nfs-us-mount/logs/sqa/sqa_NCSNv2/20241101_030317_2ml2nf_kmh-tpuvm-v2-32-1__b_lr_ep_torchvision_r50_eval/checkpoint_5684
+    # load_from: TODO
 model:
-    name: UNet_for_cifar
+    image_size: 32
+    out_channels: 3
+    base_width: 128
+    n_T: 18
+    use_aug_label: False
+    dropout: 0.20
+    net_type: ncsnppedm
+    average_loss: True # use average or sum for loss
+    sampler: euler # or heun
+    ode_solver: jax # or scipy, which uses rk45
 dataset:
     name: cifar10
     # root: /kmh-nfs-ssd-eu-mount/code/qiao/data/MNIST/
-    image_size: 32
     prefetch_factor: 2
     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
+    cache: True
+aug: 
+    use_edm_aug: False
 sampling:
-    ema: True
-    ema_decay: 0.999
+    # ema: True
+    # ema_decay: 0.999
     save_dir: null
-    n_T: 40
 fid:
-    eval_only: True
-    fid_per_epoch: 40
+    eval_only: False
+    fid_per_epoch: 50
+    num_samples: 50000
+batch_size: 512
+num_epochs: 4000
+learning_rate: 0.0008
+lr_schedule: const
+weight_decay: 0.0
+optimizer: adamw
+adam_b2: 0.999
+warmup_epochs: 200
+log_per_step: 100
+visualize_per_epoch: 100
+eval_per_epoch: 100
 
 # # Here is for IMAGENET32x32:
 

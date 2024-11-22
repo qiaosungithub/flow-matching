@@ -16,8 +16,7 @@
 # pylint: skip-file
 
 from .jcm import layers, layerspp, normalization
-# import flax.linen as nn
-import flax.nnx as nnx
+import flax.linen as nn
 import functools
 import jax.numpy as jnp
 import jax
@@ -39,23 +38,20 @@ get_normalization = normalization.get_normalization
 default_initializer = layers.default_init
 
 
-class ZYFlow(nn.Module):
-    """GZY's Flow model"""
+class NCSNpp(nn.Module):
+    """NCSN++ model"""
     base_width: int = 128
     image_size: int = 32
     ch_mult: Sequence[int] = (2, 2, 2)
     num_res_blocks: int = 4
     attn_resolutions: Sequence[int] = (16,)
     dropout: float = 0.0
-    fir: bool = True
     fir_kernel: Sequence[int] = (1, 3, 3, 1)
-    embedding_type: str = "fourier"
     resblock_type: str = "biggan"
-    progressive_input: str = "residual"
     fourier_scale: float = 16.0
 
     @nn.compact
-    def __call__(self, x, time_cond, augment_label=None, train=True, verbose=True):
+    def __call__(self, x, time_cond, augment_label=None, train=True, verbose=False): # turn off verbose here
 
         assert time_cond.ndim == 1  # only support 1-d time condition
         assert time_cond.shape[0] == x.shape[0]
@@ -75,19 +71,19 @@ class ZYFlow(nn.Module):
         num_resolutions = len(ch_mult)
 
         conditional = True  # noise-conditional
-        fir = self.fir
+        fir = True
         fir_kernel = self.fir_kernel
         skip_rescale = True
         resblock_type = self.resblock_type
         progressive = "none"
-        progressive_input = self.progressive_input
-        embedding_type = self.embedding_type
+        progressive_input = "residual"
+        embedding_type = "fourier"
         fourier_scale = self.fourier_scale
         init_scale = 0.0
 
         assert progressive in ["none", "output_skip", "residual"]
         assert progressive_input in ["none", "input_skip", "residual"]
-        assert embedding_type in ["fourier", "positional", '1kxpositional']
+        assert embedding_type in ["fourier", "positional"]
 
         combine_method = "sum"
         combiner = functools.partial(Combine, method=combine_method)
@@ -98,24 +94,19 @@ class ZYFlow(nn.Module):
         # timestep/noise_level embedding; only for continuous training
         if embedding_type == "fourier":
             # Gaussian Fourier features embeddings.
-            channel_mult_noise = 2
             temb = layerspp.GaussianFourierProjection(
                 embedding_size=nf, scale=fourier_scale, name='map_noise',
             )(time_cond)
         elif embedding_type == "positional":
-            channel_mult_noise = 1
+            raise NotImplementedError
             # Sinusoidal positional embeddings.
             temb = layers.get_timestep_embedding(time_cond, nf)
-        elif embedding_type == "1kxpositional":
-            channel_mult_noise = 1
-            # Rescaled Sinusoidal positional embeddings.
-            temb = layers.get_timestep_embedding(1000 * time_cond, nf)
         else:
             raise NotImplementedError
             raise ValueError(f"embedding type {embedding_type} unknown.")
 
         if augment_label is not None:
-            aemb = nn.Dense(nf * channel_mult_noise, kernel_init=default_initializer(), use_bias=False, name='map_augment')(augment_label)
+            aemb = nn.Dense(nf * 2, kernel_init=default_initializer(), use_bias=False, name='map_augment')(augment_label)
             temb += aemb 
 
         if conditional:
@@ -224,7 +215,6 @@ class ZYFlow(nn.Module):
             if i_level != num_resolutions - 1:
                 if resblock_type == "ddpm":
                     raise NotImplementedError
-                    cur_size //= 2
                     h = Downsample()(hs[-1])
                 else:
                     cur_size //= 2

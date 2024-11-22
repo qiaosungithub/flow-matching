@@ -23,6 +23,9 @@ def get_samples_from_dir(samples_dir, config):
 
 
 def generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step):
+  """
+  what is state here? maybe just NNXstate
+  """
   num_steps = np.ceil(config.fid.num_samples / config.fid.device_batch_size / jax.device_count()).astype(int)
   output_dir = os.path.join(workdir, 'samples')
   os.makedirs(output_dir, exist_ok=True)

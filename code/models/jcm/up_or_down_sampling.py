@@ -19,7 +19,8 @@
 Many functions are ported from https://github.com/NVlabs/stylegan2.
 """
 
-import flax.linen as nn
+# import flax.linen as nn
+import flax.nnx as nn
 from typing import Any, Tuple, Optional, Sequence
 import jax
 import jax.nn as jnn
@@ -30,32 +31,103 @@ import numpy as np
 # Function ported from StyleGAN2
 def get_weight(module, shape, weight_var="weight", kernel_init=None):
     """Get/create weight tensor for a convolution or fully-connected layer."""
+    raise NotImplementedError("This function is not implemented.")    
 
     return module.param(weight_var, kernel_init, shape)
 
 
+# class Conv2d(nn.Module):
+#     """Conv2d layer with optimal upsampling and downsampling (StyleGAN2)."""
+
+#     fmaps: int
+#     kernel: int
+#     up: bool = False
+#     down: bool = False
+#     resample_kernel: Tuple[int] = (1, 3, 3, 1)
+#     use_bias: bool = True
+#     weight_var: str = "weight"
+#     kernel_init: Optional[Any] = None
+
+#     @nn.compact
+#     def __call__(self, x):
+#         assert not (self.up and self.down)
+#         assert self.kernel >= 1 and self.kernel % 2 == 1
+#         w = get_weight(
+#             self,
+#             (self.kernel, self.kernel, x.shape[-1], self.fmaps),
+#             weight_var=self.weight_var,
+#             kernel_init=self.kernel_init,
+#         )
+#         if self.up:
+#             x = upsample_conv_2d(x, w, data_format="NHWC", k=self.resample_kernel)
+#         elif self.down:
+#             x = conv_downsample_2d(x, w, data_format="NHWC", k=self.resample_kernel)
+#         else:
+#             x = jax.lax.conv_general_dilated(
+#                 x,
+#                 w,
+#                 window_strides=(1, 1),
+#                 padding="SAME",
+#                 dimension_numbers=("NHWC", "HWIO", "NHWC"),
+#             )
+
+#         if self.use_bias:
+#             b = self.param("bias", jnn.initializers.zeros, (x.shape[-1],))
+#             x = x + b.reshape((1, 1, 1, -1))
+#         return x
+
 class Conv2d(nn.Module):
-    """Conv2d layer with optimal upsampling and downsampling (StyleGAN2)."""
+    """
+    Conv2d layer with optimal upsampling and downsampling (StyleGAN2).
 
-    fmaps: int
-    kernel: int
-    up: bool = False
-    down: bool = False
-    resample_kernel: Tuple[int] = (1, 3, 3, 1)
-    use_bias: bool = True
-    weight_var: str = "weight"
-    kernel_init: Optional[Any] = None
+    inputs:
+        fmaps: out_channels
+        in_dim: in_channels (default: fmaps)
+    """
 
-    @nn.compact
-    def __call__(self, x):
+    def __init__(self,
+        fmaps: int,
+        kernel: int,
+        up: bool = False,
+        down: bool = False,
+        resample_kernel: Tuple[int] = (1, 3, 3, 1),
+        use_bias: bool = True,
+        weight_var: str = "weight",
+        kernel_init: Optional[Any] = None,
+        in_dim=None,
+        rngs=None
+    ):
+        self.fmaps = fmaps
+        self.kernel = kernel
+        self.up = up
+        self.down = down
+        self.resample_kernel = resample_kernel
+        self.use_bias = use_bias
+        self.weight_var = weight_var
+        self.kernel_init = kernel_init
+        self.rngs = rngs
+        self.in_dim = fmaps if in_dim is None else in_dim
+
         assert not (self.up and self.down)
         assert self.kernel >= 1 and self.kernel % 2 == 1
-        w = get_weight(
-            self,
-            (self.kernel, self.kernel, x.shape[-1], self.fmaps),
-            weight_var=self.weight_var,
-            kernel_init=self.kernel_init,
+
+        self.conv = nn.Conv(
+            in_features=in_dim,
+            out_features=fmaps,
+            kernel_size=(kernel, kernel),
+            use_bias=use_bias,
+            kernel_init=kernel_init,
+            bias_init=jnn.initializers.zeros,
+            rngs=rngs,
         )
+
+        # self.w = nn.Embed(num_embeddings=1, features=self.kernel * self.kernel * in_dim * self.fmaps, kernel_init=self.kernel_init, rngs=self.rngs)
+
+    def __call__(self, x: jnp.ndarray):
+        assert x.shape[-1] == self.in_dim
+        
+        w = self.conv.kernel.value
+        assert w.shape == (self.kernel, self.kernel, self.in_dim, self.fmaps)
         if self.up:
             x = upsample_conv_2d(x, w, data_format="NHWC", k=self.resample_kernel)
         elif self.down:
@@ -70,10 +142,10 @@ class Conv2d(nn.Module):
             )
 
         if self.use_bias:
-            b = self.param("bias", jnn.initializers.zeros, (x.shape[-1],))
+            b = self.conv.bias.value
+            assert b.shape == (x.shape[-1],)
             x = x + b.reshape((1, 1, 1, -1))
         return x
-
 
 def naive_upsample_2d(x, factor=2):
     _N, H, W, C = x.shape
@@ -88,7 +160,7 @@ def naive_downsample_2d(x, factor=2):
     return jnp.mean(x, axis=[2, 4])
 
 
-def upsample_conv_2d(x, w, k=None, factor=2, gain=1, data_format="NHWC"):
+def upsample_conv_2d(x, w: jnp.ndarray, k=None, factor=2, gain=1, data_format="NHWC"):
     """Fused `upsample_2d()` followed by `tf.nn.conv2d()`.
 
     Padding is performed only once at the beginning, not between the

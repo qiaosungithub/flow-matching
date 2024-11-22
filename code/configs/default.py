@@ -51,7 +51,10 @@ def get_config():
   model.dropout = 0.0
 
   model.use_aug_label = False
+  model.average_loss = False
 
+  model.sampler = 'euler' # or 'heun'
+  model.ode_solver = 'jax'  # or 'scipy', which use RK45 solver
   model.net_type = 'ncsnpp'
 
   config.aug = aug = ml_collections.ConfigDict()
@@ -70,12 +73,13 @@ def get_config():
   dataset.num_workers = 4
   dataset.prefetch_factor = 2
   dataset.pin_memory = False
-  dataset.cache = True
+  dataset.cache = False
   dataset.fake_data = False
-  dataset.out_channels = 0 # from model
+  dataset.out_channels = 0  # from model
   dataset.steps_per_epoch = -1
 
   # Training
+  # TODO: whether to keep the config here
   config.training = training = ml_collections.ConfigDict()
   training.checkpoint_per_epoch = 20
   training.checkpoint_max_keep = 2
@@ -126,6 +130,7 @@ def get_config():
   config.wandb = True
 
   # sampling
+  # TODO: whether to keep the config here
   config.sampling = sampling = ml_collections.ConfigDict()
   sampling.sigma_begin = 28
   sampling.n_noise_levels = 75

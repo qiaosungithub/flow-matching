@@ -16,8 +16,10 @@
 # pylint: skip-file
 
 from .jcm import layers, layerspp, normalization
-import flax.linen as nn
+# import flax.linen as nn
+import flax.nnx as nn
 import functools
+from functools import partial
 import jax.numpy as jnp
 import jax
 import numpy as np
@@ -30,131 +32,137 @@ from absl import logging
 
 ResnetBlockDDPM = layerspp.ResnetBlockDDPMpp
 ResnetBlockBigGAN = layerspp.ResnetBlockBigGANpp
-Combine = layerspp.Combine
+Combine = layerspp.Combine # not used
 conv3x3 = layerspp.conv3x3
-conv1x1 = layerspp.conv1x1
-get_act = layers.get_act
+conv1x1 = layerspp.conv1x1 # not used
+get_act = layers.get_act # not used
 get_normalization = normalization.get_normalization
 default_initializer = layers.default_init
 
 
 class NCSNpp(nn.Module):
     """NCSN++ model"""
-    base_width: int = 128
-    image_size: int = 32
-    ch_mult: Sequence[int] = (2, 2, 2)
-    num_res_blocks: int = 4
-    attn_resolutions: Sequence[int] = (16,)
-    dropout: float = 0.0
-    fir_kernel: Sequence[int] = (1, 3, 3, 1)
-    resblock_type: str = "biggan"
-    fourier_scale: float = 16.0
 
-    @nn.compact
-    def __call__(self, x, time_cond, augment_label=None, train=True, verbose=False): # turn off verbose here
+    def __init__(self,
+        base_width = 128,
+        image_size = 32,
+        out_channels = 3, # also in_channels
+        ch_mult = (2, 2, 2),
+        num_res_blocks = 4,
+        attn_resolutions = (16,),
+        dropout = 0.0,
+        fir_kernel = (1, 3, 3, 1),
+        resblock_type = "biggan",
+        fourier_scale = 16.0,
+        rngs = None,
+        use_aug_label = False,
+        aug_label_dim = None,
+        **kwargs
+    ):
 
-        assert time_cond.ndim == 1  # only support 1-d time condition
-        assert time_cond.shape[0] == x.shape[0]
+        nf = self.base_width = base_width
+        self.image_size = image_size
+        self.out_channels = out_channels
+        self.ch_mult = ch_mult
+        self.num_res_blocks = num_res_blocks
+        self.attn_resolutions = attn_resolutions
+        self.dropout = dropout
+        self.fir_kernel = fir_kernel
+        self.resblock_type = resblock_type
+        self.fourier_scale = fourier_scale
+        self.rngs = rngs
+        self.use_aug_label = use_aug_label
+        self.aug_label_dim = aug_label_dim
 
-        logging_fn = logging.info if verbose else lambda x: None
+        self.act = act = nn.swish
+        self.conditional = conditional = True  # noise-conditional
+        self.init_scale = init_scale = 0.0
+        self.skip_rescale = skip_rescale = True
+        self.resamp_with_conv = resamp_with_conv = True
+        self.fir = fir = True
+        self.double_heads = double_heads = False
 
-        # --------------------
-        # redefine arguments:
-        act = nn.swish
+        cur_size = image_size
+        self.num_resolutions = num_resolutions = len(ch_mult)
 
-        nf = self.base_width  # config.model.nf
-        ch_mult = self.ch_mult
-        num_res_blocks = self.num_res_blocks
-        attn_resolutions = self.attn_resolutions
-        dropout = self.dropout
-        resamp_with_conv = True
-        num_resolutions = len(ch_mult)
-
-        conditional = True  # noise-conditional
-        fir = True
-        fir_kernel = self.fir_kernel
-        skip_rescale = True
-        resblock_type = self.resblock_type
-        progressive = "none"
-        progressive_input = "residual"
-        embedding_type = "fourier"
-        fourier_scale = self.fourier_scale
-        init_scale = 0.0
-
+        progressive = self.progressive = "none"
+        progressive_input = self.progressive_input = "residual"
+        # embedding_type = "fourier"
+        embedding_type = self.embedding_type = "positional"
+        
         assert progressive in ["none", "output_skip", "residual"]
-        assert progressive_input in ["none", "input_skip", "residual"]
+        assert self.progressive_input in ["none", "input_skip", "residual"]
         assert embedding_type in ["fourier", "positional"]
 
-        combine_method = "sum"
-        combiner = functools.partial(Combine, method=combine_method)
-
-        double_heads = False
-        # --------------------
-
-        # timestep/noise_level embedding; only for continuous training
+        ################ time embedding layer ################
         if embedding_type == "fourier":
             # Gaussian Fourier features embeddings.
-            temb = layerspp.GaussianFourierProjection(
-                embedding_size=nf, scale=fourier_scale, name='map_noise',
-            )(time_cond)
+            self.temb_layer = layerspp.GaussianFourierProjection(
+                embedding_size=nf, scale=fourier_scale, name='map_noise', rngs=rngs
+            )
         elif embedding_type == "positional":
-            raise NotImplementedError
+            # raise NotImplementedError
             # Sinusoidal positional embeddings.
-            temb = layers.get_timestep_embedding(time_cond, nf)
+            self.temb_layer = partial(layers.get_timestep_embedding, embedding_dim=nf)
         else:
             raise NotImplementedError
             raise ValueError(f"embedding type {embedding_type} unknown.")
-
-        if augment_label is not None:
-            aemb = nn.Dense(nf * 2, kernel_init=default_initializer(), use_bias=False, name='map_augment')(augment_label)
-            temb += aemb 
-
+        #################### aug label ############################
+        if use_aug_label:
+            assert aug_label_dim is not None
+            self.augemb_layer = nn.Linear(aug_label_dim, nf * 2, kernel_init=default_initializer(), use_bias=False, name='map_augment')
+        #################### noise condition ############################
         if conditional:
-            temb = nn.Dense(nf * 4, kernel_init=default_initializer(), name='map_layer0')(temb)
-            temb = nn.Dense(nf * 4, kernel_init=default_initializer(), name='map_layer1')(act(temb))
-        else:
-            raise NotImplementedError
-            temb = None
-
-        AttnBlock = functools.partial(
-            layerspp.AttnBlockpp, init_scale=init_scale, skip_rescale=skip_rescale
+            input_temb_dim = nf * 2 if use_aug_label else nf
+            self.cond_MLP = nn.Sequential(
+                nn.Linear(input_temb_dim, nf * 4, kernel_init=default_initializer(), rngs=rngs),
+                act,
+                nn.Linear(nf * 4, nf * 4, kernel_init=default_initializer(), rngs=rngs),
+            )
+        #################### Blocks ############################
+        
+        AttnBlock = partial(
+            layerspp.AttnBlockpp, init_scale=init_scale, skip_rescale=skip_rescale, rngs=rngs
         )
 
-        Upsample = functools.partial(
+        Upsample = partial(
             layerspp.Upsample,
             with_conv=resamp_with_conv,
             fir=fir,
             fir_kernel=fir_kernel,
+            rngs=rngs,
         )
 
-        if progressive == "output_skip":
-            raise NotImplementedError
-            pyramid_upsample = functools.partial(
-                layerspp.Upsample, fir=fir, fir_kernel=fir_kernel, with_conv=False
-            )
-        elif progressive == "residual":
-            raise NotImplementedError
-            pyramid_upsample = functools.partial(
-                layerspp.Upsample, fir=fir, fir_kernel=fir_kernel, with_conv=True
-            )
-
-        Downsample = functools.partial(
+        Downsample = partial(
             layerspp.Downsample,
             with_conv=resamp_with_conv,
             fir=fir,
             fir_kernel=fir_kernel,
+            rngs=rngs,
         )
+        #################### progressive (input) #########################
+        if progressive == "output_skip":
+            raise NotImplementedError
+            pyramid_upsample = partial(
+                layerspp.Upsample, fir=fir, fir_kernel=fir_kernel, with_conv=False
+            )
+        elif progressive == "residual":
+            raise NotImplementedError
+            pyramid_upsample = partial(
+                layerspp.Upsample, fir=fir, fir_kernel=fir_kernel, with_conv=True
+            )
 
         if progressive_input == "input_skip":
             raise NotImplementedError
-            pyramid_downsample = functools.partial(
+            pyramid_downsample = partial(
                 layerspp.Downsample, fir=fir, fir_kernel=fir_kernel, with_conv=False
             )
         elif progressive_input == "residual":
-            pyramid_downsample = functools.partial(
-                layerspp.Downsample, fir=fir, fir_kernel=fir_kernel, with_conv=True
+            # TODO: what is in and out shape here?
+            self.pyramid_downsample = partial(
+                layerspp.Downsample, fir=fir, fir_kernel=fir_kernel, with_conv=True, rngs=rngs
             )
-
+        #################### resblock #########################
         if resblock_type == "ddpm":
             raise NotImplementedError
             ResnetBlock = functools.partial(
@@ -166,6 +174,7 @@ class NCSNpp(nn.Module):
             )
 
         elif resblock_type == "biggan":
+            # TODO: the in, out dim; up/down; temb_dim
             ResnetBlock = functools.partial(
                 ResnetBlockBigGAN,
                 act=act,
@@ -174,64 +183,217 @@ class NCSNpp(nn.Module):
                 fir_kernel=fir_kernel,
                 init_scale=init_scale,
                 skip_rescale=skip_rescale,
+                rngs=rngs,
             )
 
         else:
             raise ValueError(f"resblock type {resblock_type} unrecognized.")
+        #################### blocks #########################
+        c_list = []
+        setattr(self, f'enc_{cur_size}x{cur_size}_conv', conv3x3(out_channels, nf, rngs=rngs))
+        c_list.append(nf)
+        # downsample
+        for i_level in range(num_resolutions):
+            for i_block in range(num_res_blocks):
+                out_c = nf * ch_mult[i_level]
+                in_c = out_c if i_block > 0 else (nf * (1 if i_level == 0 else ch_mult[i_level - 1]))
+                setattr(
+                    self,
+                    f'enc_{cur_size}x{cur_size}_block{i_block}',
+                    ResnetBlock(in_c, out_ch=out_c, temb_dim=4*nf),
+                )
+                if cur_size in attn_resolutions:
+                    setattr(
+                        self,
+                        f'enc_{cur_size}x{cur_size}_block{i_block}_attn',
+                        AttnBlock(out_c),
+                    )
+                c_list.append(out_c)
+
+            if i_level != num_resolutions - 1:
+                if resblock_type == "ddpm":
+                    raise NotImplementedError
+                    setattr(self, f'enc_{cur_size}x{cur_size}_down', Downsample())
+                else:
+                    cur_size //= 2
+                    setattr(
+                        self,
+                        f'enc_{cur_size}x{cur_size}_down',
+                        ResnetBlock(out_c, down=True, temb_dim=4*nf),
+                    )
+
+                if self.progressive_input == "input_skip":
+                    raise NotImplementedError
+                elif self.progressive_input == "residual":
+                    setattr(
+                        self,
+                        f'enc_{cur_size}x{cur_size}_aux_residual',
+                        self.pyramid_downsample(out_c, out_ch=out_c),
+                    )
+                c_list.append(out_c)
+        
+        c = nf * ch_mult[-1]
+        # middle
+        setattr(self, 
+                f'dec_{cur_size}x{cur_size}_in0', 
+                ResnetBlock(c, temb_dim=4*nf)
+        )
+        setattr(self, 
+                f'dec_{cur_size}x{cur_size}_in0_attn', 
+                AttnBlock(c)
+        )
+        setattr(self,
+                f'dec_{cur_size}x{cur_size}_in1',
+                ResnetBlock(c, temb_dim=4*nf)
+        )
+        # upsample
+        for i_level in reversed(range(num_resolutions)):
+            for i_block in range(num_res_blocks + 1):
+                out_c = nf * ch_mult[i_level]
+                in_c = c_list.pop() + (out_c if i_block > 0 else (nf * (ch_mult[i_level+1] if i_level < num_resolutions - 1 else ch_mult[-1])))
+                # this is 恶臭
+                setattr(
+                    self,
+                    f'dec_{cur_size}x{cur_size}_block{i_block}',
+                    ResnetBlock(in_c, out_ch=out_c, temb_dim=4 * nf),
+                )
+            if cur_size in attn_resolutions:
+                setattr(
+                    self,
+                    f'dec_{cur_size}x{cur_size}_block{i_block}_attn',
+                    AttnBlock(out_c),
+                )
+            if progressive != "none":
+                raise NotImplementedError
+            if i_level != 0:
+                if resblock_type == "ddpm":
+                    raise NotImplementedError
+                    setattr(self, f'dec_{cur_size}x{cur_size}_up', Upsample())
+                else:
+                    cur_size *= 2
+                    setattr(
+                        self,
+                        f'dec_{cur_size}x{cur_size}_up',
+                        ResnetBlock(out_c, up=True, temb_dim=4*nf),
+                    )
+        assert not c_list
+        # final
+        if self.progressive == "output_skip" and not double_heads:
+            raise NotImplementedError
+        else: 
+            in_c = nf * ch_mult[0]
+            setattr(self, 
+                    f'dec_{cur_size}x{cur_size}_aux_norm', 
+                    nn.GroupNorm(num_features=in_c, num_groups=min(in_c // 4, 32), rngs=rngs)
+            )
+            if double_heads:
+                raise NotImplementedError
+            else:
+                setattr(self, 
+                        f'dec_{cur_size}x{cur_size}_aux_conv', 
+                        conv3x3(in_c, out_channels, init_scale=init_scale, rngs=rngs)
+                )
+
+    def __call__(self, x, time_cond, augment_label=None, train=True, verbose=False): # turn off verbose here
+
+        assert time_cond.ndim == 1  # only support 1-d time condition
+        assert time_cond.shape[0] == x.shape[0]
+        assert x.shape[-1] == self.out_channels
+
+        logging_fn = logging.info if verbose else lambda x: None
+
+        # --------------------
+        # redefine arguments:
+        act = nn.swish
+
+        nf = self.base_width  # config.model.nf
+        ch_mult = self.ch_mult
+        num_res_blocks = self.num_res_blocks
+        attn_resolutions = self.attn_resolutions
+        # resamp_with_conv = True # not used
+        num_resolutions = len(ch_mult)
+
+        skip_rescale = True
+        init_scale = 0.0
+
+        # combiner = functools.partial(Combine, method=combine_method)
+        combiner = None # not used
+
+        # --------------------
+
+        # timestep/noise_level embedding; only for continuous training
+        temb = self.temb_layer(time_cond)
+
+        if augment_label is not None:
+            assert self.use_aug_label
+            assert augment_label.shape == (x.shape[0], self.aug_label_dim)
+            aemb = self.augemb_layer(augment_label)
+            temb += aemb 
+
+        if self.conditional:
+            temb = self.cond_MLP(temb)
+        else:
+            raise NotImplementedError
+            temb = None
 
 
         # utility function to count number of parameters
         def pms(self, name):
-            tree = jax.tree_map(lambda x: np.prod(x.shape), self.variables['params'][name])
+            """
+            output: number of parameters
+            """
+            layer = getattr(self, name)
+            tree = jax.tree.map(lambda x: np.prod(x.shape), nn.state(layer))
             return jax.tree_util.tree_reduce(lambda x, y: x + y, tree, initializer=0)
-        ps = functools.partial(pms, self)
+        ps = partial(pms, self)
 
-
-        # begin of the work
+        ########### begin of the work ############
         # Downsampling block
 
         cur_size = self.image_size
 
         input_pyramid = None
-        if progressive_input != "none":
+        if self.progressive_input != "none":
             input_pyramid = x
 
         logging_fn(f"Input shape {x.shape}")
         name = f'enc_{cur_size}x{cur_size}_conv'  # 32x32_conv
-        hs = [conv3x3(x, nf, name=name)]
-        logging_fn(f"{name}: params {ps(name)}, shape {hs[-1].shape}")
-        for i_level in range(num_resolutions):
+        hs = [getattr(self, name)(x)]
+        logging_fn(f"{name}: params {ps(name)}, shape {hs[-1].shape}") # 32x32xnf
+        for i_level in range(self.num_resolutions):
             # Residual blocks for this resolution
-            for i_block in range(num_res_blocks):
+            for i_block in range(self.num_res_blocks):
                 name = f'enc_{cur_size}x{cur_size}_block{i_block}'
-                h = ResnetBlock(out_ch=nf * ch_mult[i_level], name=name)(hs[-1], temb, train)
+                assert temb.shape[-1] == 4 * nf
+                h = getattr(self, name)(hs[-1], temb, train)
                 logging_fn(f"{name}: params {ps(name)}, shape {h.shape}")
+                # Here out_c is nf * ch_mult[i_level]
+                assert h.shape[1] == cur_size
                 if h.shape[1] in attn_resolutions:
                     name = f'enc_{cur_size}x{cur_size}_block{i_block}_attn'
-                    h = AttnBlock(name=name)(h)
+                    h = getattr(self, name)(h)
                     logging_fn(f"{name}: params {ps(name)}, shape {h.shape}")
                 hs.append(h)
 
             if i_level != num_resolutions - 1:
-                if resblock_type == "ddpm":
+                if self.resblock_type == "ddpm":
                     raise NotImplementedError
                     h = Downsample()(hs[-1])
                 else:
+                    # downsample
                     cur_size //= 2
                     name = f'enc_{cur_size}x{cur_size}_down'
-                    h = ResnetBlock(down=True, name=name)(hs[-1], temb, train)
+                    h = getattr(self, name)(hs[-1], temb, train)
                 logging_fn(f"{name}: params {ps(name)}, shape {h.shape}")
 
-                if progressive_input == "input_skip":
+                if self.progressive_input == "input_skip":
                     raise NotImplementedError
                     input_pyramid = pyramid_downsample()(input_pyramid)
                     h = combiner()(input_pyramid, h)
 
-                elif progressive_input == "residual":
+                elif self.progressive_input == "residual":
                     name = f'enc_{cur_size}x{cur_size}_aux_residual'
-                    input_pyramid = pyramid_downsample(out_ch=h.shape[-1], name=name)(
-                        input_pyramid
-                    )
+                    input_pyramid = getattr(self, name)(input_pyramid)
                     if skip_rescale:
                         input_pyramid = (input_pyramid + h) / np.sqrt(
                             2.0, dtype=np.float32
@@ -245,16 +407,17 @@ class NCSNpp(nn.Module):
                 hs.append(h)
 
         h = hs[-1]
+        assert h.shape[-1] == nf * ch_mult[-1]
         name = f'dec_{cur_size}x{cur_size}_in0'
-        h = ResnetBlock(name=name)(h, temb, train)
+        h = getattr(self, name)(h, temb, train)
         logging_fn(f"{name}: params {ps(name)}, shape {h.shape}")
         
         name = f'dec_{cur_size}x{cur_size}_in0_attn'
-        h = AttnBlock(name=name)(h)
+        h = getattr(self, name)(h)
         logging_fn(f"{name}: params {ps(name)}, shape {h.shape}")
         
         name = f'dec_{cur_size}x{cur_size}_in1'
-        h = ResnetBlock(name=name)(h, temb, train)
+        h = getattr(self, name)(h, temb, train)
         logging_fn(f"{name}: params {ps(name)}, shape {h.shape}")
 
         pyramid = None
@@ -263,17 +426,18 @@ class NCSNpp(nn.Module):
         for i_level in reversed(range(num_resolutions)):
             for i_block in range(num_res_blocks + 1):
                 name = f'dec_{cur_size}x{cur_size}_block{i_block}'
-                h = ResnetBlock(out_ch=nf * ch_mult[i_level], name=name)(
+                h = getattr(self, name)(
                     jnp.concatenate([h, hs.pop()], axis=-1), temb, train
                 )
                 logging_fn(f"{name}: params {ps(name)}, shape {h.shape}")
 
+            assert h.shape[1] == cur_size
             if h.shape[1] in attn_resolutions:
                 name = f'dec_{cur_size}x{cur_size}_block{i_block}_attn'
-                h = AttnBlock(name=name)(h)
+                h = getattr(self, name)(h)
                 logging_fn(f"{name}: params {ps(name)}, shape {h.shape}")
 
-            if progressive != "none":
+            if self.progressive != "none":
                 raise NotImplementedError
                 if i_level == num_resolutions - 1:
                     if progressive == "output_skip":
@@ -311,30 +475,31 @@ class NCSNpp(nn.Module):
                         raise ValueError(f"{progressive} is not a valid name")
 
             if i_level != 0:
-                if resblock_type == "ddpm":
+                if self.resblock_type == "ddpm":
                     raise NotImplementedError
                     h = Upsample()(h)
                 else:
                     cur_size *= 2
                     name = f'dec_{cur_size}x{cur_size}_up'
-                    h = ResnetBlock(up=True, name=name)(h, temb, train)
+                    h = getattr(self, name)(h, temb, train)
                 logging_fn(f"{name}: params {ps(name)}, shape {h.shape}")
 
         assert not hs
 
-        if progressive == "output_skip" and not double_heads:
+        if self.progressive == "output_skip" and not self.double_heads:
             raise NotImplementedError
             h = pyramid
         else:
+            assert h.shape[-1] == nf * ch_mult[0]
             name = f'dec_{cur_size}x{cur_size}_aux_norm'
-            h = act(nn.GroupNorm(num_groups=min(h.shape[-1] // 4, 32), name=name)(h))
+            h = act(getattr(self, name)(h))
             logging_fn(f"{name}: params {ps(name)}, shape {h.shape}")
-            if double_heads:
+            if self.double_heads:
                 raise NotImplementedError
                 h = conv3x3(h, x.shape[-1] * 2, init_scale=init_scale)
             else:
                 name = f'dec_{cur_size}x{cur_size}_aux_conv'
-                h = conv3x3(h, x.shape[-1], init_scale=init_scale, name=name)
+                h = getattr(self, name)(h)
                 logging_fn(f"{name}: params {ps(name)}, shape {h.shape}")
         logging_fn(f"Output shape {h.shape}")
         return h

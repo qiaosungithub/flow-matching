@@ -1,4 +1,5 @@
-# import torch
+# SQA's nnx implementation of NCSNv2 repo's normalization.py
+
 import flax.nnx as nn
 import jax.numpy as jnp
 import flax

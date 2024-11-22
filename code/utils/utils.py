@@ -163,70 +163,66 @@ class AddGaussianNoise(object):
 # )
 
 
-class MockResidualBlock(nn.Module):
-    """ A simplified residual block used in RealNVP.
+# class MockResidualBlock(nn.Module):
+#     """ A simplified residual block used in RealNVP.
 
-    Image feature shape is assumed to be unchanged.
-    """
+#     Image feature shape is assumed to be unchanged.
+#     """
 
-    def __init__(self,
-                 c_in,
-                 c_out,
-                 kernel_size=3,
-                 stride=1,
-                 padding=1,
-                 groups=1,
-                 output_activation=True):
-        super(MockResidualBlock, self).__init__()
-        self.conv = nn.Sequential(
-            nn.Conv2d(c_in,
-                      c_out,
-                      kernel_size,
-                      stride,
-                      padding,
-                      groups=groups,
-                      bias=False), nn.BatchNorm2d(c_out),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(c_out,
-                      c_out,
-                      kernel_size,
-                      stride,
-                      padding,
-                      groups=groups,
-                      bias=False), nn.BatchNorm2d(c_out))
-        self.skip_connection = nn.Identity()
-        if c_in != c_out:
-            self.skip_connection = nn.Sequential(nn.Conv2d(c_in, c_out, 1, 1),
-                                                 nn.BatchNorm2d(c_out))
+#     def __init__(self,
+#                  c_in,
+#                  c_out,
+#                  kernel_size=3,
+#                  stride=1,
+#                  padding=1,
+#                  groups=1,
+#                  output_activation=True):
+#         super(MockResidualBlock, self).__init__()
+#         self.conv = nn.Sequential(
+#             nn.Conv2d(c_in,
+#                       c_out,
+#                       kernel_size,
+#                       stride,
+#                       padding,
+#                       groups=groups,
+#                       bias=False), nn.BatchNorm2d(c_out),
+#             nn.ReLU(inplace=True),
+#             nn.Conv2d(c_out,
+#                       c_out,
+#                       kernel_size,
+#                       stride,
+#                       padding,
+#                       groups=groups,
+#                       bias=False), nn.BatchNorm2d(c_out))
+#         self.skip_connection = nn.Identity()
+#         if c_in != c_out:
+#             self.skip_connection = nn.Sequential(nn.Conv2d(c_in, c_out, 1, 1),
+#                                                  nn.BatchNorm2d(c_out))
 
-        self.output_activation = output_activation
+#         self.output_activation = output_activation
 
-    def forward(self, x):
-        if self.output_activation:
-            return F.relu(self.conv(x) + self.skip_connection(x), inplace=True)
-        else:
-            return self.conv(x) + self.skip_connection(x)
-
-def mkdir(path):
-    if not os.path.exists(path):
-        os.makedirs(path)
-
-def is_square(n):
-    if n == 0: return True
-    return n == int(n**0.5)**2
-
-def get_sigmas(config):
-    sigmas = jnp.array(
-        np.exp(np.linspace(np.log(config.sigma_begin), np.log(config.sigma_end),
-                            config.n_noise_levels))).astype(jnp.float32)
-    # if config.half_precision:
-    #     sigmas = sigmas.astype(jnp.bfloat16)
-
-    return sigmas
+#     def forward(self, x):
+#         if self.output_activation:
+#             return F.relu(self.conv(x) + self.skip_connection(x), inplace=True)
+#         else:
+#             return self.conv(x) + self.skip_connection(x)
 
 def mkdir(path):
     if not os.path.exists(path):
         os.makedirs(path)
+
+# def is_square(n):
+#     if n == 0: return True
+#     return n == int(n**0.5)**2
+
+# def get_sigmas(config):
+#     sigmas = jnp.array(
+#         np.exp(np.linspace(np.log(config.sigma_begin), np.log(config.sigma_end),
+#                             config.n_noise_levels))).astype(jnp.float32)
+#     # if config.half_precision:
+#     #     sigmas = sigmas.astype(jnp.bfloat16)
+
+#     return sigmas
 
 def save_img(img:jnp.ndarray, dir, im_name, grid=(1, 1)):
     """

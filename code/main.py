@@ -30,6 +30,7 @@ from ml_collections import config_flags
 
 import train
 from utils import logging_util
+from utils.logging_util import log_for_0
 logging_util.supress_checkpt_info()
 
 import warnings
@@ -39,12 +40,13 @@ warnings.filterwarnings("ignore")
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string('workdir', None, 'Directory to store model data.')
+flags.DEFINE_bool('debug', False, 'Debugging mode.')
 flags.DEFINE_enum('mode', enum_values=['local_debug','remote_debug','remote_run'], default='remote_run', help='Running mode.') # NOTE: This variable isn't used currently, but maintained for future use. This at least ensures that there is no more variable that must be passed in from the command line.
 
-# flags.DEFINE_bool('debug', False, 'Debugging mode.')
 config_flags.DEFINE_config_file(
     'config',
-    help_string='File path to the training hyperparameter configuration.',
+    None,
+    'File path to the training hyperparameter configuration.',
     lock_config=True,
 )
 
@@ -52,9 +54,8 @@ def main(argv):
   if len(argv) > 1:
     raise app.UsageError('Too many command-line arguments.')
 
-  # 记录JAX进程信息
-  logging.info('JAX process: %d / %d', jax.process_index(), jax.process_count())
-  logging.info('JAX local devices: %r', jax.local_devices())
+  log_for_0('JAX process: %d / %d', jax.process_index(), jax.process_count())
+  log_for_0('JAX local devices: %r', jax.local_devices())
 
   # Add a note so that we can tell which task is which JAX host.
   # (Depending on the platform task 0 is not guaranteed to be host 0)
@@ -66,12 +67,16 @@ def main(argv):
   #     platform.ArtifactType.DIRECTORY, FLAGS.workdir, 'workdir'
   # )
 
+  log_for_0('FLAGS.config: \n{}'.format(FLAGS.config))
   # if FLAGS.debug:
   #   with jax.disable_jit():
   #     train.train_and_evaluate(FLAGS.config, FLAGS.workdir)
   # else:
   if FLAGS.config.training.load_from is not None:
     train.just_evaluate(FLAGS.config, FLAGS.workdir)
+  elif FLAGS.debug:
+    with jax.disable_jit():
+      train.train_and_evaluate(FLAGS.config, FLAGS.workdir)
   else:
     train.train_and_evaluate(FLAGS.config, FLAGS.workdir)
 
@@ -79,6 +84,5 @@ def main(argv):
 if __name__ == '__main__':
   # logging_util.verbose_off()
   # logging_util.set_time_logging(logging)
-  flags.mark_flags_as_required(['workdir', 'mode', 'config'])
-  # flags.mark_flags_as_required(['config', 'workdir'])
+  flags.mark_flags_as_required(['config', 'mode', 'workdir'])
   app.run(main)

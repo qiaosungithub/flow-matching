@@ -1,3 +1,5 @@
+# SQA's nnx implementation of NCSNv2 repo's layers.py
+
 import flax.nnx as nn
 import flax
 import zhh.F as F
