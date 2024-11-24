@@ -741,7 +741,7 @@ def train_and_evaluate(
   sampling_config = config.sampling
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='sqa_FM', dir=workdir)
+    wandb.init(project='sqa_FM_kaiming_copied_nnx', dir=workdir)
     wandb.config.update(config.to_dict())
   global_seed(config.seed)
 

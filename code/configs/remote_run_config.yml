@@ -30,8 +30,6 @@
 #     fid_per_epoch: 10
 
 # Here is for CIFAR10:
-
-training:
 model:
     image_size: 32
     out_channels: 3
