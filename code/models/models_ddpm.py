@@ -110,7 +110,7 @@ def generate(state: NNXTrainState, model, rng, n_sample):
     # )
 
     merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-    x_i, _ = merged_model.sample_one_step(x_i, rng_z, i)
+    x_i = merged_model.sample_one_step(x_i, rng_z, i)
     outputs = (x_i, rng)
     return outputs
 
@@ -340,7 +340,7 @@ class SimDDPM(nn.Module):
 
     assert noise_batch.shape == x.shape
     assert t_batch.shape == (bz,)
-    t_batch = t_batch.reshape(bz, 1, 1, 1)
+    # t_batch = t_batch.reshape(bz, 1, 1, 1)
 
     # -----------------------------------------------------------------
 

@@ -679,16 +679,18 @@ class NIN(nn.Module):
         self.rngs = rngs
         self.in_dim = in_dim
 
-        self.W = nn.Embed(num_embeddings=1, features=self.num_units * in_dim, embedding_init=default_init(init_scale), rngs=rngs)
-        self.b = nn.Embed(num_embeddings=1, features=self.num_units, embedding_init=jnn.initializers.zeros, rngs=rngs)
+        self.conv = nn.Conv(in_dim, self.num_units, kernel_size=(1, 1), strides=(1, 1), padding="SAME", kernel_init=default_init(init_scale), bias_init=jnn.initializers.zeros, rngs=rngs)
+
+        # self.W = nn.Embed(num_embeddings=1, features=self.num_units * in_dim, embedding_init=default_init(init_scale), rngs=rngs)
+        # self.b = nn.Embed(num_embeddings=1, features=self.num_units, embedding_init=jnn.initializers.zeros, rngs=rngs)
 
     def __call__(self, x):
         assert self.in_dim == int(x.shape[-1])
-        W = self.W(jnp.zeros(1)).reshape((self.in_dim, self.num_units))
-        b = self.b(jnp.zeros(1))
-        y = contract_inner(x, W) + b
-        assert y.shape == x.shape[:-1] + (self.num_units,)
-        return y
+        # W = self.W(jnp.zeros(1))
+        # W = W.reshape((self.in_dim, self.num_units))
+        # b = self.b(jnp.zeros(1))
+        # y = contract_inner(x, W) + b
+        return self.conv(x)
 
 
 def _einsum(a, b, c, x, y):

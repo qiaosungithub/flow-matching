@@ -319,6 +319,9 @@ class Downsample(nn.Module):
 
     def __call__(self, x):
         B, H, W, C = x.shape
+        # print("in Downsample")
+        # print(x.shape)
+        # print(self.in_planes)
         assert self.in_planes == C
         if not self.fir:
             if self.with_conv:

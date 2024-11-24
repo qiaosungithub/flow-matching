@@ -81,10 +81,9 @@ def get_config():
   # Training
   # TODO: whether to keep the config here
   config.training = training = ml_collections.ConfigDict()
-  training.checkpoint_per_epoch = 20
-  training.checkpoint_max_keep = 2
-  training.steps_per_eval = -1
-  training.load_from = None
+  # training.checkpoint_per_epoch = 20
+  # training.checkpoint_max_keep = 2 # not used
+  # training.steps_per_eval = -1
 
   # Eval fid
   config.fid = fid = ml_collections.ConfigDict()
@@ -128,17 +127,13 @@ def get_config():
   config.seed = 0  # init random seed
 
   config.wandb = True
+  config.load_from = None
 
   # sampling
   # TODO: whether to keep the config here
   config.sampling = sampling = ml_collections.ConfigDict()
-  sampling.sigma_begin = 28
-  sampling.n_noise_levels = 75
-  sampling.sigma_end = 0.01
   sampling.ema = True
   sampling.ema_decay = 0.999
-  sampling.eps = 5e-5
-  sampling.T = 5
   sampling.save_dir = '/kmh-nfs-ssd-eu-mount/code/qiao/NCSN/sqa_NCSN/images/'
   sampling.n_T = 18
 

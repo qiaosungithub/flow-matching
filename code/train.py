@@ -37,7 +37,7 @@ from torch.utils.data import DataLoader
 
 from utils.info_util import print_params
 from utils.vis_util import make_grid_visualization, visualize_cifar_batch
-from utils.ckpt_util import restore_checkpoint, restore_pretrained, save_checkpoint
+# from utils.ckpt_util import restore_checkpoint, restore_pretrained, save_checkpoint
 # from utils.frozen_util import extract_trainable_parameters, merge_params
 # from utils.trainstate_util import TrainState
 from utils.logging_util import log_for_0, Timer
@@ -158,7 +158,7 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
     # # merge
     # params = merge_params(params_to_train, frozen_params)
 
-    outputs, new_model_state = state.apply_fn(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'], batch['label'], batch['augment_label'], noise_batch, t_batch)
+    outputs = state.apply_fn(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'], batch['label'], batch['augment_label'], noise_batch, t_batch)
     loss, new_batch_stats, new_rng_states, dict_losses, images = outputs
 
     return loss, (new_batch_stats, new_rng_states, dict_losses, images)
@@ -240,7 +240,7 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn):
   # trainable_params, frozen_params = get_trainable(state.params, config)
 
   images = batch['image']
-  print("images.shape: ", images.shape)
+  # print("images.shape: ", images.shape) # (8, 64, 32, 32, 3)
   b1, b2 = images.shape[0], images.shape[1]
   noise_batch = jax.random.normal(rngs.train(), images.shape)
   t_batch = jax.random.uniform(rngs.train(), (b1, b2))
@@ -250,7 +250,7 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn):
   return new_state, metrics, images
 
 
-def sample_step(state, sample_idx, model, rng_init, device_batch_size, MEAN_RGB, STDDEV_RGB):
+def sample_step(state, sample_idx, model, rng_init, device_batch_size, MEAN_RGB=None, STDDEV_RGB=None):
   """
   sample_idx: each random sampled image corrresponds to a seed
   rng_init: here we do not want nnx.Rngs
@@ -261,8 +261,10 @@ def sample_step(state, sample_idx, model, rng_init, device_batch_size, MEAN_RGB,
   images_all = lax.all_gather(images, axis_name='batch')  # each device has a copy  
   images_all = images_all.reshape(-1, *images_all.shape[2:])
 
-  images_all = images_all * (jnp.array(STDDEV_RGB)/255.).reshape(1,1,1,3) + (jnp.array(MEAN_RGB)/255.).reshape(1,1,1,3)
-  images_all = (images_all - 0.5) / 0.5
+  # The images should be [-1, 1], which is correct
+
+  # images_all = images_all * (jnp.array(STDDEV_RGB)/255.).reshape(1,1,1,3) + (jnp.array(MEAN_RGB)/255.).reshape(1,1,1,3)
+  # images_all = (images_all - 0.5) / 0.5
   return images_all
 
 def global_seed(seed):
@@ -283,39 +285,45 @@ def get_dtype(half_precision):
   return model_dtype
 
 
-# def restore_checkpoint(model_init_fn, state, workdir):
-#   abstract_model = nn.eval_shape(lambda: model_init_fn(rngs=nn.Rngs(0)))
-#   rng_states = state.rng_states
-#   abs_state = nn.state(abstract_model)
-#   params, batch_stats, others = abs_state.split(nn.Param, nn.BatchStat, ...)
-#   useful_abs_state = nn.State.merge(params, batch_stats)
-#   fake_state = {
-#     'mo_xing': useful_abs_state,
-#     'you_hua_qi': state.opt_state,
-#     'step': 0
-#   }
-#   loaded_state = checkpoints.restore_checkpoint(workdir, target=fake_state,orbax_checkpointer=checkpointer)
-#   merged_params = loaded_state['mo_xing']
-#   opt_state = loaded_state['you_hua_qi']
-#   step = loaded_state['step']
-#   params, batch_stats, _ = merged_params.split(nn.Param, nn.BatchStat, nn.VariableState)
-#   return state.replace(
-#     params=params,
-#     rng_states=rng_states,
-#     batch_stats=batch_stats,
-#     opt_state=opt_state,
-#     step=step
-#   )
+def restore_checkpoint(model_init_fn, state, workdir, ema=False):
+  # 杯子
+  abstract_model = nn.eval_shape(lambda: model_init_fn(rngs=nn.Rngs(0)))
+  rng_states = state.rng_states
+  abs_state = nn.state(abstract_model)
+  params, batch_stats, others = abs_state.split(nn.Param, nn.BatchStat, ...)
+  useful_abs_state = nn.State.merge(params, batch_stats)
+  abstract_model_1 = nn.eval_shape(lambda: model_init_fn(rngs=nn.Rngs(0)))
+  abs_state_1 = nn.state(abstract_model_1)
+  params_1, batch_stats_1, others = abs_state_1.split(nn.Param, nn.BatchStat, ...)
+  useful_abs_state_1 = nn.State.merge(params_1, batch_stats_1)
+  fake_state = {
+    'mo_xing': useful_abs_state,
+    'ema_mo_xing': useful_abs_state_1,
+    'you_hua_qi': state.opt_state,
+    'step': 0
+  }
+  loaded_state = checkpoints.restore_checkpoint(workdir, target=fake_state,orbax_checkpointer=checkpointer)
+  merged_params = loaded_state['mo_xing'] if not ema else loaded_state['ema_mo_xing']
+  opt_state = loaded_state['you_hua_qi']
+  step = loaded_state['step']
+  params, batch_stats, _ = merged_params.split(nn.Param, nn.BatchStat, nn.VariableState)
+  return state.replace(
+    params=params,
+    rng_states=rng_states,
+    batch_stats=batch_stats,
+    opt_state=opt_state,
+    step=step
+  )
 
-# checkpointer = ocp.StandardCheckpointer()
-# def _restore(ckpt_path, item, **restore_kwargs):
-#   return ocp.StandardCheckpointer.restore(checkpointer, ckpt_path, target=item)
-# setattr(checkpointer, 'restore', _restore)
+checkpointer = ocp.StandardCheckpointer()
+def _restore(ckpt_path, item, **restore_kwargs):
+  return ocp.StandardCheckpointer.restore(checkpointer, ckpt_path, target=item)
+setattr(checkpointer, 'restore', _restore)
 
 # def save_checkpoint(state, workdir):
 #   """
 #   Kaiming's linen version
-#   TODO: whether it works or not?
+#   not working for nnx
 #   """
 #   state = jax.device_get(jax.tree_util.tree_map(lambda x: x[0], state))
 #   step = int(state.step)
@@ -323,23 +331,36 @@ def get_dtype(half_precision):
 #     log_for_0('Saving checkpoint step %d.', step)
 #   checkpoints.save_checkpoint_multiprocess(workdir, state, step, keep=2)
 
-# TODO: zhh's version, Kaiming's version is above, work or not?
-# def save_checkpoint(state:NNXTrainState, workdir):
-#   state = jax.device_get(jax.tree_util.tree_map(lambda x: x[0], state))
-#   step = int(state.step)
-#   log_for_0('Saving checkpoint to {}, with step {}'.format(workdir, step))
-#   merged_params: nn.State = state.params
-#   # 不能把rng merge进去！
-#   # if len(state.rng_states) > 0:
-#   #     merged_params = nn.State.merge(merged_params, state.rng_states)
-#   if len(state.batch_stats) > 0:
-#     merged_params = nn.State.merge(merged_params, state.batch_stats)
-#   checkpoints.save_checkpoint_multiprocess(workdir, {
-#     'mo_xing': merged_params,
-#     'you_hua_qi': state.opt_state,
-#     'step': step
-#   }, step, keep=2, orbax_checkpointer=checkpointer)
-#   # NOTE: this is tang, since "keep=2" means keeping the most recent 3 checkpoints.
+# zhh's nnx version
+def save_checkpoint(state:NNXTrainState, workdir, model_avg):
+  state = jax.device_get(jax.tree_util.tree_map(lambda x: x[0], state))
+  model_avg = jax.device_get(jax.tree_util.tree_map(lambda x: x[0], model_avg))
+  step = int(state.step)
+  log_for_0('Saving checkpoint to {}, with step {}'.format(workdir, step))
+  merged_params: nn.State = state.params
+  # 不能把rng merge进去！
+  # if len(state.rng_states) > 0:
+  #     merged_params = nn.State.merge(merged_params, state.rng_states)
+  if len(state.batch_stats) > 0:
+    merged_params = nn.State.merge(merged_params, state.batch_stats)
+  # tensorstore_spec = {
+  #     'driver': 'zarr',
+  #     'kvstore': {
+  #         'driver': 'file',
+  #         'path': workdir
+  #     },
+  #     'metadata': {
+  #         'chunks': [1, 1]  # 确保 chunks 数组的长度为 2
+  #     }
+  # }
+  # print("Tensorstore spec:", tensorstore_spec)
+  checkpoints.save_checkpoint_multiprocess(workdir, {
+    'mo_xing': merged_params,
+    'ema_mo_xing': model_avg,
+    'you_hua_qi': state.opt_state,
+    'step': step
+  }, step, keep=2, orbax_checkpointer=checkpointer)
+  # NOTE: this is tang, since "keep=2" means keeping the most recent 3 checkpoints.
 
 # pmean only works inside pmap because it needs an axis name.
 # This function will average the inputs across all devices.
@@ -469,12 +490,12 @@ def prepare_batch_data(batch, config, batch_size=None):
   Args:
     batch: dict
       image: shape (b1, b2, h, w, c)
-      label: shape (b1, b2) TODO: check this
+      label: shape (b1, b2)
     batch_size = expected batch_size of this node, for eval's drop_last=False only
   """
   image, label = batch["image"], batch["label"]
-  print("In prepare_batch_data, image.shape: ", image.shape)
-  print("In prepare_batch_data, label.shape: ", label.shape)
+  # print("In prepare_batch_data, image.shape: ", image.shape) # (8, 64, 32, 32, 3)
+  # print("In prepare_batch_data, label.shape: ", label.shape) # (8, 64)
 
   if config.aug.use_edm_aug:
     raise NotImplementedError
@@ -819,23 +840,24 @@ def train_and_evaluate(
 
   ########### Create Train State ###########
   state = create_train_state(config, model, image_size, learning_rate_fn)
-  # restore checkpoint kaiming
-  # TODO: check whether this works
-  if config.restore != '':
-    log_for_0('Restoring from: {}'.format(config.restore))
-    state = restore_checkpoint(state, config.restore)
-  elif config.pretrain != '':
-    log_for_0('Loading pre-trained from: {}'.format(config.restore))
-    state = restore_pretrained(state, config.pretrain, config)
-  # # restore checkpoint zhh
-  # if config.load_from is not None:
-  #   if not os.path.isabs(config.load_from):
-  #     raise ValueError('Checkpoint path must be absolute')
-  #   if not os.path.exists(config.load_from):
-  #     raise ValueError('Checkpoint path {} does not exist'.format(config.load_from))
-  #   state = restore_checkpoint(model_init_fn ,state, config.load_from)
-  #   # sanity check, as in Kaiming's code
-  #   assert state.step > 0 and state.step % steps_per_epoch == 0, ValueError('Got an invalid checkpoint with step {}'.format(state.step))
+  # # restore checkpoint kaiming
+  # if config.restore != '':
+  #   log_for_0('Restoring from: {}'.format(config.restore))
+  #   state = restore_checkpoint(state, config.restore)
+  # elif config.pretrain != '':
+  #   raise NotImplementedError("其实会写")
+  #   log_for_0('Loading pre-trained from: {}'.format(config.restore))
+  #   state = restore_pretrained(state, config.pretrain, config)
+
+  # restore checkpoint zhh
+  if config.load_from is not None:
+    if not os.path.isabs(config.load_from):
+      raise ValueError('Checkpoint path must be absolute')
+    if not os.path.exists(config.load_from):
+      raise ValueError('Checkpoint path {} does not exist'.format(config.load_from))
+    state = restore_checkpoint(model_init_fn ,state, config.load_from)
+    # sanity check, as in Kaiming's code
+    assert state.step > 0 and state.step % steps_per_epoch == 0, ValueError('Got an invalid checkpoint with step {}'.format(state.step))
   step_offset = int(state.step)
   epoch_offset = step_offset // steps_per_epoch  # sanity check for resuming
   assert epoch_offset * steps_per_epoch == step_offset
@@ -861,8 +883,14 @@ def train_and_evaluate(
   ########### FID ###########
   if config.model.ode_solver == 'jax':
     p_sample_step = jax.pmap(
-      partial(sample_step, model=model, rng_init=random.PRNGKey(0), device_batch_size=config.fid.device_batch_size,),
-      axis_name='batch', MEAN_RGB=input_pipeline.MEAN_RGB, STDDEV_RGB=input_pipeline.STDDEV_RGB
+      partial(sample_step, 
+              model=model, 
+              rng_init=random.PRNGKey(0), 
+              device_batch_size=config.fid.device_batch_size, 
+              MEAN_RGB=input_pipeline.MEAN_RGB, 
+              STDDEV_RGB=input_pipeline.STDDEV_RGB
+      ),
+      axis_name='batch'
     )
 
     # ------------------------------------------------------------
@@ -1004,6 +1032,13 @@ def train_and_evaluate(
       assert config.aug.use_edm_aug == False, "we don't support edm aug for now"
       batch = prepare_batch_data(batch, config)
       ep = step * config.batch_size / yierbayiyiliuqi
+
+      # img = batch['image']
+      # print(f"img.shape: {img.shape}")
+      # print(f'image max: {jnp.max(img)}, min: {jnp.min(img)}') # [-1, 1]
+      # img = img * (jnp.array(input_pipeline.STDDEV_RGB)/255.).reshape(1,1,1,3) + (jnp.array(input_pipeline.MEAN_RGB)/255.).reshape(1,1,1,3)
+      # print(f"after process, img max: {jnp.max(img)}, min: {jnp.min(img)}")
+      # exit(114514)
       # # print("images.shape: ", images.shape)
       # arg_batch, t_batch, target_batch = prepare_batch(batch, rngs, config)
 
@@ -1074,31 +1109,46 @@ def train_and_evaluate(
           train_metrics_buffer = []
 
       # EMA
-      model_avg = p_update_model_avg(model_avg, state.params, ema_decay=ema_scales_fn(step)[0])
+      model_avg = p_update_model_avg(model_avg, state.params, ema_decay=ema_scales_fn(step)[0].repeat(jax.local_device_count()))
 
+      # break
     ########### Save Checkpt ###########
     # we first save checkpoint, then do eval. Reasons: 1. if eval emits an error, then we still have our model; 2. avoid the program exits before the checkpointer finishes its job.
     # NOTE: when saving checkpoint, should sync batch stats first.
 
-    # # TODO: whether to keep zhh's checkpointer
-    # state = sync_batch_stats(state)
-    # if (epoch + 1) % config.checkpoint_per_epoch == 0:
-    #   # pass
-    #   # if index == 0:
-    #   save_checkpoint(state, workdir)
-    # if epoch == config.num_epochs - 1:
-    #   state = state.replace(params=model_avg)
-
-    # Kaiming's checkpointer
+    # zhh's checkpointer
     if (
       (epoch + 1) % config.checkpoint_per_epoch == 0
       or epoch == config.num_epochs
       or epoch == 0  # saving at the first epoch for sanity check
-    ):
+      ):
+      # pass
+      # if index == 0:
       state = sync_batch_stats(state)
-      # TODO{km}: suppress the annoying warning.
-      save_checkpoint(state, workdir)
-      log_for_0(f'Work dir: {workdir}')  # for monitoring
+      save_checkpoint(state, workdir, model_avg)
+    if epoch == config.num_epochs - 1:
+      state = state.replace(params=model_avg)
+
+    # # Kaiming's checkpointer
+    # if (
+    #   (epoch + 1) % config.checkpoint_per_epoch == 0
+    #   or epoch == config.num_epochs
+    #   or epoch == 0  # saving at the first epoch for sanity check
+    # ):
+    #   state = sync_batch_stats(state)
+    #   # TODO{km}: suppress the annoying warning.
+    #   save_checkpoint(state, workdir)
+    #   log_for_0(f'Work dir: {workdir}')  # for monitoring
+
+    # logging visualizations
+    if (epoch + 1) % config.visualize_per_epoch == 0:
+      vis = visualize_cifar_batch(vis)
+      # print("vis.shape: ", vis.shape) # (8, 160, 256, 3)
+      vis = jax.device_get(vis)
+      vis = vis[0]
+      canvas = Image.fromarray(vis)
+      if config.wandb and index == 0:
+        wandb.log({'visualize': wandb.Image(canvas)})
 
     ########### Sampling ###########
     if (epoch + 1) % config.eval_per_epoch == 0:
@@ -1106,8 +1156,7 @@ def train_and_evaluate(
       # sync batch statistics across replicas
       eval_state = sync_batch_stats(state)
       eval_state = eval_state.replace(params=model_avg)
-      # TODO: 不知道
-      vis = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx, ema=False)
+      vis = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx)
       vis = make_grid_visualization(vis)
       vis = jax.device_get(vis) # np.ndarray
       vis = vis[0]

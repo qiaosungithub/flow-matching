@@ -33,7 +33,8 @@ exclude_files = [
     'orbax/checkpoint/future.py',
     'orbax/checkpoint/_src/handlers/base_pytree_checkpoint_handler.py',
     'orbax/checkpoint/type_handlers.py',
-    'orbax/checkpoint/metadata/checkpoint.py'
+    'orbax/checkpoint/metadata/checkpoint.py',
+    'orbax/checkpoint/metadata/sharding.py'
 ]
 file_filter = ExcludeInfo(exclude_files)
 

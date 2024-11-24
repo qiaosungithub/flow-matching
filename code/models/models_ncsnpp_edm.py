@@ -133,13 +133,13 @@ class NCSNpp(nn.Module):
             rngs=rngs,
         )
 
-        Downsample = partial(
-            layerspp.Downsample,
-            with_conv=resamp_with_conv,
-            fir=fir,
-            fir_kernel=fir_kernel,
-            rngs=rngs,
-        )
+        # Downsample = partial(
+        #     layerspp.Downsample,
+        #     with_conv=resamp_with_conv,
+        #     fir=fir,
+        #     fir_kernel=fir_kernel,
+        #     rngs=rngs,
+        # )
         #################### progressive (input) #########################
         if progressive == "output_skip":
             raise NotImplementedError
@@ -225,10 +225,11 @@ class NCSNpp(nn.Module):
                 if self.progressive_input == "input_skip":
                     raise NotImplementedError
                 elif self.progressive_input == "residual":
+                    in_dim = nf * ch_mult[i_level-1] if i_level > 0 else out_channels
                     setattr(
                         self,
                         f'enc_{cur_size}x{cur_size}_aux_residual',
-                        self.pyramid_downsample(out_c, out_ch=out_c),
+                        self.pyramid_downsample(in_planes=in_dim, out_ch=out_c),
                     )
                 c_list.append(out_c)
         
@@ -296,6 +297,9 @@ class NCSNpp(nn.Module):
 
     def __call__(self, x, time_cond, augment_label=None, train=True, verbose=False): # turn off verbose here
 
+        # print("in call of ncsnpp model")
+        # print("x.shape", x.shape)
+        # print("time_cond.shape", time_cond.shape)
         assert time_cond.ndim == 1  # only support 1-d time condition
         assert time_cond.shape[0] == x.shape[0]
         assert x.shape[-1] == self.out_channels
@@ -393,6 +397,7 @@ class NCSNpp(nn.Module):
 
                 elif self.progressive_input == "residual":
                     name = f'enc_{cur_size}x{cur_size}_aux_residual'
+                    # print("input_pyramid.shape", input_pyramid.shape)
                     input_pyramid = getattr(self, name)(input_pyramid)
                     if skip_rescale:
                         input_pyramid = (input_pyramid + h) / np.sqrt(

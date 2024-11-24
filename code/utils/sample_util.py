@@ -24,7 +24,7 @@ def get_samples_from_dir(samples_dir, config):
 
 def generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step):
   """
-  what is state here? maybe just NNXstate
+  state: NNXstate
   """
   num_steps = np.ceil(config.fid.num_samples / config.fid.device_batch_size / jax.device_count()).astype(int)
   output_dir = os.path.join(workdir, 'samples')
@@ -39,6 +39,9 @@ def generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_s
     # logging_util.verbose_off()
 
     samples = run_p_sample_step(p_sample_step, state, sample_idx=sample_idx)
+    # print('samples.shape:', samples.shape)
+    # print(f"samples min and max: {samples.min()}, {samples.max()}")
+    # exit("邓东灵")
     samples = float_to_uint8(samples)
     samples_all.append(samples)
   samples_all = np.concatenate(samples_all, axis=0)

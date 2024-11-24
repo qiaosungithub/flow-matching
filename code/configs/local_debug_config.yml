@@ -31,9 +31,6 @@
 #     num_samples: 1000
 
 # Here is for CIFAR10:
-training:
-    checkpoint_per_epoch: 1
-    # load_from: /kmh-nfs-us-mount/logs/sqa/sqa_NCSNv2/20241101_030317_2ml2nf_kmh-tpuvm-v2-32-1__b_lr_ep_torchvision_r50_eval/checkpoint_5684
 model:
     image_size: 32
     out_channels: 3
@@ -52,7 +49,7 @@ dataset:
     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
     cache: False
 aug: 
-    use_edm_aug: True
+    use_edm_aug: False # TODO: enable this and test
 sampling:
     # ema: True
     # ema_decay: 0.999
@@ -69,10 +66,12 @@ weight_decay: 0.001
 optimizer: adamw
 adam_b2: 0.999
 warmup_epochs: 200
-log_per_step: 100
+log_per_step: 30
 visualize_per_epoch: 1
 eval_per_epoch: 1
 wandb: False
+checkpoint_per_epoch: 1
+# load_from: /kmh-nfs-us-mount/logs/sqa/sqa_NCSNv2/20241101_030317_2ml2nf_kmh-tpuvm-v2-32-1__b_lr_ep_torchvision_r50_eval/checkpoint_5684
 
 
 # # Here is for IMAGENET32x32:
