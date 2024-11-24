@@ -34,7 +34,7 @@
 model:
     image_size: 32
     out_channels: 3
-    base_width: 4
+    base_width: 32
     n_T: 18
     use_aug_label: False
     dropout: 0.20
@@ -56,21 +56,21 @@ sampling:
     save_dir: /kmh-nfs-ssd-eu-mount/code/qiao/flow-matching/sqa-flow-matching/images/
 fid:
     eval_only: False
-    fid_per_epoch: 1
+    fid_per_epoch: 100
     num_samples: 1000
 batch_size: 512
-num_epochs: 2
-learning_rate: 0.001
+num_epochs: 400
+learning_rate: 0.0008
 lr_schedule: const
-weight_decay: 0.001
+weight_decay: 0
 optimizer: adamw
 adam_b2: 0.999
 warmup_epochs: 200
 log_per_step: 30
-visualize_per_epoch: 1
-eval_per_epoch: 1
+visualize_per_epoch: 100
+eval_per_epoch: 100
 wandb: False
-checkpoint_per_epoch: 1
+checkpoint_per_epoch: 100
 # load_from: /kmh-nfs-us-mount/logs/sqa/sqa_NCSNv2/20241101_030317_2ml2nf_kmh-tpuvm-v2-32-1__b_lr_ep_torchvision_r50_eval/checkpoint_5684
 
 

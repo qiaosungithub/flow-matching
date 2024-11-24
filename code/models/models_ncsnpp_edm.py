@@ -16,6 +16,7 @@
 # pylint: skip-file
 
 from .jcm import layers, layerspp, normalization
+# from jcm import layers, layerspp, normalization
 # import flax.linen as nn
 import flax.nnx as nn
 import functools
@@ -411,6 +412,13 @@ class NCSNpp(nn.Module):
                 # logging_fn(f"Level {i_level}, combined shape {h.shape}")
                 hs.append(h)
 
+        # cnt=0
+        # for h in hs:
+        #     print("layer", cnt)
+        #     cnt+=1
+        #     print(f"shape: {h.shape}")
+        #     print(f"sum: {jnp.sum(h**2)}")
+
         h = hs[-1]
         assert h.shape[-1] == nf * ch_mult[-1]
         name = f'dec_{cur_size}x{cur_size}_in0'
@@ -426,6 +434,9 @@ class NCSNpp(nn.Module):
         logging_fn(f"{name}: params {ps(name)}, shape {h.shape}")
 
         pyramid = None
+
+        # print(f"shape: {h.shape}")
+        # print(f"sum: {jnp.sum(h**2)}")
 
         # Upsampling block
         for i_level in reversed(range(num_resolutions)):
@@ -489,6 +500,9 @@ class NCSNpp(nn.Module):
                     h = getattr(self, name)(h, temb, train)
                 logging_fn(f"{name}: params {ps(name)}, shape {h.shape}")
 
+            # print(f"shape: {h.shape}")
+            # print(f"sum: {jnp.sum(h**2)}")
+
         assert not hs
 
         if self.progressive == "output_skip" and not self.double_heads:
@@ -510,3 +524,13 @@ class NCSNpp(nn.Module):
         return h
 
 
+# # test
+
+# rngs = nn.Rngs(0, params=114, dropout=514, train=1919)
+# model = NCSNpp(base_width=16, rngs=rngs)
+# from jax import random
+# inputs = random.normal(rngs.train(), (2, 32, 32, 3))
+# time_cond = jnp.log(jnp.array([1, 0.1]))
+# output = model(inputs, time_cond, train=True, verbose=True)
+# print(output.shape)
+# print(jnp.sum(output**2))

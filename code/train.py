@@ -68,21 +68,22 @@ def get_input_pipeline(dataset_config):
     else:
         raise ValueError('Unknown dataset {}'.format(dataset_config.name))
 
-def create_model(*, model_cls, half_precision, config, **kwargs):
-  platform = jax.local_devices()[0].platform
-  if half_precision:
-    if platform == 'tpu':
-      model_dtype = jnp.bfloat16
-    else:
-      model_dtype = jnp.float16
-  else:
-    model_dtype = jnp.float32
-  return model_cls(
-    dtype=model_dtype, 
-    ngf=config.model.ngf, 
-    n_noise_levels=config.sampling.n_noise_levels,
-    config=config,
-    **kwargs)
+这个函数其实用到了 = LookupError('LookupError:看上去有错误')
+# def create_model(*, model_cls, half_precision, config, **kwargs):
+#   platform = jax.local_devices()[0].platform
+#   if half_precision:
+#     if platform == 'tpu':
+#       model_dtype = jnp.bfloat16
+#     else:
+#       model_dtype = jnp.float16
+#   else:
+#     model_dtype = jnp.float32
+#   return model_cls(
+#     dtype=model_dtype, 
+#     ngf=config.model.ngf, 
+#     n_noise_levels=config.sampling.n_noise_levels,
+#     config=config,
+#     **kwargs)
 
 def compute_metrics(dict_losses):
   metrics = dict_losses.copy()
@@ -158,7 +159,7 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
     # # merge
     # params = merge_params(params_to_train, frozen_params)
 
-    outputs = state.apply_fn(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'], batch['label'], batch['augment_label'], noise_batch, t_batch)
+    outputs = state.apply_fn(state.graphdef, params_to_train, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'], batch['label'], batch['augment_label'], noise_batch, t_batch)
     loss, new_batch_stats, new_rng_states, dict_losses, images = outputs
 
     return loss, (new_batch_stats, new_rng_states, dict_losses, images)
@@ -407,7 +408,7 @@ def create_train_state(
   # print("here we are in the function 'create_train_state' in train.py; ready to define optimizer")
   graphdef, params, batch_stats, rng_states, useless_variable_states = nn.split(model, nn.Param, nn.BatchStat, nn.RngState, nn.VariableState)
 
-  print_params(params) # TODO: can we print the params here?
+  print_params(params)
 
   def apply_fn(graphdef2, params2, rng_states2, batch_stats2, useless_, is_training, images, labels, augment_labels, noise_batch, t_batch):
     """

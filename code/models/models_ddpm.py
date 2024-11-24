@@ -356,6 +356,7 @@ class SimDDPM(nn.Module):
 
     # create v target
     v_target = x_data - x_prior
+    # v_target = jnp.ones_like(x_data)  # dummy
 
     # create z (as the network input)
     # z = batch_mul(1 - t, x_data) + batch_mul(t, x_prior)
