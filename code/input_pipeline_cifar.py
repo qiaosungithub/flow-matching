@@ -117,34 +117,37 @@ def _resize(image, image_size):
 
 def _decode_and_center_crop(image_bytes, image_size):
   """Crops to center of image with padding then scales image_size."""
-  shape = tf.io.extract_jpeg_shape(image_bytes)
-  image_height = shape[0]
-  image_width = shape[1]
+  # shape = tf.io.extract_jpeg_shape(image_bytes)
+  # image_height = shape[0]
+  # image_width = shape[1]
 
-  padded_center_crop_size = tf.cast(
-      (
-          (IMAGE_ORIGINAL_SIZE / (IMAGE_ORIGINAL_SIZE + CROP_PADDING))
-          * tf.cast(tf.minimum(image_height, image_width), tf.float32)
-      ),
-      tf.int32,
-  )
+  # padded_center_crop_size = tf.cast(
+  #     (
+  #         (IMAGE_ORIGINAL_SIZE / (IMAGE_ORIGINAL_SIZE + CROP_PADDING))
+  #         * tf.cast(tf.minimum(image_height, image_width), tf.float32)
+  #     ),
+  #     tf.int32,
+  # )
 
-  offset_height = ((image_height - padded_center_crop_size) + 1) // 2
-  offset_width = ((image_width - padded_center_crop_size) + 1) // 2
-  crop_window = tf.stack([
-      offset_height,
-      offset_width,
-      padded_center_crop_size,
-      padded_center_crop_size,
-  ])
+  # offset_height = ((image_height - padded_center_crop_size) + 1) // 2
+  # offset_width = ((image_width - padded_center_crop_size) + 1) // 2
+  # crop_window = tf.stack([
+  #     offset_height,
+  #     offset_width,
+  #     padded_center_crop_size,
+  #     padded_center_crop_size,
+  # ])
+  # image = tf.io.decode_jpeg(image_bytes, channels=3)
+  # # image = tf.io.decode_and_crop_jpeg(image_bytes, crop_window, channels=3)
+  # # image = tf.repeat(image, 3, axis=-1)
+  # image = _resize(image, image_size)
+
   image = tf.io.decode_jpeg(image_bytes, channels=3)
-  # image = tf.io.decode_and_crop_jpeg(image_bytes, crop_window, channels=3)
-  # image = tf.repeat(image, 3, axis=-1)
-  image = _resize(image, image_size)
 
   return image
 
 def normalize_image(image):
+  image = tf.cast(image, tf.float32)
   image -= tf.constant(MEAN_RGB, shape=[1, 1, 3], dtype=image.dtype)
   image /= tf.constant(STDDEV_RGB, shape=[1, 1, 3], dtype=image.dtype)
   return image

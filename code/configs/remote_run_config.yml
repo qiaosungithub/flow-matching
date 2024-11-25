@@ -36,7 +36,7 @@ model:
     base_width: 128
     n_T: 18
     use_aug_label: False
-    dropout: 0.20
+    dropout: 0.15
     net_type: ncsnppedm
     average_loss: True # use average or sum for loss
     sampler: euler # or heun
