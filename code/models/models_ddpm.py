@@ -245,7 +245,6 @@ class SimDDPM(nn.Module):
     t_hat = jnp.repeat(t_hat, x_hat.shape[0])
     t_next = jnp.repeat(t_next, x_hat.shape[0])
     
-    # TODO: ema net?
     # Euler step.
     u_pred = self.forward_flow_pred_function(x_i, t_hat, train=False)
     d_cur = u_pred

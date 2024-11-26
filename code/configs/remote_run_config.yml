@@ -39,7 +39,8 @@ model:
     dropout: 0.15
     net_type: ncsnppedm
     average_loss: True # use average or sum for loss
-    sampler: euler # or heun
+    # sampler: euler
+    sampler: heun
     ode_solver: jax # or scipy, which uses rk45
 dataset:
     name: cifar10
@@ -69,7 +70,7 @@ log_per_step: 100
 visualize_per_epoch: 100
 eval_per_epoch: 100
 checkpoint_per_epoch: 500
-# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241125_215134_sejf7y_kmh-tpuvm-v2-32-preemptible-2__b_lr_ep_eval/checkpoint_97000
+load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241125_215134_sejf7y_kmh-tpuvm-v2-32-preemptible-2__b_lr_ep_eval/checkpoint_97000
 
 # # Here is for IMAGENET32x32:
 
