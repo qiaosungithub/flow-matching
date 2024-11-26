@@ -126,6 +126,7 @@ def get_config():
   # evalu
   evalu = config.evalu = ml_collections.ConfigDict()
   evalu.ema = True
+  evalu.sample = False # sample before testing fid
 
   ################ WARNING ################
   # DO NOT DIRECTLY MODIFY THIS FILE, IN  #

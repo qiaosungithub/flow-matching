@@ -54,6 +54,9 @@ fid:
     eval_only: False
     fid_per_epoch: 100
     num_samples: 50000
+evalu:
+    ema: True
+    sample: False
 batch_size: 512
 num_epochs: 400
 learning_rate: 0.0008

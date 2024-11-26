@@ -1234,7 +1234,7 @@ def just_evaluate(
     raise ValueError('Checkpoint path must be absolute')
   if not os.path.exists(config.load_from):
     raise ValueError('Checkpoint path {} does not exist'.format(config.load_from))
-  state = restore_checkpoint(model_init_fn, state, config.load_from, model_config, ema=True) # NOTE: whether to use the ema model
+  state = restore_checkpoint(model_init_fn, state, config.load_from, model_config, ema=config.evalu.ema) # NOTE: whether to use the ema model
   state_step = int(state.step)
   state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
 
@@ -1307,7 +1307,7 @@ def just_evaluate(
   log_for_0('Eval...')
   ########### Sampling ###########
   eval_state = sync_batch_stats(state)
-  if True: # if we want to sample
+  if config.evalu.sample: # if we want to sample
     log_for_0(f'Sample...')
     # sync batch statistics across replicas
     # eval_state = eval_state.replace(params=model_avg)
