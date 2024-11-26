@@ -78,13 +78,6 @@ def get_config():
   dataset.out_channels = 0  # from model
   dataset.steps_per_epoch = -1
 
-  # Training
-  # TODO: whether to keep the config here
-  config.training = training = ml_collections.ConfigDict()
-  # training.checkpoint_per_epoch = 20
-  # training.checkpoint_max_keep = 2 # not used
-  # training.steps_per_eval = -1
-
   # Eval fid
   config.fid = fid = ml_collections.ConfigDict()
   fid.num_samples = 50000
@@ -92,7 +85,8 @@ def get_config():
   fid.on_use = True
   fid.eval_only = False
   fid.device_batch_size = 128
-  fid.cache_ref = '/kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz'
+  # fid.cache_ref = '/kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz' # pytorch
+  fid.cache_ref = '/kmh-nfs-us-mount/staging/zhh/data/cached/zhh_tfds_train_cifar10_stats_20241124.npz'
 
   # Training
   config.optimizer = 'sgd'
@@ -129,13 +123,9 @@ def get_config():
   config.wandb = True
   config.load_from = None
 
-  # sampling
-  # TODO: whether to keep the config here
-  config.sampling = sampling = ml_collections.ConfigDict()
-  sampling.ema = True
-  sampling.ema_decay = 0.999
-  sampling.save_dir = '/kmh-nfs-ssd-eu-mount/code/qiao/NCSN/sqa_NCSN/images/'
-  sampling.n_T = 18
+  # evalu
+  evalu = config.evalu = ml_collections.ConfigDict()
+  evalu.ema = True
 
   ################ WARNING ################
   # DO NOT DIRECTLY MODIFY THIS FILE, IN  #

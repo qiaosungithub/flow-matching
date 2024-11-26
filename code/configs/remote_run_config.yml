@@ -34,7 +34,7 @@ model:
     image_size: 32
     out_channels: 3
     base_width: 128
-    n_T: 18
+    n_T: 50
     use_aug_label: False
     dropout: 0.15
     net_type: ncsnppedm
@@ -49,14 +49,13 @@ dataset:
     cache: True
 aug: 
     use_edm_aug: False
-sampling:
-    # ema: True
-    # ema_decay: 0.999
-    save_dir: null
 fid:
     eval_only: False
     fid_per_epoch: 50
     num_samples: 50000
+    cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
+evalu:
+    ema: True
 batch_size: 512
 num_epochs: 4000
 learning_rate: 0.0008
@@ -69,7 +68,7 @@ log_per_step: 100
 visualize_per_epoch: 100
 eval_per_epoch: 100
 checkpoint_per_epoch: 1000
-# load_from: TODO
+load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241124_223004_0sf5rt_kmh-tpuvm-v2-32-6__b_lr_ep_eval/checkpoint_291000
 
 # # Here is for IMAGENET32x32:
 

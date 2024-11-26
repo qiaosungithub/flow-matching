@@ -1,0 +1,15 @@
+pillow
+clu
+tensorflow==2.15.0
+torch<=2.4
+torchvision
+wandb
+tensorflow_datasets
+matplotlib==3.9.2
+keras==2.15.0
+ml-dtypes==0.2.0
+namex==0.0.8
+optree==0.13.0
+orbax-checkpoint==0.6.4
+sentry-sdk==2.17.0
+Werkzeug==3.1.1

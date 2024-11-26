@@ -286,20 +286,30 @@ def get_dtype(half_precision):
   return model_dtype
 
 
-def restore_checkpoint(model_init_fn, state, workdir, ema=False):
+checkpointer = ocp.StandardCheckpointer()
+def _restore(ckpt_path, item, **restore_kwargs):
+  return ocp.StandardCheckpointer.restore(checkpointer, ckpt_path, target=item)
+setattr(checkpointer, 'restore', _restore)
+
+def restore_checkpoint(model_init_fn, state, workdir, model_config, ema=False):
   # 杯子
-  abstract_model = nn.eval_shape(lambda: model_init_fn(rngs=nn.Rngs(0)))
+  abstract_model = nn.eval_shape(lambda: model_init_fn(rngs=nn.Rngs(0), **model_config))
   rng_states = state.rng_states
   abs_state = nn.state(abstract_model)
-  params, batch_stats, others = abs_state.split(nn.Param, nn.BatchStat, ...)
-  useful_abs_state = nn.State.merge(params, batch_stats)
-  abstract_model_1 = nn.eval_shape(lambda: model_init_fn(rngs=nn.Rngs(0)))
-  abs_state_1 = nn.state(abstract_model_1)
-  params_1, batch_stats_1, others = abs_state_1.split(nn.Param, nn.BatchStat, ...)
-  useful_abs_state_1 = nn.State.merge(params_1, batch_stats_1)
+  # params, batch_stats, others = abs_state.split(nn.Param, nn.BatchStat, ...)
+  # useful_abs_state = nn.State.merge(params, batch_stats)
+  _, useful_abs_state = abs_state.split(nn.RngState, ...)
+
+  # abstract_model_1 = nn.eval_shape(lambda: model_init_fn(rngs=nn.Rngs(0), **model_config))
+  # abs_state_1 = nn.state(abstract_model_1)
+  # params_1, batch_stats_1, others = abs_state_1.split(nn.Param, nn.BatchStat, ...)
+  # useful_abs_state_1 = nn.State.merge(params_1, batch_stats_1)
+
   fake_state = {
     'mo_xing': useful_abs_state,
-    'ema_mo_xing': useful_abs_state_1,
+    'ema_mo_xing': useful_abs_state,
+    # 'ema_mo_xing': params_1,
+    # 'ema_mo_xing': useful_abs_state_1,
     'you_hua_qi': state.opt_state,
     'step': 0
   }
@@ -315,11 +325,6 @@ def restore_checkpoint(model_init_fn, state, workdir, ema=False):
     opt_state=opt_state,
     step=step
   )
-
-checkpointer = ocp.StandardCheckpointer()
-def _restore(ckpt_path, item, **restore_kwargs):
-  return ocp.StandardCheckpointer.restore(checkpointer, ckpt_path, target=item)
-setattr(checkpointer, 'restore', _restore)
 
 # def save_checkpoint(state, workdir):
 #   """
@@ -344,17 +349,6 @@ def save_checkpoint(state:NNXTrainState, workdir, model_avg):
   #     merged_params = nn.State.merge(merged_params, state.rng_states)
   if len(state.batch_stats) > 0:
     merged_params = nn.State.merge(merged_params, state.batch_stats)
-  # tensorstore_spec = {
-  #     'driver': 'zarr',
-  #     'kvstore': {
-  #         'driver': 'file',
-  #         'path': workdir
-  #     },
-  #     'metadata': {
-  #         'chunks': [1, 1]  # 确保 chunks 数组的长度为 2
-  #     }
-  # }
-  # print("Tensorstore spec:", tensorstore_spec)
   checkpoints.save_checkpoint_multiprocess(workdir, {
     'mo_xing': merged_params,
     'ema_mo_xing': model_avg,
@@ -739,7 +733,6 @@ def train_and_evaluate(
   config.dataset.out_channels = config.model.out_channels
   model_config = config.model 
   dataset_config = config.dataset
-  sampling_config = config.sampling
   fid_config = config.fid
   if rank == 0 and config.wandb:
     wandb.init(project='sqa_FM_kaiming_copied_nnx', dir=workdir)
@@ -1210,52 +1203,144 @@ def train_and_evaluate(
 def just_evaluate(
     config: ml_collections.ConfigDict, workdir: str
   ):
-  raise NotImplementedError
   ########### Initialize ###########
   rank = index = jax.process_index()
-  log_for_0('Generating samples for workdir: {}'.format(workdir))
-  config = config.training
   model_config = config.model 
   dataset_config = config.dataset
-  sampling_config = config.sampling
-  dtype = jnp.bfloat16 if model_config.half_precision else jnp.float32
+  fid_config = config.fid
+  if rank == 0 and config.wandb:
+    wandb.init(project='sqa_FM_nnx_evaluate', dir=workdir)
+    wandb.config.update(config.to_dict())
+  # dtype = jnp.bfloat16 if model_config.half_precision else jnp.float32
   global_seed(config.seed)
-  image_size = dataset_config.image_size
+  image_size = model_config.image_size
 
   ########### Create Model ###########
-  model_cls = getattr(ncsnv2, model_config.name)
-  rngs = nn.Rngs(config.seed, params=config.seed + 114, dropout=config.seed + 514, evaluation=config.seed + 1919)
-  dtype = get_dtype(model_config.half_precision)
-  model_init_fn = partial(
-    model_cls, 
-    dtype=dtype, 
-    ngf=model_config.ngf, 
-    n_noise_levels=sampling_config.n_noise_levels, 
-    config=config
-  )
-  model = model_init_fn(rngs=rngs)
-  display_model(model)
+  model_cls = models_ddpm.SimDDPM
+  rngs = nn.Rngs(config.seed, params=config.seed + 114, dropout=config.seed + 514, train=config.seed + 1919)
+  dtype = get_dtype(config.half_precision)
+  model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype)
+  model = model_init_fn(rngs=rngs, **model_config)
+  show_dict(f'number of model parameters:{count_params(model)}')
+  # show_dict(display_model(model))
 
   ########### Create LR FN ###########
-  # base_lr = config.learning_rate * config.batch_size / 256.
-  learning_rate_fn = config.learning_rate
+  learning_rate_fn = lambda:1 # just in order to create the state
 
   ########### Create Train State ###########
-  state = create_train_state(config, model, learning_rate_fn)
+  state = create_train_state(config, model, image_size, learning_rate_fn)
   assert config.get('load_from',None) is not None, 'Must provide a checkpoint path for evaluation'
   if not os.path.isabs(config.load_from):
     raise ValueError('Checkpoint path must be absolute')
   if not os.path.exists(config.load_from):
     raise ValueError('Checkpoint path {} does not exist'.format(config.load_from))
-  state = restore_checkpoint(model_init_fn ,state, config.load_from)
+  state = restore_checkpoint(model_init_fn, state, config.load_from, model_config, ema=True) # NOTE: whether to use the ema model
   state_step = int(state.step)
   state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
 
+  ########### FID ###########
+  vis_sample_idx = jax.process_index() * jax.local_device_count() + jnp.arange(jax.local_device_count())  # for visualization
+  if config.model.ode_solver == 'jax':
+    p_sample_step = jax.pmap(
+      partial(sample_step, 
+              model=model, 
+              rng_init=random.PRNGKey(0), 
+              device_batch_size=config.fid.device_batch_size, 
+              # MEAN_RGB=input_pipeline.MEAN_RGB, 
+              # STDDEV_RGB=input_pipeline.STDDEV_RGB
+      ),
+      axis_name='batch'
+    )
+
+    # ------------------------------------------------------------
+    # log_for_0('Compiling p_sample_step...')
+    # t_start = time.time()
+    # lowered = p_sample_step.lower(
+    #   params={'params': {'net': state.params['net']}, 'batch_stats': {}},
+    #   sample_idx=vis_sample_idx,)
+    # p_sample_step = lowered.compile()
+    # log_for_0('p_sample_step compiled in {}s'.format(time.time() - t_start))
+    def run_p_sample_step(p_sample_step, state, sample_idx):
+      """
+      state: train state
+      """
+      # redefine the interface
+      images = p_sample_step(state, sample_idx=sample_idx)
+      # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
+      jax.random.normal(random.key(0), ()).block_until_ready()
+      images = images.reshape(-1, image_size, image_size, 3)
+      # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
+      return images  # images have been all gathered
+    
+  elif config.model.ode_solver == 'scipy':
+    raise NotImplementedError("我还没写")
+    from utils.rk45_util import get_rk45_functions
+    run_p_sample_step, p_sample_step = get_rk45_functions(model, config, state, rngs)
+
+  else:
+    raise NotImplementedError
+  # ------------------------------------------------------------------------------------
+  if config.fid.on_use:  # we will evaluate fid    
+    inception_net = fid_util.build_jax_inception()
+    stats_ref = fid_util.get_reference(config.fid.cache_ref, inception_net)
+
+    # if config.fid.eval_only: # debug, this is tang
+    #   samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step)
+    #   mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
+    #   fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
+    #   log_for_0(f'w/o ema: FID at {samples_all.shape[0]} samples: {fid_score}')
+
+    #   samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step)
+    #   mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
+    #   fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
+    #   log_for_0(f' w/ ema: FID at {samples_all.shape[0]} samples: {fid_score}')
+    #   return None
+
+    # debugging here
+    # samples_dir = '/kmh-nfs-us-mount/logs/kaiminghe/results-edm/edm-cifar10-32x32-uncond-vp'
+    # samples = sample_util.get_samples_from_dir(samples_dir, config)
+  # ------------------------------------------------------------------------------------
+
   ########### Gen ###########
+
+  log_for_0(f'fixed_sample_idx: {vis_sample_idx}')
   log_for_0('Eval...')
-  # sync batch statistics across replicas
+  ########### Sampling ###########
   eval_state = sync_batch_stats(state)
-  average_metrics = MyMetrics(reduction=Avger)
-  sample_step(eval_state, rngs, sigmas, sampling_config, epoch="eval", verbose=True)
+  if True: # if we want to sample
+    log_for_0(f'Sample...')
+    # sync batch statistics across replicas
+    # eval_state = eval_state.replace(params=model_avg)
+    vis = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx)
+    vis = make_grid_visualization(vis)
+    vis = jax.device_get(vis) # np.ndarray
+    vis = vis[0]
+    # print(vis.shape)
+    # exit("王广廷")
+    canvas = Image.fromarray(vis)
+    if config.wandb and index == 0:
+      wandb.log({'gen': wandb.Image(canvas)})
+    # sample_step(eval_state, image_size, sampling_config, epoch, use_wandb=config.wandb)
+  ########### FID ###########
+  if config.fid.on_use:
+
+    samples_all = sample_util.generate_samples_for_fid_eval(eval_state, workdir, config, p_sample_step, run_p_sample_step)
+    mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
+    fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
+    log_for_0(f'FID at {samples_all.shape[0]} samples: {fid_score}')
+
+    if config.wandb and rank == 0:
+      wandb.log({
+        'FID': fid_score,
+      })
+
+    vis = make_grid_visualization(samples_all, to_uint8=False)
+    vis = jax.device_get(vis)
+    vis = vis[0]
+    canvas = Image.fromarray(vis)
+    if config.wandb and index == 0:
+      wandb.log({'gen_fid': wandb.Image(canvas)})
 
   jax.random.normal(jax.random.key(0), ()).block_until_ready()
+  if index == 0 and config.wandb:
+    wandb.finish()
