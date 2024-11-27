@@ -11,7 +11,7 @@ commitid=`git show -s --format=%h`  # latest commit id; may not be exactly the s
 export STAGEDIR=/$DATA_ROOT/staging/$USER/${now}-${salt}-${commitid}-code
 
 echo 'Staging files...'
-rsync -av . $STAGEDIR --exclude=tmp --exclude=.git --exclude=__pycache__ --exclude="*.png" --exclude="history" --exclude=wandb --exclude="zhh_code"
+rsync -av . $STAGEDIR --exclude=tmp --exclude=.git --exclude=__pycache__ --exclude="*.png" --exclude="history" --exclude=wandb --exclude="zhh_code" --exclude="zhh"
 cp -r /kmh-nfs-ssd-eu-mount/code/hanhong/MyFile/research_utils/Jax/zhh $STAGEDIR
 echo 'Done staging.'
 

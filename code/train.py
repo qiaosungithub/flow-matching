@@ -37,17 +37,12 @@ from torch.utils.data import DataLoader
 
 from utils.info_util import print_params
 from utils.vis_util import make_grid_visualization, visualize_cifar_batch
-# from utils.ckpt_util import restore_checkpoint, restore_pretrained, save_checkpoint
-# from utils.frozen_util import extract_trainable_parameters, merge_params
-# from utils.trainstate_util import TrainState
 from utils.logging_util import log_for_0, Timer
-from utils.metric_utils import tang_reduce, MyMetrics, Avger
-from utils.utils import save_img
+from utils.metric_utils import tang_reduce
 from utils.display_utils import show_dict, display_model, count_params
 import utils.fid_util as fid_util
 import utils.sample_util as sample_util
 
-import models.models as models
 import models.models_ddpm as models_ddpm
 from models.models_ddpm import generate, edm_ema_scales_schedules
 from input_pipeline import create_split
@@ -149,16 +144,11 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
   t_batch: the t_batch for the model
   """
 
-  # trainable_params, frozen_params = get_trainable(state.params, config)
-
   ema_decay, scales = ema_scales_fn(state.step)
 
   def loss_fn(params_to_train):
     """loss function used for training."""
     
-    # # merge
-    # params = merge_params(params_to_train, frozen_params)
-
     outputs = state.apply_fn(state.graphdef, params_to_train, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'], batch['label'], batch['augment_label'], noise_batch, t_batch)
     loss, new_batch_stats, new_rng_states, dict_losses, images = outputs
 
@@ -212,16 +202,6 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
 
   return new_state, metrics, images
 
-# def get_trainable(params, config):
-#   # seperate the ema network
-#   trainable_prefixes = ['net/',]
-#   trainable_params, frozen_params = extract_trainable_parameters(params, trainable_prefixes)
-
-#   # sanity check
-#   assert list(frozen_params.keys()) == ['net_ema']
-#   assert jax.tree_structure(trainable_params['net']) == jax.tree_structure(frozen_params['net_ema'])
-#   return trainable_params, frozen_params
-
 
 def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn):
   """
@@ -237,8 +217,6 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn):
   # rng_step = random.fold_in(rng_init, state.step)
   # rng_device = random.fold_in(rng_step, lax.axis_index(axis_name='batch'))
   # rng_gen, rng_dropout = random.split(rng_device)
-
-  # trainable_params, frozen_params = get_trainable(state.params, config)
 
   images = batch['image']
   # print("images.shape: ", images.shape) # (8, 64, 32, 32, 3)
@@ -325,17 +303,6 @@ def restore_checkpoint(model_init_fn, state, workdir, model_config, ema=False):
     opt_state=opt_state,
     step=step
   )
-
-# def save_checkpoint(state, workdir):
-#   """
-#   Kaiming's linen version
-#   not working for nnx
-#   """
-#   state = jax.device_get(jax.tree_util.tree_map(lambda x: x[0], state))
-#   step = int(state.step)
-#   if jax.process_index() == 0:
-#     log_for_0('Saving checkpoint step %d.', step)
-#   checkpoints.save_checkpoint_multiprocess(workdir, state, step, keep=2)
 
 # zhh's nnx version
 def save_checkpoint(state:NNXTrainState, workdir, model_avg):

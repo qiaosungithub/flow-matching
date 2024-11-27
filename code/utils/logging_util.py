@@ -22,7 +22,6 @@ class ExcludeInfo(sys_logging.Filter):
         self.exclude_files = exclude_files
 
     def filter(self, record):
-        # print('zhh ijijijijiji',record.pathname)
         if any(file_name in record.pathname for file_name in self.exclude_files):
             return record.levelno > sys_logging.INFO
         return True

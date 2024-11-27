@@ -4,7 +4,7 @@ import flax.nnx as nn
 
 # Function to print number of parameters
 
-def 变(p, d: dict):
+def nnx_to_dict(p, d: dict):
     for k in p:
         v = p[k]
         # print(type(v))
@@ -13,26 +13,14 @@ def 变(p, d: dict):
         else:
             newd={}
             d[str(k)]=newd
-            变(v, newd)
-
-# def 小变(p, d: dict):
-#     for k in p:
-#         v = p[k]
-#         # print(type(v))
-#         if isinstance(v, nn.variablelib.VariableState):
-#             d[k] = None
-#         else:
-#             newd={}
-#             d[k]=newd
-#             小变(v, newd)
+            nnx_to_dict(v, newd)
 
 def print_params(params):
     """This is for nnx version"""
     # convert State to dict
     d={}
-    变(params, d)
+    nnx_to_dict(params, d)
     params = d
-    # print("玩")
     # print(params)
 
     # now reduce to linen version
