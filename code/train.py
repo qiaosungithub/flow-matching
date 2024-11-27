@@ -46,7 +46,6 @@ import utils.sample_util as sample_util
 import models.models_ddpm as models_ddpm
 from models.models_ddpm import generate, edm_ema_scales_schedules
 from input_pipeline import create_split
-# from train_step_sqa import p_train_step, p_solve_diffeq, sample_for_fid, generate
 
 NUM_CLASSES = 10
 
