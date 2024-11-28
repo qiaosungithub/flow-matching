@@ -59,6 +59,7 @@ def get_config():
 
   # for experiment
   model.use_sigmoid = False
+  model.no_condition_t = False
 
   config.aug = aug = ml_collections.ConfigDict()
   aug.use_edm_aug = False

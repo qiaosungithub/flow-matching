@@ -42,6 +42,7 @@ model:
     sampler: euler
     # sampler: heun
     ode_solver: jax # or scipy, which uses rk45
+    no_condition_t: False
 dataset:
     name: cifar10
     # root: /kmh-nfs-ssd-eu-mount/code/qiao/data/MNIST/
