@@ -46,6 +46,10 @@ dataset:
     cache: True
 aug: 
     use_edm_aug: False
+evalu:
+    step_lr: 50
+    eps: 0.005
+    epochs: 100
 batch_size: 512
 num_epochs: 50
 learning_rate: 0.0001
@@ -56,7 +60,7 @@ adam_b2: 0.999
 warmup_epochs: 0
 log_per_step: 50
 checkpoint_per_epoch: 25
-# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241125_215134_sejf7y_kmh-tpuvm-v2-32-preemptible-2__b_lr_ep_eval/checkpoint_97000
+load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241128_031750_8xab8k_kmh-tpuvm-v2-32-preemptible-2__b_lr_ep_eval/checkpoint_4850
 
 # # Here is for IMAGENET32x32:
 

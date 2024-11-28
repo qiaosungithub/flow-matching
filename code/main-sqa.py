@@ -69,14 +69,14 @@ def main(argv):
 
   log_for_0('FLAGS.config: \n{}'.format(FLAGS.config))
 
-#   if FLAGS.config.load_from is not None:
-#     train.just_evaluate(FLAGS.config, FLAGS.workdir)
-#   elif FLAGS.debug:
-#     with jax.disable_jit():
-#       train.train_and_evaluate(FLAGS.config, FLAGS.workdir)
-#   else:
-#     train.train_and_evaluate(FLAGS.config, FLAGS.workdir)
-  train_t.train_and_evaluate(FLAGS.config, FLAGS.workdir)
+  if FLAGS.config.load_from is not None:
+    train_t.just_evaluate(FLAGS.config, FLAGS.workdir)
+  elif FLAGS.debug:
+    with jax.disable_jit():
+      train_t.train_and_evaluate(FLAGS.config, FLAGS.workdir)
+  else:
+    train_t.train_and_evaluate(FLAGS.config, FLAGS.workdir)
+  # train_t.train_and_evaluate(FLAGS.config, FLAGS.workdir)
 
 
 if __name__ == '__main__':

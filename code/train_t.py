@@ -657,24 +657,25 @@ def train_and_evaluate(
 def just_evaluate(
     config: ml_collections.ConfigDict, workdir: str
   ):
-  raise NotADirectoryError
+  from langevin import langevin_step
   ########### Initialize ###########
   rank = index = jax.process_index()
+  config.dataset.out_channels = config.model.out_channels
   model_config = config.model 
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='sqa_FM_nnx_evaluate', dir=workdir)
+    wandb.init(project='sqa_t_energy', dir=workdir)
     wandb.config.update(config.to_dict())
   # dtype = jnp.bfloat16 if model_config.half_precision else jnp.float32
   global_seed(config.seed)
   image_size = model_config.image_size
 
   ########### Create Model ###########
-  model_cls = models_ddpm.SimDDPM
-  rngs = nn.Rngs(config.seed, params=config.seed + 114, dropout=config.seed + 514, train=config.seed + 1919)
+  model_cls = getattr(t, model_config.net_type)
+  rngs = nn.Rngs(config.seed, params=config.seed + 114, dropout=config.seed + 514, train=config.seed + 1919, sample=config.seed + 810)
   dtype = get_dtype(config.half_precision)
-  model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype)
+  model_init_fn = partial(model_cls, dtype=dtype)
   model = model_init_fn(rngs=rngs, **model_config)
   show_dict(f'number of model parameters:{count_params(model)}')
   # show_dict(display_model(model))
@@ -689,112 +690,55 @@ def just_evaluate(
     raise ValueError('Checkpoint path must be absolute')
   if not os.path.exists(config.load_from):
     raise ValueError('Checkpoint path {} does not exist'.format(config.load_from))
-  state = restore_checkpoint(model_init_fn, state, config.load_from, model_config, ema=config.evalu.ema) # NOTE: whether to use the ema model
+  state = restore_checkpoint(model_init_fn, state, config.load_from, model_config)
   state_step = int(state.step)
-  state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
+  # state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
 
   ########### FID ###########
-  vis_sample_idx = jax.process_index() * jax.local_device_count() + jnp.arange(jax.local_device_count())  # for visualization
-  if config.model.ode_solver == 'jax':
-    p_sample_step = jax.pmap(
-      partial(sample_step, 
-              model=model, 
-              rng_init=random.PRNGKey(0), 
-              device_batch_size=config.fid.device_batch_size, 
-              # MEAN_RGB=input_pipeline.MEAN_RGB, 
-              # STDDEV_RGB=input_pipeline.STDDEV_RGB
-      ),
-      axis_name='batch'
-    )
-
-    # ------------------------------------------------------------
-    # log_for_0('Compiling p_sample_step...')
-    # t_start = time.time()
-    # lowered = p_sample_step.lower(
-    #   params={'params': {'net': state.params['net']}, 'batch_stats': {}},
-    #   sample_idx=vis_sample_idx,)
-    # p_sample_step = lowered.compile()
-    # log_for_0('p_sample_step compiled in {}s'.format(time.time() - t_start))
-    def run_p_sample_step(p_sample_step, state, sample_idx):
-      """
-      state: train state
-      """
-      # redefine the interface
-      images = p_sample_step(state, sample_idx=sample_idx)
-      # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
-      jax.random.normal(random.key(0), ()).block_until_ready()
-      images = images.reshape(-1, image_size, image_size, 3)
-      # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
-      return images  # images have been all gathered
-    
-  elif config.model.ode_solver == 'scipy':
-    raise NotImplementedError("我还没写")
-    from utils.rk45_util import get_rk45_functions
-    run_p_sample_step, p_sample_step = get_rk45_functions(model, config, state, rngs)
-
-  else:
-    raise NotImplementedError
-  # ------------------------------------------------------------------------------------
-  if config.fid.on_use:  # we will evaluate fid    
-    inception_net = fid_util.build_jax_inception()
-    stats_ref = fid_util.get_reference(config.fid.cache_ref, inception_net)
-
-    # if config.fid.eval_only: # debug, this is tang
-    #   samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step)
-    #   mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
-    #   fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
-    #   log_for_0(f'w/o ema: FID at {samples_all.shape[0]} samples: {fid_score}')
-
-    #   samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step)
-    #   mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
-    #   fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
-    #   log_for_0(f' w/ ema: FID at {samples_all.shape[0]} samples: {fid_score}')
-    #   return None
-
-    # debugging here
-    # samples_dir = '/kmh-nfs-us-mount/logs/kaiminghe/results-edm/edm-cifar10-32x32-uncond-vp'
-    # samples = sample_util.get_samples_from_dir(samples_dir, config)
-  # ------------------------------------------------------------------------------------
+  # no
 
   ########### Gen ###########
 
-  log_for_0(f'fixed_sample_idx: {vis_sample_idx}')
   log_for_0('Eval...')
   ########### Sampling ###########
-  eval_state = sync_batch_stats(state)
-  if config.evalu.sample: # if we want to sample
-    log_for_0(f'Sample...')
-    # sync batch statistics across replicas
-    # eval_state = eval_state.replace(params=model_avg)
-    vis = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx)
-    vis = make_grid_visualization(vis)
-    vis = jax.device_get(vis) # np.ndarray
-    vis = vis[0]
-    # print(vis.shape)
-    # exit("王广廷")
-    canvas = Image.fromarray(vis)
+  # eval_state = sync_batch_stats(state)
+  x = jax.random.normal(jax.random.PRNGKey(0), (8, image_size, image_size, model_config.out_channels))
+  # all_images = [x] # how to visualize?
+  for i in range(config.evalu.epochs):
+    x, mean_of_t, grad_norm, signal_to_noise_ratio = langevin_step(x, state, rngs, config.evalu)
+    # all_images.append(x)
+    y = make_grid_visualization(x)
+    y = jax.device_get(y)
+    y = y[0]
+    canvas = Image.fromarray(y)
     if config.wandb and index == 0:
       wandb.log({'gen': wandb.Image(canvas)})
-    # sample_step(eval_state, image_size, sampling_config, epoch, use_wandb=config.wandb)
-  ########### FID ###########
-  if config.fid.on_use:
-
-    samples_all = sample_util.generate_samples_for_fid_eval(eval_state, workdir, config, p_sample_step, run_p_sample_step)
-    mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
-    fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
-    log_for_0(f'FID at {samples_all.shape[0]} samples: {fid_score}')
-
-    if config.wandb and rank == 0:
-      wandb.log({
-        'FID': fid_score,
-      })
-
-    vis = make_grid_visualization(samples_all, to_uint8=False)
-    vis = jax.device_get(vis)
-    vis = vis[0]
-    canvas = Image.fromarray(vis)
+    log_for_0(f'epoch {i} mean_of_t: {mean_of_t}, grad_norm: {grad_norm}, signal_to_noise_ratio: {signal_to_noise_ratio}')
     if config.wandb and index == 0:
-      wandb.log({'gen_fid': wandb.Image(canvas)})
+      wandb.log({
+        'mean_of_t': mean_of_t,
+        'grad_norm': grad_norm,
+        'signal_to_noise_ratio': signal_to_noise_ratio,
+      })
+  ########### FID ###########
+  # if config.fid.on_use:
+
+  #   samples_all = sample_util.generate_samples_for_fid_eval(eval_state, workdir, config, p_sample_step, run_p_sample_step)
+  #   mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
+  #   fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
+  #   log_for_0(f'FID at {samples_all.shape[0]} samples: {fid_score}')
+
+  #   if config.wandb and rank == 0:
+  #     wandb.log({
+  #       'FID': fid_score,
+  #     })
+
+  #   vis = make_grid_visualization(samples_all, to_uint8=False)
+  #   vis = jax.device_get(vis)
+  #   vis = vis[0]
+  #   canvas = Image.fromarray(vis)
+  #   if config.wandb and index == 0:
+  #     wandb.log({'gen_fid': wandb.Image(canvas)})
 
   jax.random.normal(jax.random.key(0), ()).block_until_ready()
   if index == 0 and config.wandb:
