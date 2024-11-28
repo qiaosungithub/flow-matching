@@ -175,7 +175,6 @@ class NCSNpp(nn.Module):
             )
 
         elif resblock_type == "biggan":
-            # TODO: the in, out dim; up/down; temb_dim
             ResnetBlock = functools.partial(
                 ResnetBlockBigGAN,
                 act=act,
