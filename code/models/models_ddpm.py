@@ -323,8 +323,9 @@ class SimDDPM(nn.Module):
 
   def forward_flow_pred_function(self, z, t, augment_label=None, train: bool = True):  # EDM
 
-    t_cond = jnp.log(t * 999)
+    # t_cond = jnp.log(t * 999)
     # t_cond = t
+    t_cond = jnp.zeros_like(t)  # dummy
     u_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
     return u_pred
 

@@ -39,8 +39,8 @@ model:
     dropout: 0.15
     net_type: ncsnppedm
     average_loss: True # use average or sum for loss
-    # sampler: euler
-    sampler: heun
+    sampler: euler
+    # sampler: heun
     ode_solver: jax # or scipy, which uses rk45
 dataset:
     name: cifar10
@@ -64,7 +64,7 @@ learning_rate: 0.0008
 lr_schedule: const
 weight_decay: 0.0
 optimizer: adamw
-adam_b2: 0.95
+adam_b2: 0.999
 warmup_epochs: 200
 log_per_step: 100
 visualize_per_epoch: 80
