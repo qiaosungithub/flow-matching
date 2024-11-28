@@ -36,7 +36,7 @@ model:
     base_width: 20
     use_aug_label: False
     act: relu
-    use_sigmoid: True
+    use_sigmoid: False
     net_type: sqa_t_ver1
 dataset:
     name: cifar10
