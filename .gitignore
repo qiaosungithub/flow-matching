@@ -4,6 +4,7 @@ code/train_out.ipynb
 code/log/
 code/tmp/
 code/config.sh
+code/config-sqa.sh
 *.png
 zhh_code/
 images/
