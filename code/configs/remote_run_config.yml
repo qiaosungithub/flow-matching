@@ -34,14 +34,14 @@ model:
     image_size: 32
     out_channels: 3
     base_width: 128
-    n_T: 35
+    n_T: 50
     use_aug_label: False
     dropout: 0.15
     net_type: ncsnppedm
     average_loss: True # use average or sum for loss
-    # sampler: euler
+    sampler: euler
     # sampler: heun
-    sampler: edm
+    # sampler: edm
     ode_solver: jax # or scipy, which uses rk45
     # ode_solver: scipy
 dataset:

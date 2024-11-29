@@ -1165,8 +1165,6 @@ def just_evaluate(
       """
       # redefine the interface
       images = p_sample_step(state, sample_idx=sample_idx)
-      print(images.shape)
-      exit(114514)
       # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
       jax.random.normal(random.key(0), ()).block_until_ready()
       images = images.reshape(-1, image_size, image_size, 3)
