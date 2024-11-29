@@ -1108,7 +1108,7 @@ def just_evaluate(
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='sqa_FM_nnx_evaluate', dir=workdir)
+    wandb.init(project='sqa_edm_debug', dir=workdir)
     wandb.config.update(config.to_dict())
   # dtype = jnp.bfloat16 if model_config.half_precision else jnp.float32
   global_seed(config.seed)
@@ -1135,7 +1135,38 @@ def just_evaluate(
     raise ValueError('Checkpoint path {} does not exist'.format(config.load_from))
   state = restore_checkpoint(model_init_fn, state, config.load_from, model_config, ema=config.evalu.ema) # NOTE: whether to use the ema model
   state_step = int(state.step)
-  state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
+  # state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
+
+  ### debug edm here
+  # state = state[0]
+  t = model.compute_t(jnp.arange(35), 35)
+  vis, denoised = generate(state, model, random.PRNGKey(0), 1) # (num_steps, 32, 32, 3)
+  print("vis.shape: ", vis.shape)
+  vis = vis.reshape(35, 32, 32, 3)
+  denoised = denoised.reshape(35, 32, 32, 3)
+  assert vis.shape == (35, 32, 32, 3)
+  assert denoised.shape == (35, 32, 32, 3)
+  from utils.vis_util import float_to_uint8
+  for ep in range(35):
+    img = vis[ep]
+    max = np.max(img)
+    min = np.min(img)
+    mean = np.sqrt(np.mean(img**2))
+    img = float_to_uint8(img)
+    denoised_img = denoised[ep]
+    denoised_img = float_to_uint8(denoised_img)
+    wandb.log({
+      'ep': ep,
+      'max': max,
+      'min': min,
+      'mean': mean,
+      'img': wandb.Image(img),
+      'denoised': wandb.Image(denoised_img),
+      'noise_level': t[ep]
+      })
+    
+
+  exit("6.7900")
 
   ########### FID ###########
   vis_sample_idx = jax.process_index() * jax.local_device_count() + jnp.arange(jax.local_device_count())  # for visualization

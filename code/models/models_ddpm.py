@@ -83,6 +83,8 @@ def generate(state: NNXTrainState, model, rng, n_sample):
 
   Here we tend to not use nnx.Rngs
   state: maybe a train state
+  ---
+  return shape: (n_sample, 32, 32, 3)
   """
 
   # prepare schedule
@@ -124,14 +126,23 @@ def generate(state: NNXTrainState, model, rng, n_sample):
       rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
 
       merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-      x_i = merged_model.sample_one_step_edm(x_i, i, t_steps)
+      x_i, denoised = merged_model.sample_one_step_edm(x_i, i, t_steps) # for debug
 
       outputs = (x_i, rng)
-      return outputs
+      return outputs, denoised
 
-    outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
-    images = outputs[0]
-    return images
+    # outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
+    # images = outputs[0]
+    all_x = []
+    denoised = []
+    for i in range(num_steps):
+      D = step_fn(i, (x_i, rng))
+      x_i, rng = D[0]
+      denoised.append(D[1])
+      all_x.append(x_i)
+    images = jnp.stack(all_x, axis=0)
+    denoised = jnp.stack(denoised, axis=0)
+    return images, denoised
   
   else:
     raise NotImplementedError
@@ -331,7 +342,7 @@ class SimDDPM(nn.Module):
 
     x_next = jnp.where(i < self.n_T - 1, x_next_, x_next)
 
-    return x_next
+    return x_next, denoised
 
   def forward_consistency_function(self, x, t, pred_t=None):
     raise NotImplementedError
@@ -355,23 +366,6 @@ class SimDDPM(nn.Module):
 
     return denoiser
 
-  def forward_edm_denoising_function(self, x, sigma, augment_label=None, train: bool = True):  # EDM
-    raise NotImplementedError
-    c_skip = self.sde.data_std ** 2 / (sigma ** 2 + self.sde.data_std ** 2)
-    c_out = sigma * self.sde.data_std / jnp.sqrt(sigma ** 2 + self.sde.data_std ** 2)
-
-    c_in = 1 / jnp.sqrt(sigma ** 2 + self.sde.data_std ** 2)
-    c_noise = 0.25 * jnp.log(sigma)
-
-    # forward network
-    in_x = batch_mul(x, c_in)
-    c_noise = c_noise.reshape(c_noise.shape[0])
-
-    F_x = self.net(in_x, c_noise, augment_label=augment_label, train=train)
-
-    D_x = batch_mul(x, c_skip) + batch_mul(F_x, c_out)
-    return D_x
-
   def forward_flow_pred_function(self, z, t, augment_label=None, train: bool = True):  # EDM
 
     t_cond = jnp.log(t * 999)
@@ -392,11 +386,11 @@ class SimDDPM(nn.Module):
     # forward network
     c_in = 1 / (sigma + 1)
     in_x = batch_mul(x, c_in)
-    t = sigma / (sigma + 1)
+    c_out = sigma / (sigma + 1)
 
-    F_x = self.forward_flow_pred_function(in_x, t, augment_label=augment_label, train=train)
+    F_x = self.forward_flow_pred_function(in_x, c_in, augment_label=augment_label, train=train)
 
-    D_x = in_x + batch_mul(F_x, t)
+    D_x = in_x + batch_mul(F_x, c_out)
     return D_x
 
   def forward(self, imgs, labels, augment_label, noise_batch, t_batch, train: bool = True):
