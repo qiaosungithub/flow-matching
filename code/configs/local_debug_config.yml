@@ -35,7 +35,7 @@ model:
     image_size: 32
     out_channels: 3
     base_width: 128
-    n_T: 18
+    n_T: 35
     use_aug_label: False
     dropout: 0.20
     net_type: ncsnppedm
@@ -57,9 +57,10 @@ fid:
     eval_only: False
     fid_per_epoch: 100
     num_samples: 50000
+    device_batch_size: 1
 evalu:
     ema: True
-    sample: False
+    sample: True
 batch_size: 512
 num_epochs: 400
 learning_rate: 0.0008

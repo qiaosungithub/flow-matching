@@ -1100,6 +1100,8 @@ def train_and_evaluate(
 def just_evaluate(
     config: ml_collections.ConfigDict, workdir: str
   ):
+  # assert the version of orbax-checkpoint is 0.4.4
+  assert ocp.__version__ == '0.6.4', ValueError(f'orbax-checkpoint version must be 0.4.4, but got {ocp.__version__}')
   ########### Initialize ###########
   rank = index = jax.process_index()
   model_config = config.model 
@@ -1163,6 +1165,8 @@ def just_evaluate(
       """
       # redefine the interface
       images = p_sample_step(state, sample_idx=sample_idx)
+      print(images.shape)
+      exit(114514)
       # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
       jax.random.normal(random.key(0), ()).block_until_ready()
       images = images.reshape(-1, image_size, image_size, 3)
