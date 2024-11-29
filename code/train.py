@@ -435,17 +435,6 @@ def create_train_state(
   )
   return state
 
-# def prepare_batch(batch, rng, config):
-#   # NOTE: there are two batch sizes: image shape is [b1, b2, 32, 32, 3].
-#   b1, b2 = batch["image"].shape[:2]
-#   sigma_m = config.sigma_min
-#   x = batch["image"]
-#   eps = jax.random.normal(rng.train_eps(), x.shape)
-#   t = jax.random.uniform(rng.train_eps(), (b1, b2, 1, 1, 1))
-#   psi_t = (1 - (1 - sigma_m) * t) * eps + t * x
-#   target = x - (1 - sigma_m) * eps
-#   return psi_t, t.reshape(b1, b2), target
-
 # def prepare_batch_data(batch, config, batch_size=None):
 #   """Reformat a input batch from TF Dataloader.
   
@@ -493,194 +482,8 @@ def create_train_state(
 
 #   return return_dict
 
-
-# def sample_step(state:NNXTrainState, image_size, config, epoch, see_steps:int=10, use_wandb=False, dtype=None):
-#   '''
-#   config: is the sampling config
-#   '''
-#   log_for_0(f"start generating samples for epoch {epoch}")
-#   # device_count = jax.local_device_count()
-#   # init_x = jax.random.normal(jax.random.key(0), (device_count, 64 // device_count, image_size, image_size, 3)) # (8, 8, 32, 32, 3)
-#   # result = p_solve_diffeq(init_x, state) # (8, 10, 8, 32, 32, 3)
-
-#   # from input_pipeline import MEAN_RGB, STDDEV_RGB
-#   # result = result * (jnp.array(STDDEV_RGB)/255.).reshape(1,1,1,1,1,3) + (jnp.array(MEAN_RGB)/255.).reshape(1,1,1,1,1,3)
-
-#   # result = result.transpose(0,2,1,3,4,5)
-#   # result = result.reshape((result.shape[0] * result.shape[1], *result.shape[2:])) # (num_samples, see_steps, image_size, image_size, 3)
-#   result = generate(state, dtype, 64, config, image_size)
-#   print("result.shape: ", result.shape, flush=True)
-
-#   if jax.process_index() == 0:
-#     # flow_path = path.replace('.png','_flow.png')
-#     # gen_path = path.replace('.png','_gen.png')
-#     # flow_dir = config.save_dir + "flow/"
-#     gen_dir = config.save_dir + "gen/"
-#     # im1 = save_img(result[:10].reshape(-1,*result.shape[-3:]), flow_dir, im_name=f"{epoch}.png", grid=(10, see_steps))
-#     # im2 = save_img(result[:,-1], gen_dir, im_name=f"{epoch}.png", grid=(8, 8))
-#     im2 = save_img(result, gen_dir, im_name=f"{epoch}.png", grid=(8, 8))
-
-#     if use_wandb:
-#       wandb.log({
-#         # 'flow': wandb.Image(im1),
-#         'gen': wandb.Image(im2)
-#       })
-
-#   log_for_0(f"saved samples for epoch {epoch}")
-
-# def denoising_step(state:NNXTrainState, ground_truth, config, epoch, verbose=False, see_steps:int=10, use_wandb=False):
-#   '''
-#   config: is the sampling config
-#   '''
-#   log_for_0(f"start generating samples for epoch {epoch}")
-#   device_count = jax.local_device_count()
-#   init_x = jax.random.normal(jax.random.key(0), (device_count, 64 // device_count, image_size, image_size, 3)) # (8, 8, 32, 32, 3)
-#   result = p_solve_diffeq(init_x, state) # (8, 10, 8, 32, 32, 3)
-
-#   # from input_pipeline import MEAN_RGB, STDDEV_RGB
-#   # result = result * (jnp.array(STDDEV_RGB)/255.).reshape(1,1,1,1,1,3) + (jnp.array(MEAN_RGB)/255.).reshape(1,1,1,1,1,3)
-
-#   result = result.transpose(0,2,1,3,4,5)
-#   result = result.reshape((result.shape[0] * result.shape[1], *result.shape[2:])) # (num_samples, see_steps, image_size, image_size, 3)
-
-#   if jax.process_index() == 0:
-#     # flow_path = path.replace('.png','_flow.png')
-#     # gen_path = path.replace('.png','_gen.png')
-#     flow_dir = config.save_dir + "flow/"
-#     gen_dir = config.save_dir + "gen/"
-#     im1 = save_img(result[:9].reshape(-1,*result.shape[-3:]), flow_dir, im_name=f"{epoch}.png", grid=(10, see_steps))
-#     im2 = save_img(result[:,-1], gen_dir, im_name=f"{epoch}.png", grid=(8, 8))
-
-#     if use_wandb:
-#       wandb.log({
-#         'flow': wandb.Image(im1),
-#         'gen': wandb.Image(im2)
-#       })
-
-#   log_for_0(f"saved samples for epoch {epoch}")
-# def denoising_eval_step(state:NNXTrainState, rng_init, sigmas, config, ground_truth, type_, epoch):
-
-#   assert type_ in {"even", "lower"}
-#   num_replicas = jax.local_device_count()
-#   assert 64 % num_replicas == 0
-#   local_batch_size = 64 // num_replicas
-
-#   ground_truth_1 = ground_truth[:, :local_batch_size] # shape (num_replicas, local_bs, 28, 28, 1)
-#   # print("ground_truth_1.shape: ", ground_truth_1.shape)
-#   log_for_0(f"evaluating denoising for epoch {epoch}")
-#   corrupted, mask = corruption(
-#     ground_truth_1, 
-#     type_=type_, 
-#     rngs=rng_init, 
-#     noise_scale=1, 
-#     clamp=False
-#   )
-#   # print("corrupted.shape: ", corrupted.shape) # (8, 8, 28, 28, 1)
-#   # print("mask.shape: ", mask.shape) # (8, 8, 28, 28, 1)
-#   # denoising process
-#   recovered = langevin_masked(
-#     state,
-#     x=corrupted,
-#     sigmas=sigmas,
-#     eps=config.eps,
-#     T=config.T,
-#     mask=mask,
-#     rngs=rng_init,
-#     whole_process=False,
-#     clamp=False,
-#     verbose=False # we will set to False later
-#   )
-#   dir=config.save_dir + f"denoising_{type_}/{epoch}"
-#   save_img(recovered, dir, im_name=f"recovered.png", grid=(8, 8))
-#   save_img(ground_truth_1, dir, im_name=f"groundtruth.png", grid=(8, 8))
-#   save_img(corrupted, dir, im_name=f"corrupted.png", grid=(8, 8))
-
-#   # calculate mse
-#   mse = jnp.mean((recovered - ground_truth_1) ** 2)
-#   log_for_0(f"mse for epoch {epoch} and type {type_}: {mse}")
-#   log_for_0(f"saving recovering process for epoch {epoch} and type {type_}")
-
-#   # save the whole process
-#   ground_truth_0=ground_truth[0, local_batch_size:local_batch_size+10]
-#   assert ground_truth_0.shape[0] == 10, "eval batch size is too small"
-#   ground_truth_0 = jnp.tile(ground_truth_0.reshape(1, 10, 28, 28, 1), (num_replicas, 1, 1, 1, 1))
-#   corrupted, mask = corruption(
-#     ground_truth_0, 
-#     type_=type_, 
-#     rngs=rng_init, 
-#     noise_scale=1, 
-#     clamp=False
-#   )
-#   _, all_samples = langevin_masked(
-#     state,
-#     x=corrupted,
-#     sigmas=sigmas,
-#     eps=config.eps,
-#     T=config.T,
-#     mask=mask,
-#     rngs=rng_init,
-#     whole_process=True,
-#     clamp=False,
-#     verbose=False
-#   )
-#   dir=config.save_dir + f"denoising_{type_}_process/{epoch}"
-#   g = all_samples.shape[0]
-#   assert g%10 == 0
-#   save_img(all_samples, dir, im_name=f"recovered.png", grid=(g//10, 10)) # this maybe reverse
-#   log_for_0(f"saved denoising for epoch {epoch} and type {type_}")
-
-#   return mse
-
-# ########### Checkpointer ###########
-# checkpointer = ocp.StandardCheckpointer()
-# def _restore(ckpt_path, item, **restore_kwargs):
-#   return ocp.StandardCheckpointer.restore(checkpointer, ckpt_path, target=item)
-# setattr(checkpointer, 'restore', _restore)
-
-# def save_checkpoint(state:NNXTrainState, workdir):
-#   # TODO: this function currently emits lots of "background messages". Try to suppress them
-#   state = jax.device_get(jax.tree_util.tree_map(lambda x: x[0], state))
-#   step = int(state.step)
-#   log_for_0('Saving checkpoint to {}, with step {}'.format(workdir, step))
-#   merged_params: nn.State = state.params
-#   # 不能把rng merge进去！
-#   # if len(state.rng_states) > 0:
-#   #     merged_params = nn.State.merge(merged_params, state.rng_states)
-#   if len(state.batch_stats) > 0:
-#     merged_params = nn.State.merge(merged_params, state.batch_stats)
-#   checkpoints.save_checkpoint_multiprocess(workdir, {
-#     'mo_xing': merged_params,
-#     'you_hua_qi': state.opt_state,
-#     'step': step
-#   }, step, keep=2, orbax_checkpointer=checkpointer)
-#   # TODO: FATAL: this "keep" param seems not being used. This must be fixed ASAP!
-
-# def restore_checkpoint(model_init_fn, state, workdir):
-#   abstract_model = nn.eval_shape(lambda: model_init_fn(rngs=nn.Rngs(0)))
-#   rng_states = state.rng_states
-#   abs_state = nn.state(abstract_model)
-#   _, useful_abs_state = abs_state.split(nn.RngState, ...)
-#   fake_state = {
-#       'mo_xing': useful_abs_state,
-#       'you_hua_qi': state.opt_state,
-#       'step': 0
-#   }
-#   loaded_state = checkpoints.restore_checkpoint(workdir, target=fake_state,orbax_checkpointer=checkpointer)
-#   merged_params = loaded_state['mo_xing']
-#   opt_state = loaded_state['you_hua_qi']
-#   step = loaded_state['step']
-#   params, batch_stats = merged_params.split(nn.Param, nn.BatchStat, nn.VariableState)
-#   return state.replace(
-#       params=params,
-#       rng_states=rng_states,
-#       batch_stats=batch_stats,
-#       opt_state=opt_state,
-#       step=step
-#   )
-
 def _update_model_avg(model_avg, state_params, ema_decay):
   return jax.tree_util.tree_map(lambda x, y: ema_decay * x + (1.0 - ema_decay) * y, model_avg, state_params)
-  # return model_avg
 
 def train_and_evaluate(
   config: ml_collections.ConfigDict, workdir: str
@@ -835,14 +638,6 @@ def train_and_evaluate(
       axis_name='batch'
     )
 
-    # ------------------------------------------------------------
-    # log_for_0('Compiling p_sample_step...')
-    # t_start = time.time()
-    # lowered = p_sample_step.lower(
-    #   params={'params': {'net': state.params['net']}, 'batch_stats': {}},
-    #   sample_idx=vis_sample_idx,)
-    # p_sample_step = lowered.compile()
-    # log_for_0('p_sample_step compiled in {}s'.format(time.time() - t_start))
     def run_p_sample_step(p_sample_step, state, sample_idx):
       """
       state: train state
@@ -860,75 +655,6 @@ def train_and_evaluate(
     from utils.rk45_util import get_rk45_functions
     run_p_sample_step, p_sample_step = get_rk45_functions(model, config, state, rngs)
 
-
-    # # ==================================================================================================================================
-    # def flow_step(model, params, x, t):
-    #   u_pred = model.apply(
-    #       params,  # which is {'params': state.params, 'batch_stats': state.batch_stats},
-    #       x, t,
-    #       rngs={},
-    #       train=False,
-    #       method=model.forward_flow_pred_function,
-    #       mutable=['batch_stats'],
-    #   )
-    #   return u_pred
-
-    # p_flow_step = jax.pmap(
-    #   functools.partial(flow_step, model=model,),
-    #   axis_name='batch',
-    # )
-
-    # x_fake = jnp.ones((jax.local_device_count(), config.fid.device_batch_size, image_size, image_size, config.model.out_channels), jnp.float32)
-    # t_fake = jnp.ones((jax.local_device_count(), config.fid.device_batch_size), jnp.float32)
-    # lowered = p_flow_step.lower(
-    #   params={'params': {'net': state.params['net']}, 'batch_stats': {}},
-    #   x=x_fake,
-    #   t=t_fake,
-    # )
-    # logging.info('Compiling p_flow_step...')
-    # t_start = time.time()
-    # p_flow_step = lowered.compile()
-    # logging.info('p_flow_step compiled in {}s'.format(time.time() - t_start))
-    # # out = p_flow_step(params={'params': {'net': state.params['net']}, 'batch_stats': {}}, x=x_fake, t=t_fake)[0]
-    # p_sample_step = p_flow_step  # rename for legacy
-
-    # rng_init = rng
-    # def run_p_sample_step(p_sample_step, state, sample_idx, ema=False):
-    #   # this is the ode solver for one stage
-    #   image_size = config.model.image_size
-    #   net_key = 'net_ema' if ema else 'net'
-    #   def ode_func(t, x):
-    #     x = jnp.array(x)
-    #     x = x.reshape((jax.local_device_count(), -1, image_size, image_size, config.model.out_channels))
-    #     # t = t.reshape((jax.local_device_count(), -1))
-    #     t = jnp.ones(x.shape[:2], jnp.float32) * t
-    #     out = p_sample_step(params={'params': {'net': state.params[net_key]}, 'batch_stats': {}}, x=x, t=t)[0]
-    #     jax.random.normal(jax.random.key(0), ()).block_until_ready()
-    #     out = np.array(out)
-    #     out = out.reshape((-1,))
-    #     return out
-
-    #   x_shape = (jax.local_device_count(), config.fid.device_batch_size, image_size, image_size, config.model.out_channels)
-
-    #   x_init = []
-    #   for i in sample_idx:
-    #     rng_i = random.fold_in(rng_init, i)
-    #     x_init.append(jax.random.normal(rng_i, x_shape[1:], jnp.float32))
-    #   x_init = jnp.stack(x_init, axis=0)  # [4, b, 32, 32, 3]
-    #   x = np.array(x_init).flatten()
-
-    #   # Black-box ODE solver for the probability flow ODE
-    #   solution = integrate.solve_ivp(ode_func, (1e-3, 1.0), x, rtol=1e-5, atol=1e-5, method='RK45')
-    #   x = solution.y[:, -1]
-    #   x = x.reshape((jax.local_device_count() * config.fid.device_batch_size, image_size, image_size, config.model.out_channels))
-    #   images = x
-
-    #   nfe = solution.nfev
-    #   logging.info('nfe: {}'.format(nfe))
-
-    #   return images
-    # # ==================================================================================================================================
-
   else:
     raise NotImplementedError
   
@@ -938,10 +664,10 @@ def train_and_evaluate(
     stats_ref = fid_util.get_reference(config.fid.cache_ref, inception_net)
 
     if config.fid.eval_only: # debug, this is tang
-      samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step)
-      mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
-      fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
-      log_for_0(f'w/o ema: FID at {samples_all.shape[0]} samples: {fid_score}')
+      # samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step)
+      # mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
+      # fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
+      # log_for_0(f'w/o ema: FID at {samples_all.shape[0]} samples: {fid_score}')
 
       samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step)
       mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
