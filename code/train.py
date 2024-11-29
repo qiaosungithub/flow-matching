@@ -869,9 +869,8 @@ def train_and_evaluate(
       images = p_sample_step(state, sample_idx=sample_idx)
       # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
       jax.random.normal(random.key(0), ()).block_until_ready()
-      images = images.reshape(-1, image_size, image_size, 3)
       # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
-      return images  # images have been all gathered
+      return images[0]  # images have been all gathered
     
   elif config.model.ode_solver == 'scipy':
     # raise NotImplementedError("我还没写")
