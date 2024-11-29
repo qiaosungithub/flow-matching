@@ -93,31 +93,48 @@ def generate(state: NNXTrainState, model, rng, n_sample):
   rng_used, rng = jax.random.split(rng, 2)
   # sample from prior
   x_prior = jax.random.normal(rng_used, x_shape, dtype=model.dtype)
+
+
+  if model.sampler in ['euler', 'heun']:
+      
+    x_i = x_prior
+
+    def step_fn(i, inputs):
+      x_i, rng = inputs
+      rng_this_step = jax.random.fold_in(rng, i)
+      rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
+
+      merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
+      x_i = merged_model.sample_one_step(x_i, rng_z, i)
+      outputs = (x_i, rng)
+      return outputs
+
+    outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
+    images = outputs[0]
+    return images
   
-  x_i = x_prior
+  elif model.sampler == 'edm':
+    t_steps = model.compute_t(jnp.arange(num_steps), num_steps)
+    t_steps = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
+    x_i = x_prior * t_steps[0]
 
-  def step_fn(i, inputs):
-    x_i, rng = inputs
-    rng_this_step = jax.random.fold_in(rng, i)
-    rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
-    # x_i, _ = model.apply(
-    #   params,  # which is {'params': state.params, 'batch_stats': state.batch_stats},
-    #   x_i, rng_z, i,
-    #   # rngs={'dropout': rng_dropout},  # we don't do dropout in eval
-    #   rngs={},
-    #   method=model.sample_one_step,
-    #   mutable=['batch_stats'],
-    # )
+    def step_fn(i, inputs):
+      x_i, rng = inputs
+      rng_this_step = jax.random.fold_in(rng, i)
+      rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
 
-    merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-    x_i = merged_model.sample_one_step(x_i, rng_z, i)
-    outputs = (x_i, rng)
-    return outputs
+      merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
+      x_i = merged_model.sample_one_step_edm(x_i, i, t_steps)
 
-  outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
-  images = outputs[0]
-  return images
+      outputs = (x_i, rng)
+      return outputs
 
+    outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
+    images = outputs[0]
+    return images
+  
+  else:
+    raise NotImplementedError
 
 class SimDDPM(nn.Module):
   """Simple DDPM."""
@@ -202,6 +219,16 @@ class SimDDPM(nn.Module):
   def get_visualization(self, list_imgs):
     vis = jnp.concatenate(list_imgs, axis=1)
     return vis
+
+  def compute_t(self, indices, scales):
+    t_max = 80
+    t_min = 0.002
+    rho = 7.0
+    t = t_max ** (1 / rho) + indices / (scales - 1) * (
+        t_min ** (1 / rho) - t_max ** (1 / rho)
+    )
+    t = t**rho
+    return t
     
   def compute_losses(self, pred, gt):
     assert pred.shape == gt.shape
@@ -223,6 +250,8 @@ class SimDDPM(nn.Module):
       x_next = self.sample_one_step_euler(x_i, i)  # t_next is not used
     elif self.sampler == 'heun':
       x_next = self.sample_one_step_heun(x_i, i)  # t_next is not used
+    elif self.sampler == 'edm':
+      raise LookupError("找对地方了")
     else:
       raise NotImplementedError
 
@@ -272,15 +301,37 @@ class SimDDPM(nn.Module):
     x_next = x_i + u_pred * dt
 
     return x_next
+  
+  def sample_one_step_edm(self, x_i, i, t_steps):
+    """
+    edm's second order SDE solver
+    """
 
-  def compute_t(self, indices, scales):
-    raise NotImplementedError # this is not used in flow matching
-    sde = self.sde
-    t = sde.t_max ** (1 / sde.rho) + indices / (scales - 1) * (
-        sde.t_min ** (1 / sde.rho) - sde.t_max ** (1 / sde.rho)
-    )
-    t = t**sde.rho
-    return t
+    x_cur = x_i
+    t_cur = t_steps[i]
+    t_next = t_steps[i + 1]
+
+    # TODO{kaiming}: revisit S_churn
+    t_hat = t_cur
+    x_hat = x_cur  # x_hat is always x_cur when gamma=0
+
+    t_hat = jnp.repeat(t_hat, x_hat.shape[0])
+    t_next = jnp.repeat(t_next, x_hat.shape[0])
+    
+    # TODO: ema net?
+    # Euler step.
+    denoised = self.forward_edm_denoising_function(x_hat, t_hat, train=False)
+    d_cur = batch_mul(x_hat - denoised, 1. / t_hat)
+    x_next = x_hat + batch_mul(d_cur, t_next - t_hat)
+
+    # Apply 2nd order correction
+    denoised = self.forward_edm_denoising_function(x_next, t_next, train=False)
+    d_prime = batch_mul(x_next - denoised, 1. / jnp.maximum(t_next, 1e-8))  # won't take effect if t_next is 0 (last step)
+    x_next_ = x_hat + batch_mul(0.5 * d_cur + 0.5 * d_prime, t_next - t_hat)
+
+    x_next = jnp.where(i < self.n_T - 1, x_next_, x_next)
+
+    return x_next
 
   def forward_consistency_function(self, x, t, pred_t=None):
     raise NotImplementedError
@@ -327,6 +378,26 @@ class SimDDPM(nn.Module):
     # t_cond = t
     u_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
     return u_pred
+  
+  def forward_edm_denoising_function(self, x, sigma, augment_label=None, train: bool = True):  # EDM
+    """
+    code from edm
+    ---
+    input: x (noisy image, =x+sigma*noise), sigma (condition)
+    We hope this function operates D(x+sigma*noise) = x
+    our network has F((1-t)x + t*noise) = x - noise
+    TODO: check the correctness
+    """
+
+    # forward network
+    c_in = 1 / (sigma + 1)
+    in_x = batch_mul(x, c_in)
+    t = sigma / (sigma + 1)
+
+    F_x = self.forward_flow_pred_function(in_x, t, augment_label=augment_label, train=train)
+
+    D_x = in_x + batch_mul(F_x, t)
+    return D_x
 
   def forward(self, imgs, labels, augment_label, noise_batch, t_batch, train: bool = True):
     """

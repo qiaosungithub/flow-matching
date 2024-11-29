@@ -34,15 +34,16 @@ model:
     image_size: 32
     out_channels: 3
     base_width: 128
-    n_T: 18
+    n_T: 35
     use_aug_label: False
     dropout: 0.15
     net_type: ncsnppedm
     average_loss: True # use average or sum for loss
-    sampler: euler
+    # sampler: euler
     # sampler: heun
-    # ode_solver: jax # or scipy, which uses rk45
-    ode_solver: scipy
+    sampler: edm
+    ode_solver: jax # or scipy, which uses rk45
+    # ode_solver: scipy
 dataset:
     name: cifar10
     # root: /kmh-nfs-ssd-eu-mount/code/qiao/data/MNIST/
