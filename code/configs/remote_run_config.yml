@@ -46,7 +46,7 @@ model:
     # ode_solver: scipy
 dataset:
     name: cifar10
-    # root: /kmh-nfs-ssd-eu-mount/code/qiao/data/MNIST/
+    # root: CIFAR
     prefetch_factor: 2
     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
     cache: True

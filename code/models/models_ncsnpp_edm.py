@@ -111,11 +111,11 @@ class NCSNpp(nn.Module):
         #################### aug label ############################
         if use_aug_label:
             assert aug_label_dim is not None
-            self.augemb_layer = nn.Linear(aug_label_dim, nf * 2, kernel_init=default_initializer(), use_bias=False, name='map_augment')
+            self.map_augment = nn.Linear(aug_label_dim, nf * 2, kernel_init=default_initializer(), use_bias=False)
         #################### noise condition ############################
         if conditional:
             input_temb_dim = nf * 2 if use_aug_label else nf
-            self.cond_MLP = nn.Sequential(
+            self.map_layer01 = nn.Sequential(
                 nn.Linear(input_temb_dim, nf * 4, kernel_init=default_initializer(), rngs=rngs),
                 act,
                 nn.Linear(nf * 4, nf * 4, kernel_init=default_initializer(), rngs=rngs),
@@ -332,11 +332,11 @@ class NCSNpp(nn.Module):
         if augment_label is not None:
             assert self.use_aug_label
             assert augment_label.shape == (x.shape[0], self.aug_label_dim)
-            aemb = self.augemb_layer(augment_label)
+            aemb = self.map_augment(augment_label)
             temb += aemb 
 
         if self.conditional:
-            temb = self.cond_MLP(temb)
+            temb = self.map_layer01(temb)
         else:
             raise NotImplementedError
             temb = None
