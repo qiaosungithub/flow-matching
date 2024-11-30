@@ -115,10 +115,13 @@ def generate(state: NNXTrainState, model, rng, n_sample):
     images = outputs[0]
     return images
   
-  elif model.sampler == 'edm':
+  elif model.sampler in ['edm', 'edm-sde']:
     t_steps = model.compute_t(jnp.arange(num_steps), num_steps)
     t_steps = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
     x_i = x_prior * t_steps[0]
+
+    # import jax.random as random
+    # x = random.normal(rng, x_shape, dtype=model.dtype)
 
     def step_fn(i, inputs):
       x_i, rng = inputs
@@ -126,8 +129,8 @@ def generate(state: NNXTrainState, model, rng, n_sample):
       rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
 
       merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-      x_i= merged_model.sample_one_step_edm(x_i, i, t_steps)
-      # x_i, denoised = merged_model.sample_one_step_edm(x_i, i, t_steps) # for debug
+      x_i = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps)
+      # x_i, denoised = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps) # for debug
 
       outputs = (x_i, rng)
       return outputs
@@ -136,7 +139,7 @@ def generate(state: NNXTrainState, model, rng, n_sample):
     outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
     images = outputs[0]
     return images
-    ## for debug
+    # # for debug
     # all_x = []
     # denoised = []
     # for i in range(num_steps):
@@ -264,15 +267,28 @@ class SimDDPM(nn.Module):
   def sample_one_step(self, x_i, rng, i):
 
     if self.sampler == 'euler':
-      x_next = self.sample_one_step_euler(x_i, i)  # t_next is not used
+      x_next = self.sample_one_step_euler(x_i, i) 
     elif self.sampler == 'heun':
-      x_next = self.sample_one_step_heun(x_i, i)  # t_next is not used
+      x_next = self.sample_one_step_heun(x_i, i) 
     elif self.sampler == 'edm':
       raise LookupError("找对地方了")
     else:
       raise NotImplementedError
 
     return x_next
+  
+  def sample_one_step_edm(self, x_i, rng, i, t_steps):
+
+    if self.sampler == 'edm':
+      x_next = self.sample_one_step_edm_ode(x_i, i, t_steps) 
+      # x_next, denoised = self.sample_one_step_edm_ode(x_i, i, t_steps) # for debug
+    elif self.sampler == 'edm-sde':
+      x_next = self.sample_one_step_edm_sde(x_i, rng, i, t_steps)
+      x_next, denoised = self.sample_one_step_edm_sde(x_i, rng, i, t_steps) # for debug
+    else:
+      raise NotImplementedError
+
+    return x_next, denoised 
 
   def sample_one_step_heun(self, x_i, i):
 
@@ -319,9 +335,9 @@ class SimDDPM(nn.Module):
 
     return x_next
   
-  def sample_one_step_edm(self, x_i, i, t_steps):
+  def sample_one_step_edm_ode(self, x_i, i, t_steps):
     """
-    edm's second order SDE solver
+    edm's second order ODE solver
     """
 
     x_cur = x_i
@@ -335,7 +351,48 @@ class SimDDPM(nn.Module):
     t_hat = jnp.repeat(t_hat, x_hat.shape[0])
     t_next = jnp.repeat(t_next, x_hat.shape[0])
     
-    # TODO: ema net?
+    # Euler step.
+    denoised = self.forward_edm_denoising_function(x_hat, t_hat, train=False)
+    d_cur = batch_mul(x_hat - denoised, 1. / t_hat)
+    x_next = x_hat + batch_mul(d_cur, t_next - t_hat)
+
+    # Apply 2nd order correction
+    denoised = self.forward_edm_denoising_function(x_next, t_next, train=False)
+    d_prime = batch_mul(x_next - denoised, 1. / jnp.maximum(t_next, 1e-8))  # won't take effect if t_next is 0 (last step)
+    x_next_ = x_hat + batch_mul(0.5 * d_cur + 0.5 * d_prime, t_next - t_hat)
+
+    x_next = jnp.where(i < self.n_T - 1, x_next_, x_next)
+
+    # return x_next, denoised # for debug
+    return x_next
+  
+  def sample_one_step_edm_sde(self, x_i, rng, i, t_steps):
+    """
+    edm's second order SDE solver
+    """
+
+    gamma = jnp.minimum(30/self.n_T, jnp.sqrt(2)-1)
+    S_noise = 1.007
+    t_max = 1
+    t_min = 0.01
+
+    x_cur = x_i
+    t_cur = t_steps[i]
+    t_next = t_steps[i + 1]
+
+    # jax.debug.print('t_cur shape: {s}', s=t_cur.shape)
+    # jax.debug.print('i shape: {s}', s=i.shape)
+    # jax.debug.print('t_steps shape: {s}', s=t_steps.shape)
+
+    gamma = jnp.where(t_cur < t_max, gamma, 0)
+    gamma = jnp.where(t_cur > t_min, gamma, 0)
+
+    t_hat = t_cur * (1 + gamma)
+    x_hat = x_cur + jnp.sqrt(t_hat**2 - t_cur**2) * S_noise * jax.random.normal(rng, x_cur.shape) # add noise to t_hat level
+
+    t_hat = jnp.repeat(t_hat, x_hat.shape[0])
+    t_next = jnp.repeat(t_next, x_hat.shape[0])
+    
     # Euler step.
     denoised = self.forward_edm_denoising_function(x_hat, t_hat, train=False)
     d_cur = batch_mul(x_hat - denoised, 1. / t_hat)
@@ -386,7 +443,6 @@ class SimDDPM(nn.Module):
     input: x (noisy image, =x+sigma*noise), sigma (condition)
     We hope this function operates D(x+sigma*noise) = x
     our network has F((1-t)x + t*noise) = x - noise
-    TODO: check the correctness
     """
 
     # forward network
