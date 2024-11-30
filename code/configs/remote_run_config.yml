@@ -47,7 +47,7 @@ model:
     no_condition_t: True
 dataset:
     name: cifar10
-    # root: CIFAR
+    # root: CIFAR # pytorch
     prefetch_factor: 2
     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
     cache: True
