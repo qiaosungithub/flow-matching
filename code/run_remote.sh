@@ -23,6 +23,8 @@ if [[ $USE_CONDA == 1 ]]; then
     CONDA_INIT_SH_PATH=$(dirname $CONDA_PATH)/../etc/profile.d/conda.sh
 fi
 
+command() {
+
 gcloud compute tpus tpu-vm ssh $VM_NAME --zone $ZONE \
     --worker=all --command "
 cd $STAGEDIR
@@ -41,5 +43,19 @@ python3 main.py \
     --mode=remote_run \
     --config=configs/load_config.py:remote_run \
 " 2>&1 | tee -a $LOGDIR/output.log
+
+}
+
+command
+for i in {1..3}; do
+    if grep -q 'Additional GRPC error information' $LOGDIR/output.log; then
+        echo 'Get GRPC error, retrying...'
+        echo > $LOGDIR/output.log
+        bash re_apply.sh
+        command
+    else
+        break
+    fi
+done
 
 ############# No need to modify [END] #############
