@@ -44,7 +44,7 @@ model:
     # sampler: edm
     ode_solver: jax
     # ode_solver: scipy # rk45
-    no_condition_t: True
+    no_condition_t: False
 dataset:
     name: cifar10
     # root: CIFAR
@@ -67,7 +67,7 @@ learning_rate: 0.0008
 lr_schedule: const
 weight_decay: 0.0
 optimizer: adamw
-adam_b2: 0.999
+adam_b2: 0.95
 warmup_epochs: 200
 log_per_step: 100
 visualize_per_epoch: 80
