@@ -171,6 +171,7 @@ class SimDDPM(nn.Module):
     h_init=0.035,
     sampler='euler',
     ode_solver='jax',
+    no_condition_t=False,
     rngs=None,
     **kwargs
   ):
@@ -190,6 +191,7 @@ class SimDDPM(nn.Module):
     self.h_init = h_init
     self.sampler = sampler
     self.ode_solver = ode_solver
+    self.no_condition_t = no_condition_t
     self.rngs = rngs
 
     # sde = sde_lib.KVESDE(
@@ -373,8 +375,7 @@ class SimDDPM(nn.Module):
 
   def forward_flow_pred_function(self, z, t, augment_label=None, train: bool = True):  # EDM
 
-    t_cond = jnp.log(t * 999)
-    # t_cond = t
+    t_cond = jnp.zeros_like(t) if self.no_condition_t else jnp.log(t * 999)
     u_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
     return u_pred
   

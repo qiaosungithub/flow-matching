@@ -57,6 +57,8 @@ def get_config():
   model.ode_solver = 'jax'  # or 'scipy', which use RK45 solver
   model.net_type = 'ncsnpp'
 
+  model.no_condition_t = False
+
   config.aug = aug = ml_collections.ConfigDict()
   aug.use_edm_aug = False
 
