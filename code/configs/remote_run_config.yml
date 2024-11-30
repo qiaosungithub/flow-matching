@@ -39,11 +39,11 @@ model:
     dropout: 0.15
     net_type: ncsnppedm
     average_loss: True # use average or sum for loss
-    sampler: euler
+    # sampler: euler
     # sampler: heun
-    # sampler: edm
-    ode_solver: jax # or scipy, which uses rk45
-    # ode_solver: scipy
+    sampler: edm
+    # ode_solver: jax
+    ode_solver: scipy # rk45
 dataset:
     name: cifar10
     # root: CIFAR

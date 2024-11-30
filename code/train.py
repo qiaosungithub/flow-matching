@@ -860,7 +860,7 @@ def just_evaluate(
     config: ml_collections.ConfigDict, workdir: str
   ):
   # assert the version of orbax-checkpoint is 0.4.4
-  assert ocp.__version__ == '0.6.4', ValueError(f'orbax-checkpoint version must be 0.4.4, but got {ocp.__version__}')
+  assert ocp.__version__ == '0.6.4', ValueError(f'orbax-checkpoint version must be 0.6.4, but got {ocp.__version__}')
   ########### Initialize ###########
   rank = index = jax.process_index()
   model_config = config.model 
@@ -872,6 +872,9 @@ def just_evaluate(
   # dtype = jnp.bfloat16 if model_config.half_precision else jnp.float32
   global_seed(config.seed)
   image_size = model_config.image_size
+
+  if rank == 0 and config.wandb:
+    wandb.log({'n_T': config.model.n_T})
 
   ########### Create Model ###########
   model_cls = models_ddpm.SimDDPM
