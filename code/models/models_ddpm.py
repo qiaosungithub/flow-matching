@@ -130,7 +130,7 @@ def generate(state: NNXTrainState, model, rng, n_sample):
 
       merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
       # x_i = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps)
-      x_i, denoised = merged_model.sample_one_step_edm(x_i, i, t_steps) # for debug
+      x_i, denoised = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps) # for debug
 
       outputs = (x_i, rng)
       # return outputs
@@ -286,13 +286,13 @@ class SimDDPM(nn.Module):
   def sample_one_step_edm(self, x_i, rng, i, t_steps):
 
     if self.sampler == 'edm':
-      x_next = self.sample_one_step_edm_ode(x_i, i, t_steps) 
+      x_next, denoised = self.sample_one_step_edm_ode(x_i, i, t_steps) 
     elif self.sampler == 'edm-sde':
-      x_next = self.sample_one_step_edm_sde(x_i, rng, i, t_steps)
+      x_next, denoised = self.sample_one_step_edm_sde(x_i, rng, i, t_steps)
     else:
       raise NotImplementedError
 
-    return x_next
+    return x_next, denoised 
 
   def sample_one_step_heun(self, x_i, i):
 
@@ -367,16 +367,18 @@ class SimDDPM(nn.Module):
 
     x_next = jnp.where(i < self.n_T - 1, x_next_, x_next)
 
-    # return x_next, denoised # for debug
-    return x_next
+    return x_next, denoised # for debug
+    # return x_next
   
   def sample_one_step_edm_sde(self, x_i, rng, i, t_steps):
     """
     edm's second order SDE solver
     """
 
-    gamma = jnp.minimum(30/self.n_T, jnp.sqrt(2)-1)
+    # gamma = jnp.minimum(30/self.n_T, jnp.sqrt(2)-1)
+    gamma = 0
     S_noise = 1.007
+    # S_noise = 0
     t_max = 1
     t_min = 0.01
 

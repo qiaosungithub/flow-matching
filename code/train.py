@@ -919,15 +919,16 @@ def just_evaluate(
     img = float_to_uint8(img)
     denoised_img = denoised[ep]
     denoised_img = float_to_uint8(denoised_img)
-    wandb.log({
-      'ep': ep,
-      'max': max,
-      'min': min,
-      'mean': mean,
-      'img': wandb.Image(img),
-      'denoised': wandb.Image(denoised_img),
-      'noise_level': t[ep]
-      })
+    if index == 0 and config.wandb:
+      wandb.log({
+        'ep': ep,
+        'max': max,
+        'min': min,
+        'mean': mean,
+        'img': wandb.Image(img),
+        'denoised': wandb.Image(denoised_img),
+        'noise_level': t[ep]
+        })
     
 
   exit("6.7900")
