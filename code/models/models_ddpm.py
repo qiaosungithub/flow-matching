@@ -372,10 +372,10 @@ class SimDDPM(nn.Module):
     edm's second order SDE solver
     """
 
-    gamma = jnp.minimum(30/self.n_T, jnp.sqrt(2)-1)
+    gamma = jnp.minimum(80/self.n_T, jnp.sqrt(2)-1)
     S_noise = 1.007
     t_max = 1
-    t_min = 0.01
+    t_min = 0.05
 
     x_cur = x_i
     t_cur = t_steps[i]
