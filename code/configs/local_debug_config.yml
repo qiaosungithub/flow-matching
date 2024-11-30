@@ -42,11 +42,11 @@ model:
     average_loss: True # use average or sum for loss
     # sampler: euler
     # sampler: heun
-    sampler: edm
-    # sampler: edm-sde
+    # sampler: edm
+    sampler: edm-sde
     ode_solver: jax
     # ode_solver: scipy # rk45
-    no_condition_t: True
+    no_condition_t: False
 dataset:
     name: cifar10
     # root: CIFAR # pytorch
