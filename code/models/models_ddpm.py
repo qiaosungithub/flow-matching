@@ -284,11 +284,12 @@ class SimDDPM(nn.Module):
       # x_next, denoised = self.sample_one_step_edm_ode(x_i, i, t_steps) # for debug
     elif self.sampler == 'edm-sde':
       x_next = self.sample_one_step_edm_sde(x_i, rng, i, t_steps)
-      x_next, denoised = self.sample_one_step_edm_sde(x_i, rng, i, t_steps) # for debug
+      # x_next, denoised = self.sample_one_step_edm_sde(x_i, rng, i, t_steps) # for debug
     else:
       raise NotImplementedError
 
-    return x_next, denoised 
+    return x_next
+    # return x_next, denoised 
 
   def sample_one_step_heun(self, x_i, i):
 
