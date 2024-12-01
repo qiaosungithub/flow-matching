@@ -209,6 +209,31 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn):
 
   return new_state, metrics, images
 
+def train_step_sqa(state: NNXTrainState, batch, rngs, train_step_compute_fn):
+  """
+  Perform a single training step.
+  We will pmap this function
+  ---
+  batch: a dict, with image, label, augment_label
+  rngs: nnx.Rngs
+  train_step_compute_fn: the pmaped version of train_step_compute
+  """
+
+  # # ResNet has no dropout; but maintain rng_dropout for future usage
+  # rng_step = random.fold_in(rng_init, state.step)
+  # rng_device = random.fold_in(rng_step, lax.axis_index(axis_name='batch'))
+  # rng_gen, rng_dropout = random.split(rng_device)
+
+  images = batch['image']
+  # print("images.shape: ", images.shape) # (8, 64, 32, 32, 3)
+  b1, b2 = images.shape[0], images.shape[1]
+  noise_batch = jax.random.normal(rngs.train(), images.shape)
+  t_batch = jax.random.uniform(rngs.train(), (b1, b2))
+
+  new_state, metrics, images = train_step_compute_fn(state, batch, noise_batch, t_batch)
+
+  return new_state, metrics, images
+
 
 def sample_step(state, sample_idx, model, rng_init, device_batch_size, MEAN_RGB=None, STDDEV_RGB=None):
   """
