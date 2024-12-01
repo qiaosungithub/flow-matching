@@ -461,7 +461,7 @@ class SimDDPM(nn.Module):
     D_x = in_x + batch_mul(F_x, c_out)
     return D_x
 
-  def forward(self, imgs, labels, augment_label, noise_batch, t_batch, train: bool = True):
+  def forward(self, imgs, labels, augment_label, noise_batch, t_batch, train: bool = True, data_scale=None):
     """
     You should first sample the noise and t and input them
     """
@@ -481,18 +481,26 @@ class SimDDPM(nn.Module):
     # sample from prior (noise)
     x_prior = noise_batch
 
+    ## experiment: add data scale
+    if train:
+      assert data_scale is not None
+    x_data_sqa = batch_mul(x_data, data_scale) if data_scale is not None else x_data
+
     # sample t step
     t = t_batch
     eps = 1e-3
     t = t * (1 - eps) + eps
 
-    # create v target
-    v_target = x_data - x_prior
-    # v_target = jnp.ones_like(x_data)  # dummy
+    # # create v target
+    # v_target = x_data - x_prior
+    # # v_target = jnp.ones_like(x_data)  # dummy
 
     # create z (as the network input)
     # z = batch_mul(1 - t, x_data) + batch_mul(t, x_prior)
-    z = batch_mul(t, x_data) + batch_mul(1 - t, x_prior)
+    z = batch_mul(t, x_data_sqa) + batch_mul(1 - t, x_prior)
+
+    # new v target
+    v_target = (x_data - z) / (1-t_batch)
 
     # forward network
     u_pred = self.forward_flow_pred_function(z, t)

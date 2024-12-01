@@ -115,7 +115,7 @@ class NNXTrainState(FlaxTrainState):
   # NOTE: is_training can't be a attr, since it can't be replicated
 
 
-def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learning_rate_fn, ema_scales_fn, config):
+def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learning_rate_fn, ema_scales_fn, config, data_scale=None):
   """
   Perform a single training step.
   We will pmap this function
@@ -130,7 +130,7 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
   def loss_fn(params_to_train):
     """loss function used for training."""
     
-    outputs = state.apply_fn(state.graphdef, params_to_train, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'], batch['label'], batch['augment_label'], noise_batch, t_batch)
+    outputs = state.apply_fn(state.graphdef, params_to_train, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'], batch['label'], batch['augment_label'], noise_batch, t_batch, data_scale=data_scale)
     loss, new_batch_stats, new_rng_states, dict_losses, images = outputs
 
     return loss, (new_batch_stats, new_rng_states, dict_losses, images)
@@ -230,7 +230,11 @@ def train_step_sqa(state: NNXTrainState, batch, rngs, train_step_compute_fn):
   noise_batch = jax.random.normal(rngs.train(), images.shape)
   t_batch = jax.random.uniform(rngs.train(), (b1, b2))
 
-  new_state, metrics, images = train_step_compute_fn(state, batch, noise_batch, t_batch)
+  data_scale = jax.random.normal(rngs.train(), (b1, b2)) * 0.1 + 1.0
+  disturb = jax.random.uniform(rngs.train(), (b1, b2)) # only disturb half of the data
+  data_scale = jnp.where(disturb < 0.5, data_scale, jnp.ones_like(data_scale))
+
+  new_state, metrics, images = train_step_compute_fn(state, batch, noise_batch, t_batch, data_scale=data_scale)
 
   return new_state, metrics, images
 
@@ -590,6 +594,9 @@ def train_and_evaluate(
   model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype)
   model = model_init_fn(rngs=rngs, **model_config)
   show_dict(f'number of model parameters:{count_params(model)}')
+
+  ## experiment
+  assert model_config.no_condition_t
 
   ########### Create LR FN ###########
   base_lr = config.learning_rate

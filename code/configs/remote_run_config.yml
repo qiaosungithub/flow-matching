@@ -45,7 +45,7 @@ model:
     # sampler: edm-sde
     ode_solver: jax
     # ode_solver: scipy # rk45
-    no_condition_t: False
+    no_condition_t: True
 dataset:
     name: cifar10
     # root: CIFAR # pytorch
