@@ -874,9 +874,6 @@ def just_evaluate(
   global_seed(config.seed)
   image_size = model_config.image_size
 
-  if rank == 0 and config.wandb:
-    wandb.log({'n_T': config.model.n_T})
-
   ########### Create Model ###########
   model_cls = models_ddpm.SimDDPM
   rngs = nn.Rngs(config.seed, params=config.seed + 114, dropout=config.seed + 514, train=config.seed + 1919)
@@ -1024,6 +1021,12 @@ def just_evaluate(
     canvas = Image.fromarray(vis)
     if config.wandb and index == 0:
       wandb.log({'gen_fid': wandb.Image(canvas)})
+
+  if rank == 0 and config.wandb:
+    nfe = config.model.n_T
+    if config.model.ode_solver == 'scipy': nfe=100
+    elif config.model.sampler != 'euler': nfe*=2
+    wandb.log({'NFE': nfe})
 
   jax.random.normal(jax.random.key(0), ()).block_until_ready()
   if index == 0 and config.wandb:

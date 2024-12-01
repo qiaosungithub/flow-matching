@@ -34,18 +34,18 @@ model:
     image_size: 32
     out_channels: 3
     base_width: 128
-    n_T: 100
+    n_T: 200
     use_aug_label: False
     dropout: 0.15
     net_type: ncsnppedm
     average_loss: True # use average or sum for loss
-    # sampler: euler
+    sampler: euler
     # sampler: heun
     # sampler: edm
-    sampler: edm-sde
+    # sampler: edm-sde
     ode_solver: jax
     # ode_solver: scipy # rk45
-    no_condition_t: False
+    no_condition_t: True
 dataset:
     name: cifar10
     # root: CIFAR # pytorch
@@ -74,7 +74,7 @@ log_per_step: 100
 visualize_per_epoch: 80
 eval_per_epoch: 80
 checkpoint_per_epoch: 500
-load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241127_010129_q9ifcu_kmh-tpuvm-v2-32-6__b_lr_ep_eval/checkpoint_194000
+load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241130_140252_c95a47_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/checkpoint_194000
 
 # # Here is for IMAGENET32x32:
 
