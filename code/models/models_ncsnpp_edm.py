@@ -111,7 +111,7 @@ class NCSNpp(nn.Module):
         #################### aug label ############################
         if use_aug_label:
             assert aug_label_dim is not None
-            self.augemb_layer = nn.Linear(aug_label_dim, nf * 2, kernel_init=default_initializer(), use_bias=False, name='map_augment')
+            self.augemb_layer = nn.Linear(aug_label_dim, nf * 2, kernel_init=default_initializer(), use_bias=False)
         #################### noise condition ############################
         if conditional:
             input_temb_dim = nf * 2 if use_aug_label else nf

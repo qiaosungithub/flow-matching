@@ -56,10 +56,10 @@ def get_config():
   model.sampler = 'euler' # or 'heun'
   model.ode_solver = 'jax'  # or 'scipy', which use RK45 solver
   model.net_type = 'ncsnpp'
+  model.no_condition_t = False
 
   # for experiment
   model.use_sigmoid = False
-  model.no_condition_t = False
 
   config.aug = aug = ml_collections.ConfigDict()
   aug.use_edm_aug = False

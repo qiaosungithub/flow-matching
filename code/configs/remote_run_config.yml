@@ -34,18 +34,21 @@ model:
     image_size: 32
     out_channels: 3
     base_width: 128
-    n_T: 18
+    n_T: 100
     use_aug_label: False
     dropout: 0.15
     net_type: ncsnppedm
     average_loss: True # use average or sum for loss
-    sampler: euler
+    # sampler: euler
     # sampler: heun
-    ode_solver: jax # or scipy, which uses rk45
+    # sampler: edm
+    sampler: edm-sde
+    ode_solver: jax
+    # ode_solver: scipy # rk45
     no_condition_t: False
 dataset:
     name: cifar10
-    # root: /kmh-nfs-ssd-eu-mount/code/qiao/data/MNIST/
+    # root: CIFAR # pytorch
     prefetch_factor: 2
     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
     cache: True
@@ -71,6 +74,7 @@ log_per_step: 100
 visualize_per_epoch: 80
 eval_per_epoch: 80
 checkpoint_per_epoch: 500
+load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241127_010129_q9ifcu_kmh-tpuvm-v2-32-6__b_lr_ep_eval/checkpoint_194000
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241125_215134_sejf7y_kmh-tpuvm-v2-32-preemptible-2__b_lr_ep_eval/checkpoint_97000
 
 # # Here is for IMAGENET32x32:
