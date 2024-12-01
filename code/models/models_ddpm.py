@@ -500,7 +500,8 @@ class SimDDPM(nn.Module):
     z = batch_mul(t, x_data_sqa) + batch_mul(1 - t, x_prior)
 
     # new v target
-    v_target = (x_data - z) / (1-t_batch)
+    # v_target = (x_data - z) / (1-t_batch)
+    v_target = batch_mul(x_data - z, 1. / (1-t))
 
     # forward network
     u_pred = self.forward_flow_pred_function(z, t)
