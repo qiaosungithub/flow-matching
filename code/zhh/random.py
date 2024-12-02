@@ -1,1 +1,0 @@
-raise NotImplementedError('ZHH knows nothing about RNGs! 🥺')
