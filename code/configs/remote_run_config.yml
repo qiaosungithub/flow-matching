@@ -77,7 +77,7 @@ log_per_step: 100
 visualize_per_epoch: 80
 eval_per_epoch: 80
 checkpoint_per_epoch: 500
-load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241130_140252_c95a47_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/checkpoint_194000
+# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241130_140252_c95a47_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/checkpoint_194000
 
 # # Here is for IMAGENET32x32:
 
