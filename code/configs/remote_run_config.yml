@@ -64,7 +64,7 @@ evalu:
     sample: False
 batch_size: 512
 num_epochs: 2000
-learning_rate: 0.0008
+learning_rate: 0.0004
 lr_schedule: const
 weight_decay: 0.0
 optimizer: adamw
