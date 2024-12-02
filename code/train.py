@@ -231,8 +231,8 @@ def train_step_sqa(state: NNXTrainState, batch, rngs, train_step_compute_fn):
   t_batch = jax.random.uniform(rngs.train(), (b1, b2))
 
   data_scale = jax.random.uniform(rngs.train(), (b1, b2)) * 0.2 + 0.9 # debug
-  disturb = jax.random.uniform(rngs.train(), (b1, b2)) # only disturb half of the data
-  data_scale = jnp.where(disturb < 0.5, data_scale, jnp.ones_like(data_scale))
+  # disturb = jax.random.uniform(rngs.train(), (b1, b2)) # only disturb half of the data
+  # data_scale = jnp.where(disturb < 0.5, data_scale, jnp.ones_like(data_scale))
 
   new_state, metrics, images = train_step_compute_fn(state, batch, noise_batch, t_batch, data_scale=data_scale)
 
