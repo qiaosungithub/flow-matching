@@ -188,20 +188,20 @@ def generate(state: NNXTrainState, model, rng, n_sample):
     seq = range(0, model.num_timesteps, skip)
     T = len(seq)
     seq_next = [-1] + list(seq[:-1])
-    eta = 0.0 # TODO: what is this? control the variances of sigma
+    seq_reversed = jnp.array(list(reversed(seq)))
+    seq_next_reversed = jnp.array(list(reversed(seq_next)))
+    eta = 0.0 # control the noise level added every step, 0 -> ODE sampler TODO: implement eta > 0.0
     n = x_prior.shape[0]
     x0_preds = []
     xs = [x_prior]
 
     x_i = x_prior
 
-    
-
     def step_fn(i, inputs):
       x_i, rng = inputs
 
-      _i = reversed(seq)[i]
-      _j = reversed(seq_next)[i]
+      _i = seq_reversed[i]
+      _j = seq_next_reversed[i]
 
       t = jnp.ones(n) * _i
       next_t = jnp.ones(n) * _j
@@ -311,11 +311,7 @@ class SimDDPM(nn.Module):
     # # declare two networks
     # self.net = net_fn(name='net')
     # self.net_ema = net_fn(name='net_ema')
-    self.betas = get_beta_schedule(self.beta_schedule, beta_start=self.beta_start, beta_end=self.beta_end, num_diffusion_timesteps=self.num_diffusion_timesteps)
-    self.alpha = jnp.cumprod(1 - self.betas, axis=0)
-    self.num_timesteps = self.betas.shape[0]
-    print(f'betas: {self.betas}')
-    print(f'alpha: {self.alpha}')
+    self.num_timesteps = num_diffusion_timesteps
     self.net = net_fn()
 
 
@@ -337,9 +333,11 @@ class SimDDPM(nn.Module):
     """
     DDIM util function
     """
-    alpha = self.alpha
+    betas = get_beta_schedule(self.beta_schedule, beta_start=self.beta_start, beta_end=self.beta_end, num_diffusion_timesteps=self.num_diffusion_timesteps)
+    alpha = jnp.cumprod(1 - betas, axis=0)
     alpha = jnp.concatenate([jnp.zeros((1,)), alpha], axis=0)
     a = jnp.take(alpha, t + 1).reshape(-1, 1, 1, 1)
+    return a
     
   def compute_losses(self, pred, gt):
     assert pred.shape == gt.shape
@@ -595,8 +593,9 @@ class SimDDPM(nn.Module):
     t = t_batch # in DDIM, t may be discrete
     # eps = 1e-3
     # t = t * (1 - eps) + eps
-
-    alphas = jnp.take(self.alpha, t) # TODO: implement alpha in the model
+    betas = get_beta_schedule(self.beta_schedule, beta_start=self.beta_start, beta_end=self.beta_end, num_diffusion_timesteps=self.num_diffusion_timesteps)
+    alpha = jnp.cumprod(1 - betas, axis=0)
+    alphas = jnp.take(alpha, t) # TODO: implement alpha in the model
 
     # create v target
     # v_target = x_data - x_prior

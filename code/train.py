@@ -148,6 +148,11 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
     # Re-use same axis_name as in the call to `pmap(...train_step...)` below.
     grads = lax.pmean(grads, axis_name='batch')
 
+  # # clip grad with config.grad_clip
+  # if config.grad_clip > 0.0:
+  #   grads = optax.clip_by_global_norm(grads, config.grad_clip)[1]
+  # TODO: clip grad
+
   # for simplicity, we don't all gather images
   # loss = aux[0]
   new_batch_stats, new_rng_states, dict_losses, images = aux[1]
@@ -184,7 +189,7 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
   return new_state, metrics, images
 
 
-def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn):
+def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, model_config):
   """
   Perform a single training step.
   We will pmap this function
@@ -203,7 +208,11 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn):
   # print("images.shape: ", images.shape) # (8, 64, 32, 32, 3)
   b1, b2 = images.shape[0], images.shape[1]
   noise_batch = jax.random.normal(rngs.train(), images.shape)
-  t_batch = jax.random.uniform(rngs.train(), (b1, b2))
+  # t_batch = jax.random.uniform(rngs.train(), (b1, b2))
+  half = (b1 * b2) // 2 + 1
+  t_batch = jax.random.randint(rngs.train(), (half, ), minval=0, maxval=model_config.num_diffusion_timesteps)
+  t_batch = jnp.concatenate([t_batch, model_config.num_diffusion_timesteps - 1 - t_batch], axis=0)[:b1*b2]
+  t_batch = t_batch.reshape(b1, b2)
 
   new_state, metrics, images = train_step_compute_fn(state, batch, noise_batch, t_batch)
 
@@ -398,6 +407,13 @@ def create_train_state(
     log_for_0(f'Using RAdam with wd {config.weight_decay}')
     assert config.weight_decay == 0.0
     tx = optax.radam(
+      learning_rate=learning_rate_fn,
+      b1=config.adam_b1,
+      b2=config.adam_b2,
+    )
+  elif config.optimizer == 'adam':
+    log_for_0(f'Using Adam')
+    tx = optax.adam(
       learning_rate=learning_rate_fn,
       b1=config.adam_b1,
       b2=config.adam_b2,
@@ -733,7 +749,7 @@ def train_and_evaluate(
       #   exit(114514)
       # continue
 
-      state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute)
+      state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute, model_config)
       
       if epoch == epoch_offset and n_batch == 0:
         log_for_0('p_train_step compiled in {}s'.format(time.time() - train_metrics_last_t))
