@@ -44,7 +44,7 @@ import utils.fid_util as fid_util
 import utils.sample_util as sample_util
 
 import models.models_ddpm as models_ddpm
-from models.models_ddpm import generate, edm_ema_scales_schedules
+from models.models_ddpm import generate, edm_ema_scales_schedules, diffusion_schedule_fn_some
 
 NUM_CLASSES = 10
 
@@ -115,7 +115,7 @@ class NNXTrainState(FlaxTrainState):
   # NOTE: is_training can't be a attr, since it can't be replicated
 
 
-def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learning_rate_fn, ema_scales_fn, config):
+def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learning_rate_fn, ema_scales_fn,diffusion_schedule_fn, config):
   """
   Perform a single training step.
   We will pmap this function
@@ -126,11 +126,14 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
   """
 
   ema_decay, scales = ema_scales_fn(state.step)
+  
+  # use "diffusion_schedule_fn" to process t_batch
+  alpha_cumprod_batch, beta_batch = diffusion_schedule_fn(t_batch)
 
   def loss_fn(params_to_train):
     """loss function used for training."""
     
-    outputs = state.apply_fn(state.graphdef, params_to_train, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'], batch['label'], batch['augment_label'], noise_batch, t_batch)
+    outputs = state.apply_fn(state.graphdef, params_to_train, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'], batch['label'], batch['augment_label'], noise_batch, t_batch, alpha_cumprod_batch=alpha_cumprod_batch, beta_batch=beta_batch)
     loss, new_batch_stats, new_rng_states, dict_losses, images = outputs
 
     return loss, (new_batch_stats, new_rng_states, dict_losses, images)
@@ -184,10 +187,10 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
   return new_state, metrics, images
 
 
-def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn):
+def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, config):
   """
   Perform a single training step.
-  We will pmap this function
+  This function is NOT pmap, so you can do anything
   ---
   batch: a dict, with image, label, augment_label
   rngs: nnx.Rngs
@@ -203,7 +206,9 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn):
   # print("images.shape: ", images.shape) # (8, 64, 32, 32, 3)
   b1, b2 = images.shape[0], images.shape[1]
   noise_batch = jax.random.normal(rngs.train(), images.shape)
-  t_batch = jax.random.uniform(rngs.train(), (b1, b2))
+  # t_batch = jax.random.uniform(rngs.train(), (b1, b2))
+  assert config.time_weighting == 'const', "we don't support time_weighting for now, get {}".format(config.time_weighting)
+  t_batch = jax.random.randint(rngs.train(), (b1, b2), minval=0, maxval=config.diffusion_nT) # [0, num_time_steps)
 
   new_state, metrics, images = train_step_compute_fn(state, batch, noise_batch, t_batch)
 
@@ -216,7 +221,7 @@ def sample_step(state, sample_idx, model, rng_init, device_batch_size, MEAN_RGB=
   rng_init: here we do not want nnx.Rngs
   """
   rng_sample = random.fold_in(rng_init, sample_idx)  # fold in sample_idx
-  images = generate(state, model, rng_sample, n_sample=device_batch_size)
+  images = generate(state, model, rng_sample, n_sample=device_batch_size, config)
 
   images_all = lax.all_gather(images, axis_name='batch')  # each device has a copy  
   images_all = images_all.reshape(-1, *images_all.shape[2:])
@@ -352,7 +357,7 @@ def create_train_state(
 
   print_params(params)
 
-  def apply_fn(graphdef2, params2, rng_states2, batch_stats2, useless_, is_training, images, labels, augment_labels, noise_batch, t_batch):
+  def apply_fn(graphdef2, params2, rng_states2, batch_stats2, useless_, is_training, images, labels, augment_labels, noise_batch, t_batch,alpha_cumprod_batch,beta_batch):
     """
     input:
       images
@@ -372,7 +377,7 @@ def create_train_state(
     else:
       merged_model.eval()
     del params2, rng_states2, batch_stats2, useless_
-    loss_train, dict_losses, images = merged_model.forward(images, labels, augment_labels, noise_batch, t_batch)
+    loss_train, dict_losses, images = merged_model.forward(images, labels, augment_labels, noise_batch, t_batch, alpha_cumprod_batch=alpha_cumprod_batch, beta_batch=beta_batch)
     new_batch_stats, new_rng_states, _ = nn.state(merged_model, nn.BatchStat, nn.RngState, ...)
     return loss_train, new_batch_stats, new_rng_states, dict_losses, images
 
@@ -575,6 +580,7 @@ def train_and_evaluate(
   )
 
   ema_scales_fn = partial(edm_ema_scales_schedules, steps_per_epoch=steps_per_epoch, config=config)
+  diffusion_schedule_fn = partial(diffusion_schedule_fn_some, config=config)
 
   ########### Create Train State ###########
   state = create_train_state(config, model, image_size, learning_rate_fn)
@@ -606,6 +612,7 @@ def train_and_evaluate(
   p_train_step_compute = jax.pmap(
     partial(train_step_compute, 
             learning_rate_fn=learning_rate_fn, ema_scales_fn=ema_scales_fn, 
+            diffusion_schedule_fn = diffusion_schedule_fn,
             config=config),
     axis_name='batch'
   )
@@ -621,7 +628,8 @@ def train_and_evaluate(
               rng_init=random.PRNGKey(0), 
               device_batch_size=config.fid.device_batch_size, 
               MEAN_RGB=input_pipeline.MEAN_RGB, 
-              STDDEV_RGB=input_pipeline.STDDEV_RGB
+              STDDEV_RGB=input_pipeline.STDDEV_RGB,
+              config=config
       ),
       axis_name='batch'
     )
@@ -733,7 +741,7 @@ def train_and_evaluate(
       #   exit(114514)
       # continue
 
-      state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute)
+      state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute, config=config)
       
       if epoch == epoch_offset and n_batch == 0:
         log_for_0('p_train_step compiled in {}s'.format(time.time() - train_metrics_last_t))
@@ -938,6 +946,7 @@ def just_evaluate(
               model=model, 
               rng_init=random.PRNGKey(0), 
               device_batch_size=config.fid.device_batch_size, 
+              config=config
               # MEAN_RGB=input_pipeline.MEAN_RGB, 
               # STDDEV_RGB=input_pipeline.STDDEV_RGB
       ),

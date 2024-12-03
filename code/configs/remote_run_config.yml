@@ -34,15 +34,14 @@ model:
     image_size: 32
     out_channels: 3
     base_width: 128
-    n_T: 100 # num of sample steps
-    # diff_steps: 4000 # num of diffusion steps
-    # noise_schedule: cosine
+    n_T: 4000 # num of sample steps, matches "diffusion_nT"
     use_aug_label: False
     dropout: 0.15
     net_type: ncsnppedm
     average_loss: True # use average or sum for loss
 
-    sampler: euler
+    sampler: ddpm
+    sample_clip_denoised: True # this is only useful for ddpm sampler
     # sampler: heun
     # sampler: edm
     # sampler: edm-sde
@@ -50,6 +49,7 @@ model:
     # ode_solver: scipy # rk45
     
     no_condition_t: False
+    t_condition_method: direct # default: log999
 dataset:
     name: cifar10
     # root: CIFAR # pytorch
@@ -79,6 +79,11 @@ visualize_per_epoch: 80
 eval_per_epoch: 80
 checkpoint_per_epoch: 500
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241130_140252_c95a47_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/checkpoint_194000
+
+# diffusion:
+diffusion_nT: 4000
+diffusion_schedule: cosine
+time_weighting: const 
 
 # # Here is for IMAGENET32x32:
 
