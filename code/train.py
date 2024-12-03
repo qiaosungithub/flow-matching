@@ -883,7 +883,7 @@ def just_evaluate(
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='sqa_FM_nnx_evaluate', dir=workdir)
+    wandb.init(project='LMCI-eval', dir=workdir)
     # wandb.init(project='sqa_edm_debug', dir=workdir)
     wandb.config.update(config.to_dict())
   # dtype = jnp.bfloat16 if model_config.half_precision else jnp.float32
@@ -1040,8 +1040,8 @@ def just_evaluate(
 
   if rank == 0 and config.wandb:
     nfe = config.model.n_T
-    if config.model.ode_solver == 'scipy': nfe=100
-    elif config.model.sampler != 'euler': nfe*=2
+    if config.model.ode_solver == 'scipy': nfe=100 # TODO: show the rk45 nfe
+    elif config.model.sampler not in ['euler', "DDIM"]: nfe*=2
     wandb.log({'NFE': nfe})
 
   jax.random.normal(jax.random.key(0), ()).block_until_ready()
