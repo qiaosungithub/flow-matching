@@ -121,9 +121,8 @@ def create_zhh_diffusion_schedule(config):
       alphas_cumprod = jnp.cumprod(alphas, axis=0)
       alphas_cumprod_prev = jnp.append(1.0, alphas_cumprod[:-1])
       alphas_cumprod_next = jnp.append(alphas_cumprod[1:], 0.0)
-      global zhh_diffusion_schedule
       zhh_diffusion_schedule = {
-        'betas': betas, 'alphas': alphas, 'alpha_cumprod': alphas_cumprod, 'alpha_cumprod_prev': alphas_cumprod_prev, 'alpha_cumprod_next': alphas_cumprod_next
+        'betas': betas, 'alphas': alphas, 'alphas_cumprod': alphas_cumprod, 'alphas_cumprod_prev': alphas_cumprod_prev, 'alphas_cumprod_next': alphas_cumprod_next
       }
       # cosine schedule
     elif config.diffusion_schedule == 'linear':
@@ -134,9 +133,10 @@ def create_zhh_diffusion_schedule(config):
 
 def create_zhh_SAMPLING_diffusion_schedule(config):
     diffusion_steps_total = config.diffusion_nT
-    sample_steps_total = config.model.nT
+    sample_steps_total = config.model.n_T
     assert sample_steps_total == diffusion_steps_total, 'This is not supported: sample_steps_total {} != diffusion_steps_total {}'.format(sample_steps_total, diffusion_steps_total)
     o = create_zhh_diffusion_schedule(config)
+    global zhh_diffusion_schedule
     if 'sample_ts' not in o:
         sample_ts = jnp.flip(jnp.arange(diffusion_steps_total), axis=0)
         # 更多的大便
@@ -153,7 +153,6 @@ def create_zhh_SAMPLING_diffusion_schedule(config):
             * np.sqrt(o['alphas'])
             / (1.0 - o['alphas_cumprod'])
         )
-        global zhh_diffusion_schedule
         zhh_diffusion_schedule.update({
             'sample_ts': sample_ts,
             'posterior_variance': posterior_variance,
@@ -164,13 +163,12 @@ def create_zhh_SAMPLING_diffusion_schedule(config):
             'posterior_mean_coef1': posterior_mean_coef1,
             'posterior_mean_coef2': posterior_mean_coef2
         })
-    global zhh_diffusion_schedule
     return zhh_diffusion_schedule
     
 
 def diffusion_schedule_fn_some(config, t_batch):
   o = create_zhh_diffusion_schedule(config)
-  return o['alpha_cumprod'][t_batch], o['beta'][t_batch]
+  return o['alphas_cumprod'][t_batch], o['betas'][t_batch]
 
 def get_t_process_fn(t_condition_method):
   if t_condition_method == 'log999':
@@ -182,8 +180,11 @@ def get_t_process_fn(t_condition_method):
   else:
     raise NotImplementedError('Unknown t_condition_method: {m}'.format(m=t_condition_method))
 
+def batch_t(t,b):
+  return t.reshape(1,).repeat(b, axis=0)
+
 # move this out from model for JAX compilation
-def generate(state: NNXTrainState, model, rng, n_sample,config):
+def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o):
   """
   Generate samples from the model
 
@@ -258,7 +259,8 @@ def generate(state: NNXTrainState, model, rng, n_sample,config):
     # return images, denoised
   elif model.sampler in ['ddpm']:
     x_i = x_prior
-    o = create_zhh_SAMPLING_diffusion_schedule(config)
+    # o = create_zhh_SAMPLING_diffusion_schedule(config)
+    o = zhh_o
     t_steps = o['sample_ts']
     sqrt_recip_alphas_cumprod_steps = o['sqrt_recip_alphas_cumprod']
     sqrt_recipm1_alphas_cumprod_steps = o['sqrt_recipm1_alphas_cumprod']
@@ -272,8 +274,7 @@ def generate(state: NNXTrainState, model, rng, n_sample,config):
       rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
 
       merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-      x_i = merged_model.sample_one_step_ddpm(merged_model, x_i, rng_z, i, t_steps=t_steps, sqrt_recip_alphas_cumprod_steps=sqrt_recip_alphas_cumprod_steps, sqrt_recipm1_alphas_cumprod_steps=sqrt_recipm1_alphas_cumprod_steps,posterior_mean_coef1_steps=posterior_mean_coef1_steps,posterior_mean_coef2_steps=posterior_mean_coef2_steps,
-      log_model_variance_steps=log_model_variance_steps)
+      x_i = merged_model.sample_one_step_ddpm(x_i, rng_z, i, t_steps=t_steps, sqrt_recip_alphas_cumprod_steps=sqrt_recip_alphas_cumprod_steps, sqrt_recipm1_alphas_cumprod_steps=sqrt_recipm1_alphas_cumprod_steps,posterior_mean_coef1_steps=posterior_mean_coef1_steps,posterior_mean_coef2_steps=posterior_mean_coef2_steps,log_model_variance_steps=log_model_variance_steps)
       outputs = (x_i, rng)
       return outputs
 
@@ -550,12 +551,13 @@ class SimDDPM(nn.Module):
       """
       DDPM
       """
-      t = t_steps[i]
-      sqrt_recip_alphas_cumprod = sqrt_recip_alphas_cumprod_steps[i]
-      sqrt_recipm1_alphas_cumprod = sqrt_recipm1_alphas_cumprod_steps[i]
-      posterior_mean_coef1 = posterior_mean_coef1_steps[i]
-      posterior_mean_coef2 = posterior_mean_coef2_steps[i]
-      log_model_variance = log_model_variance_steps[i]
+      b = x_i.shape[0]
+      t = batch_t(t_steps[i],b)
+      sqrt_recip_alphas_cumprod = batch_t(sqrt_recip_alphas_cumprod_steps[i],b)
+      sqrt_recipm1_alphas_cumprod = batch_t(sqrt_recipm1_alphas_cumprod_steps[i],b)
+      posterior_mean_coef1 = batch_t(posterior_mean_coef1_steps[i],b)
+      posterior_mean_coef2 = batch_t(posterior_mean_coef2_steps[i],b)
+      log_model_variance = batch_t(log_model_variance_steps[i],b)
       
       eps_pred = self.forward_flow_pred_function(x_i, t, train=False)
       
@@ -572,7 +574,7 @@ class SimDDPM(nn.Module):
       noise = jax.random.normal(rng, x_i.shape)
 
       nonzero_mask = jnp.where(t > 0.5, 1, 0) # no noise when t == 0
-      sample = model_mean + batch_mul(nonzero_mask, noise) * jnp.exp(0.5 * log_model_variance)
+      sample = model_mean + batch_mul(batch_mul(nonzero_mask, noise) , jnp.exp(0.5 * log_model_variance))
 
       # return x_next, denoised # for debug
       return sample

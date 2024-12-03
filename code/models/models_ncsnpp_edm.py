@@ -301,7 +301,7 @@ class NCSNpp(nn.Module):
         # print("in call of ncsnpp model")
         # print("x.shape", x.shape)
         # print("time_cond.shape", time_cond.shape)
-        assert time_cond.ndim == 1  # only support 1-d time condition
+        assert time_cond.ndim == 1, 'get wrong time shape {}'.format(time_cond.shape)  # only support 1-d time condition
         assert time_cond.shape[0] == x.shape[0]
         assert x.shape[-1] == self.out_channels
 

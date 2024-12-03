@@ -43,8 +43,18 @@ from utils.display_utils import show_dict, display_model, count_params
 import utils.fid_util as fid_util
 import utils.sample_util as sample_util
 
+# Pater noster, qui es in caelis,
+# sanctificetur nomen tuum.
+# Adveniat regnum tuum.
+# Fiat voluntas tua, sicut in caelo, et in terra.
+# Panem nostrum quotidianum da nobis hodie,
+# et dimitte nobis debita nostra,
+# sicut et nos dimittimus debitoribus nostris.
+# Et ne nos inducas in tentationem,
+# sed libera nos a malo.
+# Amen.
 import models.models_ddpm as models_ddpm
-from models.models_ddpm import generate, edm_ema_scales_schedules, diffusion_schedule_fn_some
+from models.models_ddpm import generate, edm_ema_scales_schedules, diffusion_schedule_fn_some, create_zhh_SAMPLING_diffusion_schedule
 
 NUM_CLASSES = 10
 
@@ -128,7 +138,7 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
   ema_decay, scales = ema_scales_fn(state.step)
   
   # use "diffusion_schedule_fn" to process t_batch
-  alpha_cumprod_batch, beta_batch = diffusion_schedule_fn(t_batch)
+  alpha_cumprod_batch, beta_batch = diffusion_schedule_fn(t_batch=t_batch)
 
   def loss_fn(params_to_train):
     """loss function used for training."""
@@ -215,13 +225,13 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, config)
   return new_state, metrics, images
 
 
-def sample_step(state, sample_idx, model, rng_init, device_batch_size, MEAN_RGB=None, STDDEV_RGB=None):
+def sample_step(state, sample_idx, model, rng_init, device_batch_size, config,zhh_o,MEAN_RGB=None, STDDEV_RGB=None,):
   """
   sample_idx: each random sampled image corrresponds to a seed
   rng_init: here we do not want nnx.Rngs
   """
   rng_sample = random.fold_in(rng_init, sample_idx)  # fold in sample_idx
-  images = generate(state, model, rng_sample, n_sample=device_batch_size, config)
+  images = generate(state, model, rng_sample, n_sample=device_batch_size, config=config,zhh_o=zhh_o)
 
   images_all = lax.all_gather(images, axis_name='batch')  # each device has a copy  
   images_all = images_all.reshape(-1, *images_all.shape[2:])
@@ -629,7 +639,8 @@ def train_and_evaluate(
               device_batch_size=config.fid.device_batch_size, 
               MEAN_RGB=input_pipeline.MEAN_RGB, 
               STDDEV_RGB=input_pipeline.STDDEV_RGB,
-              config=config
+              config=config,
+              zhh_o = create_zhh_SAMPLING_diffusion_schedule(config)
       ),
       axis_name='batch'
     )
@@ -946,7 +957,8 @@ def just_evaluate(
               model=model, 
               rng_init=random.PRNGKey(0), 
               device_batch_size=config.fid.device_batch_size, 
-              config=config
+              config=config,
+              zhh_o = create_zhh_SAMPLING_diffusion_schedule(config)
               # MEAN_RGB=input_pipeline.MEAN_RGB, 
               # STDDEV_RGB=input_pipeline.STDDEV_RGB
       ),
