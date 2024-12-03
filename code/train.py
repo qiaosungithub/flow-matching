@@ -914,17 +914,18 @@ def just_evaluate(
   state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
 
   
-  # ### debug edm here
+  # ### debug sampler here, please delete the above line
+  # num_steps = 1000
   # # state = state[0]
-  # t = model.compute_t(jnp.arange(35), 35)
+  # t = model.compute_t(jnp.arange(num_steps), num_steps)
   # vis, denoised = generate(state, model, random.PRNGKey(0), 1) # (num_steps, 32, 32, 3)
   # print("vis.shape: ", vis.shape)
-  # vis = vis.reshape(35, 32, 32, 3)
-  # denoised = denoised.reshape(35, 32, 32, 3)
-  # assert vis.shape == (35, 32, 32, 3)
-  # assert denoised.shape == (35, 32, 32, 3)
+  # vis = vis.reshape(num_steps, 32, 32, 3)
+  # denoised = denoised.reshape(num_steps, 32, 32, 3)
+  # assert vis.shape == (num_steps, 32, 32, 3)
+  # assert denoised.shape == (num_steps, 32, 32, 3)
   # from utils.vis_util import float_to_uint8
-  # for ep in range(35):
+  # for ep in range(num_steps):
   #   img = vis[ep]
   #   max = np.max(img)
   #   min = np.min(img)

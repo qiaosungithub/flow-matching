@@ -78,7 +78,7 @@ visualize_per_epoch: 100
 eval_per_epoch: 100
 wandb: False
 checkpoint_per_epoch: 100
-# load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241127_010129_q9ifcu_kmh-tpuvm-v2-32-6__b_lr_ep_eval/checkpoint_194000
+# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241202_214940_zd8s4j_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_48500
 
 
 # # Here is for IMAGENET32x32:
