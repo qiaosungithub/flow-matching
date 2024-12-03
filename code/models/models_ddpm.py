@@ -41,6 +41,19 @@ from models.jcm.sde_lib import batch_mul
 ModuleDef = Any
 
 
+# these are copied from IDDPM repo
+
+### cosine schedule
+        # return betas_for_alpha_bar(
+        #     num_diffusion_timesteps,
+        #     lambda t: math.cos((t + 0.008) / 1.008 * math.pi / 2) ** 2,
+        # )
+        
+### Gaussian Diffusion
+
+
+
+
 class NNXTrainState(FlaxTrainState):
   batch_stats: Any
   rng_states: Any
@@ -462,6 +475,9 @@ class SimDDPM(nn.Module):
     """
     You should first sample the noise and t and input them
     """
+    
+    # TODO: write here
+    
     imgs = imgs.astype(self.dtype)
     gt = imgs
     x = imgs

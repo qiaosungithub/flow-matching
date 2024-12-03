@@ -34,20 +34,22 @@ model:
     image_size: 32
     out_channels: 3
     base_width: 128
-    n_T: 100
+    n_T: 100 # num of sample steps
+    # diff_steps: 4000 # num of diffusion steps
+    # noise_schedule: cosine
     use_aug_label: False
     dropout: 0.15
     net_type: ncsnppedm
     average_loss: True # use average or sum for loss
 
-    # sampler: euler
+    sampler: euler
     # sampler: heun
-    sampler: edm
+    # sampler: edm
     # sampler: edm-sde
     ode_solver: jax
     # ode_solver: scipy # rk45
     
-    no_condition_t: True
+    no_condition_t: False
 dataset:
     name: cifar10
     # root: CIFAR # pytorch
@@ -58,13 +60,13 @@ aug:
     use_edm_aug: False
 fid:
     eval_only: False
-    fid_per_epoch: 50
+    fid_per_epoch: 200
     num_samples: 50000
     # cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
 evalu:
     ema: True
     sample: False
-batch_size: 512
+batch_size: 2048
 num_epochs: 2000
 learning_rate: 0.0008
 lr_schedule: const
@@ -76,7 +78,7 @@ log_per_step: 100
 visualize_per_epoch: 80
 eval_per_epoch: 80
 checkpoint_per_epoch: 500
-load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241130_140252_c95a47_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/checkpoint_194000
+# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241130_140252_c95a47_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/checkpoint_194000
 
 # # Here is for IMAGENET32x32:
 
