@@ -231,15 +231,22 @@ def sample_step(state, sample_idx, model, rng_init, device_batch_size, config,zh
   rng_init: here we do not want nnx.Rngs
   """
   rng_sample = random.fold_in(rng_init, sample_idx)  # fold in sample_idx
+  # images, denoised = generate(state, model, rng_sample, n_sample=device_batch_size, config=config,zhh_o=zhh_o) # for debug
   images = generate(state, model, rng_sample, n_sample=device_batch_size, config=config,zhh_o=zhh_o)
 
   images_all = lax.all_gather(images, axis_name='batch')  # each device has a copy  
   images_all = images_all.reshape(-1, *images_all.shape[2:])
+  
+  
+  # debug
+  # denoised_all = lax.all_gather(denoised, axis_name='batch')  # each device has a copy
+  # denoised_all = denoised_all.reshape(-1, *denoised_all.shape[2:])
 
   # The images should be [-1, 1], which is correct
 
   # images_all = images_all * (jnp.array(STDDEV_RGB)/255.).reshape(1,1,1,3) + (jnp.array(MEAN_RGB)/255.).reshape(1,1,1,3)
   # images_all = (images_all - 0.5) / 0.5
+  # return images_all, denoised_all # debug
   return images_all
 
 def global_seed(seed):
@@ -824,7 +831,7 @@ def train_and_evaluate(
       log_for_0(f'Sample epoch {epoch}...')
       # sync batch statistics across replicas
       eval_state = sync_batch_stats(state)
-      eval_state = eval_state.replace(params=model_avg)
+      # eval_state = eval_state.replace(params=model_avg)
       vis = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx)
       vis = make_grid_visualization(vis)
       vis = jax.device_get(vis) # np.ndarray
@@ -970,9 +977,11 @@ def just_evaluate(
       state: train state
       """
       # redefine the interface
+      # images, denoised = p_sample_step(state, sample_idx=sample_idx) # debug
       images = p_sample_step(state, sample_idx=sample_idx)
       # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
       jax.random.normal(random.key(0), ()).block_until_ready()
+      # return images[0], denoised[0]  # images have been all /gathered
       return images[0]  # images have been all gathered
     
   elif config.model.ode_solver == 'scipy':
@@ -1020,6 +1029,28 @@ def just_evaluate(
     # print(vis.shape)
     # exit("王广廷")
     canvas = Image.fromarray(vis)
+    canvas.save(f"{workdir}/sample.png")
+    # assert False, 'done!'
+    
+    # vis, denoise_vis = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx)
+    # print('saving images...')
+    # for step,onevis in enumerate(vis):
+    #   onevis = make_grid_visualization(onevis)
+    #   onevis = jax.device_get(onevis) # np.ndarray
+    #   onevis = onevis[0]
+    # # print(vis.shape)
+    # # exit("王广廷")
+    #   canvas = Image.fromarray(onevis)
+    #   # save the image
+    #   canvas.save(f"{workdir}/{step:03d}_sample.png")
+      
+    # for step,onevis in enumerate(denoise_vis):
+    #   onevis = make_grid_visualization(onevis)
+    #   onevis = jax.device_get(onevis)
+    #   onevis = onevis[0]
+    #   canvas = Image.fromarray(onevis)
+    #   canvas.save(f"{workdir}/{step:03d}_denoise.png")
+    
     if config.wandb and index == 0:
       wandb.log({'gen': wandb.Image(canvas)})
     # sample_step(eval_state, image_size, sampling_config, epoch, use_wandb=config.wandb)

@@ -135,6 +135,8 @@ def create_zhh_SAMPLING_diffusion_schedule(config):
     diffusion_steps_total = config.diffusion_nT
     sample_steps_total = config.model.n_T
     assert sample_steps_total == diffusion_steps_total, 'This is not supported: sample_steps_total {} != diffusion_steps_total {}'.format(sample_steps_total, diffusion_steps_total)
+    # raise NotImplementedError
+    
     o = create_zhh_diffusion_schedule(config)
     global zhh_diffusion_schedule
     if 'sample_ts' not in o:
@@ -262,11 +264,11 @@ def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o):
     # o = create_zhh_SAMPLING_diffusion_schedule(config)
     o = zhh_o
     t_steps = o['sample_ts']
-    sqrt_recip_alphas_cumprod_steps = o['sqrt_recip_alphas_cumprod']
-    sqrt_recipm1_alphas_cumprod_steps = o['sqrt_recipm1_alphas_cumprod']
-    posterior_mean_coef1_steps = o['posterior_mean_coef1']
-    posterior_mean_coef2_steps = o['posterior_mean_coef2']
-    log_model_variance_steps = o['log_model_variance']
+    sqrt_recip_alphas_cumprod_steps = o['sqrt_recip_alphas_cumprod'][::-1]
+    sqrt_recipm1_alphas_cumprod_steps = o['sqrt_recipm1_alphas_cumprod'][::-1]
+    posterior_mean_coef1_steps = o['posterior_mean_coef1'][::-1]
+    posterior_mean_coef2_steps = o['posterior_mean_coef2'][::-1]
+    log_model_variance_steps = o['log_model_variance'][::-1]
 
     def step_fn(i, inputs):
       x_i, rng = inputs
@@ -278,8 +280,24 @@ def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o):
       outputs = (x_i, rng)
       return outputs
 
+    # outputs = jax.lax.fori_loop(0, 1, step_fn, (x_i, rng))
     outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
+    # outputs = jax.lax.fori_loop(0, num_steps // 2, step_fn, (x_i, rng))
     images = outputs[0]
+    
+    # for debug
+    # all_x = []
+    # denoised = []
+    # for i in range(num_steps):
+    #   D = step_fn(i, (x_i, rng))
+    #   (x_i, denoise), rng = D
+    #   denoised.append(denoise)
+    #   all_x.append(x_i)
+    #   jax.debug.print('step {i} done', i=i)
+    # images = jnp.stack(all_x, axis=0)
+    # denoised = jnp.stack(denoised, axis=0)
+    # return images, denoised
+  
     return images
   
   else:
@@ -576,7 +594,8 @@ class SimDDPM(nn.Module):
       nonzero_mask = jnp.where(t > 0.5, 1, 0) # no noise when t == 0
       sample = model_mean + batch_mul(batch_mul(nonzero_mask, noise) , jnp.exp(0.5 * log_model_variance))
 
-      # return x_next, denoised # for debug
+      # return sample, x_start # for debug
+      # return x_start
       return sample
 
 
@@ -693,15 +712,20 @@ class SimDDPM(nn.Module):
     # prepare some visualization
     # if we can pred u, then we can reconstruct x_data from x_prior
     # x_data_pred = z + batch_mul(t, u_pred)
-    x_data_pred = z + batch_mul(1 - t, u_pred)
+    # x_data_pred = z + batch_mul(1 - t, u_pred)
+    sqrt_recip_alphas_cumprod = jnp.sqrt(1.0 / alphas_cumprod)
+    sqrt_recipm1_alphas_cumprod = jnp.sqrt(1.0 / alphas_cumprod - 1.0)
+    x_data_pred = batch_mul(sqrt_recip_alphas_cumprod, z) - batch_mul(sqrt_recipm1_alphas_cumprod, u_pred)
+    x_data_sanity = batch_mul(sqrt_recip_alphas_cumprod, z) - batch_mul(sqrt_recipm1_alphas_cumprod, v_target)
     
 
     images = self.get_visualization(
-      [gt,
+      [gt,        # image (from dataset)
        v_target,  # target of network (known)
-       u_pred,
-       z,  # input to network (known)
-       x_data_pred,
+       u_pred,    # prediction of network
+       z,         # input to network (noisy image)
+       x_data_pred, # prediction of clean image, reparameterized by the network
+      x_data_sanity, # sanity check, this should be the same as `gt`
       ])
 
     return loss_train, dict_losses, images
