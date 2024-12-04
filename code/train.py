@@ -44,7 +44,7 @@ import utils.fid_util as fid_util
 import utils.sample_util as sample_util
 
 import models.models_ddpm as models_ddpm
-from models.models_ddpm import generate, edm_ema_scales_schedules
+from models.models_ddpm import generate, ct_ema_scales_schedules
 
 NUM_CLASSES = 10
 
@@ -117,12 +117,14 @@ class NNXTrainState(FlaxTrainState):
 
 def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learning_rate_fn, ema_scales_fn, config):
   """
+  CT version
+  ---
   Perform a single training step.
   We will pmap this function
   ---
   batch: a dict, with image, label, augment_label
   noise_batch: the noise_batch for the model
-  t_batch: the t_batch for the model
+  t_batch: the indices batch for the model
   """
 
   ema_decay, scales = ema_scales_fn(state.step)
@@ -130,7 +132,7 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
   def loss_fn(params_to_train):
     """loss function used for training."""
     
-    outputs = state.apply_fn(state.graphdef, params_to_train, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'], batch['label'], batch['augment_label'], noise_batch, t_batch)
+    outputs = state.apply_fn(state.graphdef, params_to_train, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'], batch['label'], batch['augment_label'], noise_batch, t_batch, scales)
     loss, new_batch_stats, new_rng_states, dict_losses, images = outputs
 
     return loss, (new_batch_stats, new_rng_states, dict_losses, images)
@@ -143,9 +145,7 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
     raise NotImplementedError
   else:
     grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
-    # aux, grads = grad_fn(state.params)
     aux, grads = grad_fn(state.params)
-    # Re-use same axis_name as in the call to `pmap(...train_step...)` below.
     grads = lax.pmean(grads, axis_name='batch')
 
   # # clip grad with config.grad_clip
@@ -166,37 +166,21 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
   # record ema
   metrics['ema_decay'] = ema_decay
   metrics['scales'] = scales
-  # -------------------------------------------------------
-
-  # -------------------------------------------------------
-  # sanity
-  # ema_outputs, _ = state.apply_fn(
-  #     {'params': {'net': new_state.params['net_ema'],
-  #                 'net_ema': new_state.params['net_ema'],},
-  #      'batch_stats': state.batch_stats},
-  #     batch['image'],
-  #     batch['label'],
-  #     mutable=['batch_stats'],
-  #     rngs=dict(gen=rng_gen),
-  # )
-  # _, ema_dict_losses, _ = ema_outputs
-  # ema_metrics = compute_metrics(ema_dict_losses)
-
-  # metrics['ema_loss_train'] = ema_metrics['loss_train']
-  # metrics['delta_loss_train'] = metrics['loss_train'] - ema_metrics['loss_train']
-  # -------------------------------------------------------
 
   return new_state, metrics, images
 
 
-def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, model_config):
+def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, ema_scales_fn, model_config):
   """
+  CT version
+  ---
   Perform a single training step.
   We will pmap this function
   ---
   batch: a dict, with image, label, augment_label
   rngs: nnx.Rngs
   train_step_compute_fn: the pmaped version of train_step_compute
+  ema_scales_fn: to get the scales
   """
 
   # # ResNet has no dropout; but maintain rng_dropout for future usage
@@ -205,16 +189,12 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, model_c
   # rng_gen, rng_dropout = random.split(rng_device)
 
   images = batch['image']
+
+  _, scales = ema_scales_fn(state.step) # here scales shape is (b1,)
   # print("images.shape: ", images.shape) # (8, 64, 32, 32, 3)
   b1, b2 = images.shape[0], images.shape[1]
   noise_batch = jax.random.normal(rngs.train(), images.shape)
-  t_batch = jax.random.uniform(rngs.train(), (b1, b2))
-
-  # # here is code for DDIM
-  # half = (b1 * b2) // 2 + 1
-  # t_batch = jax.random.randint(rngs.train(), (half, ), minval=0, maxval=model_config.num_diffusion_timesteps)
-  # t_batch = jnp.concatenate([t_batch, model_config.num_diffusion_timesteps - 1 - t_batch], axis=0)[:b1*b2]
-  # t_batch = t_batch.reshape(b1, b2)
+  t_batch = jax.random.randint(rngs.train(), (b1, b2), minval=0, maxval=scales[0]-1)
 
   new_state, metrics, images = train_step_compute_fn(state, batch, noise_batch, t_batch)
 
@@ -363,12 +343,13 @@ def create_train_state(
 
   print_params(params)
 
-  def apply_fn(graphdef2, params2, rng_states2, batch_stats2, useless_, is_training, images, labels, augment_labels, noise_batch, t_batch):
+  def apply_fn(graphdef2, params2, rng_states2, batch_stats2, useless_, is_training, images, labels, augment_labels, noise_batch, t_batch, scales=None):
     """
     input:
       images
       labels
       augment_labels: we condition our network on the augment_labels
+      scales: for CT use
     ---
     output:
       loss_train
@@ -383,7 +364,7 @@ def create_train_state(
     else:
       merged_model.eval()
     del params2, rng_states2, batch_stats2, useless_
-    loss_train, dict_losses, images = merged_model.forward(images, labels, augment_labels, noise_batch, t_batch)
+    loss_train, dict_losses, images = merged_model.forward(images, labels, augment_labels, noise_batch, t_batch, scales=scales)
     new_batch_stats, new_rng_states, _ = nn.state(merged_model, nn.BatchStat, nn.RngState, ...)
     return loss_train, new_batch_stats, new_rng_states, dict_losses, images
 
@@ -592,7 +573,7 @@ def train_and_evaluate(
     steps_per_epoch=steps_per_epoch,
   )
 
-  ema_scales_fn = partial(edm_ema_scales_schedules, steps_per_epoch=steps_per_epoch, config=config)
+  ema_scales_fn = partial(ct_ema_scales_schedules, steps_per_epoch=steps_per_epoch, config=config)
 
   ########### Create Train State ###########
   state = create_train_state(config, model, image_size, learning_rate_fn)
@@ -751,7 +732,7 @@ def train_and_evaluate(
       #   exit(114514)
       # continue
 
-      state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute, model_config)
+      state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute, ema_scales_fn, model_config)
       
       if epoch == epoch_offset and n_batch == 0:
         log_for_0('p_train_step compiled in {}s'.format(time.time() - train_metrics_last_t))

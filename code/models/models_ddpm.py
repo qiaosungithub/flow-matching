@@ -114,17 +114,18 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
   return target_ema, scales
 
 
-# def edm_ema_scales_schedules(step, config, steps_per_epoch):
-#   # ema_halflife_kimg = 500  # from edm
-#   ema_halflife_kimg = 50000  # log(0.5) / log(0.999999) * 128 / 1000 = 88722 kimg, from flow
-#   ema_halflife_nimg = ema_halflife_kimg * 1000
+def edm_ema_scales_schedules(step, config, steps_per_epoch):
+  raise NotImplementedError
+  # ema_halflife_kimg = 500  # from edm
+  ema_halflife_kimg = 50000  # log(0.5) / log(0.999999) * 128 / 1000 = 88722 kimg, from flow
+  ema_halflife_nimg = ema_halflife_kimg * 1000
 
-#   ema_rampup_ratio = 0.05
-#   ema_halflife_nimg = jnp.minimum(ema_halflife_nimg, step * config.batch_size * ema_rampup_ratio)
+  ema_rampup_ratio = 0.05
+  ema_halflife_nimg = jnp.minimum(ema_halflife_nimg, step * config.batch_size * ema_rampup_ratio)
 
-#   ema_beta = 0.5 ** (config.batch_size / jnp.maximum(ema_halflife_nimg, 1e-8))
-#   scales = jnp.ones((1,), dtype=jnp.int32)
-#   return ema_beta, scales
+  ema_beta = 0.5 ** (config.batch_size / jnp.maximum(ema_halflife_nimg, 1e-8))
+  scales = jnp.ones((1,), dtype=jnp.int32)
+  return ema_beta, scales
 
 
 # move this out from model for JAX compilation
@@ -148,7 +149,7 @@ def generate(state: NNXTrainState, model, rng, n_sample):
 
   rng_z, 别传进去 = jax.random.split(rng, 2)
   merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-  outputs = merged_model.sample_one_step(x_T, rng_z, 0, jnp.array([0.0, model.t_max])) # TODO: what is API here
+  outputs = merged_model.sample_one_step_CT(x_T, rng_z)
 
   return outputs
 
@@ -208,6 +209,14 @@ class SimDDPM(nn.Module):
     self.beta_start = beta_start
     self.beta_end = beta_end
     self.num_diffusion_timesteps = num_diffusion_timesteps
+    self.ema_target = ema_target
+    self.weighting = weighting
+    self.loss_type = loss_type
+    self.huber_c = huber_c
+    self.embedding_type = embedding_type
+    self.fourier_scale = fourier_scale
+
+    assert not ema_target, "我写了"
 
     # sde = sde_lib.KVESDE(
     #   t_min=0.002,
@@ -221,6 +230,7 @@ class SimDDPM(nn.Module):
     self.data_std = 0.5
     self.t_min = 0.002
     self.t_max = 80.0
+    self.rho = 7
 
     if self.net_type == 'context':
       raise NotImplementedError
@@ -241,6 +251,8 @@ class SimDDPM(nn.Module):
         image_size=self.image_size,
         out_channels=self.out_channels,
         dropout=self.dropout,
+        fourier_scale=self.fourier_scale,
+        embedding_type=self.embedding_type,
         rngs=self.rngs)
     else:
       raise ValueError(f'Unknown net type: {self.net_type}')
@@ -257,13 +269,13 @@ class SimDDPM(nn.Module):
     return vis
 
   def compute_t(self, indices, scales):
-    t_max = 80
-    t_min = 0.002
-    rho = 7.0
-    t = t_max ** (1 / rho) + indices / (scales - 1) * (
-        t_min ** (1 / rho) - t_max ** (1 / rho)
+    # t_max = 80
+    # t_min = 0.002
+    # rho = 7.0
+    t = self.t_max ** (1 / self.rho) + indices / (scales - 1) * (
+        self.t_min ** (1 / self.rho) - self.t_max ** (1 / self.rho)
     )
-    t = t**rho
+    t = t**self.rho
     return t
 
   def compute_alpha(self, t):
@@ -291,7 +303,7 @@ class SimDDPM(nn.Module):
     return loss_train, dict_losses
 
   def sample_one_step(self, x_i, rng, i):
-
+    raise NotImplementedError
     if self.sampler == 'euler':
       x_next = self.sample_one_step_euler(x_i, i) 
     elif self.sampler == 'heun':
@@ -302,6 +314,7 @@ class SimDDPM(nn.Module):
     return x_next
   
   def sample_one_step_edm(self, x_i, rng, i, t_steps):
+    raise NotImplementedError
 
     if self.sampler == 'edm':
       x_next = self.sample_one_step_edm_ode(x_i, i, t_steps) 
@@ -315,8 +328,16 @@ class SimDDPM(nn.Module):
     return x_next
     # return x_next, denoised 
 
-  def sample_one_step_heun(self, x_i, i):
+  def sample_one_step_CT(self, x_T, rng):
 
+    t = jnp.zeros(1,) + self.t_max
+    t = jnp.repeat(t, x_T.shape[0])
+    denoised = self.forward_consistency_function(x_T, t, ema=False, train=False)  # ema handled outside
+    
+    return denoised
+
+  def sample_one_step_heun(self, x_i, i):
+    raise NotImplementedError
     x_cur = x_i
 
     t_cur = i / self.n_T  # t start from 0 (t = 0 is noise here)
@@ -346,6 +367,7 @@ class SimDDPM(nn.Module):
     return x_next
 
   def sample_one_step_euler(self, x_i, i):
+    raise NotImplementedError
     # i: loop from 0 to self.n_T - 1
     t = i / self.n_T  # t start from 0 (t = 0 is noise here)
     t = t * (1 - self.eps) + self.eps
@@ -363,7 +385,7 @@ class SimDDPM(nn.Module):
     """
     edm's second order ODE solver
     """
-
+    raise NotImplementedError
     x_cur = x_i
     t_cur = t_steps[i]
     t_next = t_steps[i + 1]
@@ -393,7 +415,7 @@ class SimDDPM(nn.Module):
     """
     edm's second order SDE solver
     """
-
+    raise NotImplementedError
     gamma = jnp.minimum(30/self.n_T, jnp.sqrt(2)-1)
     # gamma = jnp.minimum(80/self.n_T, jnp.sqrt(2)-1)
     S_noise = 1.007
@@ -437,6 +459,7 @@ class SimDDPM(nn.Module):
     """
     rng here is useless, if we set eta = 0
     """
+    raise NotImplementedError
     # we only implement 'generalized' here
     # we only implement 'skip_type=uniform' here
     at = self.compute_alpha(t.astype(jnp.int32))
@@ -454,35 +477,34 @@ class SimDDPM(nn.Module):
     # print(at, at_next) # debug
     # return x_next, x0_t # debug
 
-  def forward_consistency_function(self, x, t, pred_t=None):
-    # raise NotImplementedError
-    c_in = 1 / jnp.sqrt(t**2 + self.data_std**2)
-    in_x = batch_mul(x, c_in)  # input scaling of edm
+  def forward_consistency_function(self, x, t, ema=False, rng=None, train: bool = True):
+    c_skip = self.data_std ** 2 / ((t - self.t_min) ** 2 + self.data_std ** 2)
+    c_out = (t - self.t_min) * self.data_std / jnp.sqrt(t ** 2 + self.data_std ** 2)
+
+    c_in = 1 / jnp.sqrt(t ** 2 + self.data_std ** 2)
     cond_t = jnp.zeros_like(t) if self.no_condition_t else 0.25 * jnp.log(t)  # noise cond of edm
 
-    # forward
-    denoiser = self.net(in_x, cond_t)
+    # forward network
+    in_x = batch_mul(x, c_in)  # input scaling of edm
+    
+    assert not ema, "我写了"
+    net = self.net if not ema else self.net_ema
+    denoiser = net(in_x, cond_t, train=train)
 
-    if pred_t is None:  # TODO: what's this?
-      pred_t = self.t_min
-
-    c_out = (t - pred_t) * self.data_std / jnp.sqrt(t**2 + self.data_std**2)
     denoiser = batch_mul(denoiser, c_out)
-
-    c_skip = self.data_std**2 / ((t - pred_t) ** 2 + self.data_std**2)
     skip_x = batch_mul(x, c_skip)
-
     denoiser = skip_x + denoiser
 
     return denoiser
 
   def forward_flow_pred_function(self, z, t, augment_label=None, train: bool = True):  # EDM
-
+    raise NotImplementedError
     t_cond = jnp.zeros_like(t) if self.no_condition_t else jnp.log(t * 999)
     u_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
     return u_pred
 
   def forward_DDIM_pred_function(self, z, t, augment_label=None, train: bool = True):  # DDIM
+    raise NotImplementedError
     t_cond = jnp.zeros_like(t) if self.no_condition_t else t
     eps_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
     return eps_pred
@@ -495,7 +517,7 @@ class SimDDPM(nn.Module):
     We hope this function operates D(x+sigma*noise) = x
     our network has F((1-t)x + t*noise) = x - noise
     """
-
+    raise NotImplementedError
     # forward network
     c_in = 1 / (sigma + 1)
     in_x = batch_mul(x, c_in)
@@ -506,10 +528,14 @@ class SimDDPM(nn.Module):
     D_x = in_x + batch_mul(F_x, c_out)
     return D_x
 
-  def forward(self, imgs, labels, augment_label, noise_batch, t_batch, train: bool = True):
+  def forward(self, imgs, labels, augment_label, noise_batch, t_batch, scales, train: bool = True):
     """
     You should first sample the noise and t and input them
+    ---CT---
+    scales: the number of scales
+    here the input t_batch is the indices batch, 0 ~ scales-1
     """
+    assert augment_label is None, "不支持"
     imgs = imgs.astype(self.dtype)
     gt = imgs
     x = imgs
@@ -517,75 +543,55 @@ class SimDDPM(nn.Module):
 
     assert noise_batch.shape == x.shape
     assert t_batch.shape == (bz,)
-    # t_batch = t_batch.reshape(bz, 1, 1, 1)
 
     # -----------------------------------------------------------------
 
-    # sample from data
-    x_data = x
+    t = self.compute_t(t_batch, scales)
+    t2 = self.compute_t(t_batch + 1, scales)
+
     # sample from prior (noise)
-    x_prior = noise_batch
+    z = noise_batch
 
-    # sample t step
-    t = t_batch # in DDIM, t may be discrete
-    eps = 1e-3
-    t = t * (1 - eps) + eps
+    x_t = x + batch_mul(t, z)
+    x_t2 = x + batch_mul(t2, z)
+    # TODO: how to make sure that the rng is the same???
+    Ft = self.forward_consistency_function(x_t, t)
+    Ft2 = self.forward_consistency_function(x_t2, t2) # Here we do not support ema target
 
-    # # DDIM training
-    # betas = get_beta_schedule(self.beta_schedule, beta_start=self.beta_start, beta_end=self.beta_end, num_diffusion_timesteps=self.num_diffusion_timesteps)
-    # alpha = jnp.cumprod(1 - betas, axis=0)
-    # alphas = jnp.take(alpha, t) # TODO: implement alpha in the model
+    diffs = Ft - Ft2
 
-    # create v target
-    v_target = x_data - x_prior
-    # v_target = jnp.ones_like(x_data)  # dummy
-
-    # create z (as the network input)
-    z = batch_mul(1 - t, x_data) + batch_mul(t, x_prior)
-    # z = batch_mul(jnp.sqrt(alphas), x_data) + batch_mul(jnp.sqrt(1-alphas), x_prior) # DDIM
-
-    # forward network
-    u_pred = self.forward_flow_pred_function(z, t)
-    # eps_pred = self.forward_DDIM_pred_function(z, t, augment_label=augment_label, train=train) # DDIM
-
-
-    # loss
-    loss = (v_target - u_pred)**2
-    # loss = (x_prior - eps_pred)**2 # DDIM
-    if self.average_loss:
-      loss = jnp.mean(loss, axis=(1, 2, 3))  # mean over pixels
+    if self.weighting == 'uniform':
+      weight = jnp.ones_like(t)
+    elif self.weighting == 'icm':
+      weight = 1. / (t - t2)
     else:
-      loss = jnp.sum(loss, axis=(1, 2, 3))  # sum over pixels
-    loss = loss.mean()  # mean over batch
+      raise ValueError(f'Unknown weighting: {self.weighting}')
 
+    if self.loss_type == 'l2':
+      loss = diffs ** 2
+      loss = jnp.mean(loss, axis=(1, 2, 3))  # mean over pixels following jcm's code
+    elif self.loss_type == 'huber_bug':  # bugged?
+      loss = (diffs ** 2 + self.huber_c ** 2) ** .5 - self.huber_c
+      loss = jnp.mean(loss, axis=(1, 2, 3))  # mean over pixels in jcm
+    elif self.loss_type == 'huber':
+      l2 = diffs ** 2
+      l2 = jnp.sum(l2, axis=(1, 2, 3))  # sum over pixels following l2's definition
+      loss = (l2 + self.huber_c ** 2) ** .5 - self.huber_c
+    else:
+      raise ValueError(f'Unknown loss type: {self.loss_type}')
+
+
+    assert loss.shape == weight.shape
+    loss = loss * weight
+    loss = loss.mean()  # mean over batch
+    
     loss_train = loss
 
     dict_losses = {}
     dict_losses['loss'] = loss  # legacy
     dict_losses['loss_train'] = loss_train
 
-    # prepare some visualization
-    # if we can pred u, then we can reconstruct x_data from x_prior
-    # x_data_pred = z + batch_mul(t, u_pred)
-    x_data_pred = z + batch_mul(1 - t, u_pred)
-    # x_data_pred = batch_mul(z - batch_mul(jnp.sqrt(1-alphas), eps_pred), 1./jnp.sqrt(alphas)) # DDIM
-    
-    # # DDIM visualization
-    # images = self.get_visualization(
-    #   [gt,
-    #    x_prior,  # target of network (known)
-    #    eps_pred,
-    #    z,  # input to network (known)
-    #    x_data_pred,
-    #   ])
-    
-    images = self.get_visualization(
-      [gt,
-       v_target,  # target of network (known)
-       u_pred,
-       z,  # input to network (known)
-       x_data_pred,
-      ])
+    images = self.get_visualization([gt, x_t, Ft])
 
     return loss_train, dict_losses, images
 

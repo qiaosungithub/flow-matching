@@ -54,6 +54,7 @@ class NCSNpp(nn.Module):
         dropout = 0.0,
         fir_kernel = (1, 3, 3, 1),
         resblock_type = "biggan",
+        embedding_type = "fourier",
         fourier_scale = 16.0,
         rngs = None,
         use_aug_label = False,
@@ -70,6 +71,7 @@ class NCSNpp(nn.Module):
         self.dropout = dropout
         self.fir_kernel = fir_kernel
         self.resblock_type = resblock_type
+        self.embedding_type = embedding_type
         self.fourier_scale = fourier_scale
         self.rngs = rngs
         self.use_aug_label = use_aug_label
@@ -88,8 +90,6 @@ class NCSNpp(nn.Module):
 
         progressive = self.progressive = "none"
         progressive_input = self.progressive_input = "residual"
-        # embedding_type = "fourier"
-        embedding_type = self.embedding_type = "positional"
         
         assert progressive in ["none", "output_skip", "residual"]
         assert self.progressive_input in ["none", "input_skip", "residual"]
@@ -108,6 +108,7 @@ class NCSNpp(nn.Module):
             raise NotImplementedError
             raise ValueError(f"embedding type {embedding_type} unknown.")
         #################### aug label ############################
+        assert not use_aug_label
         if use_aug_label:
             assert aug_label_dim is not None
             self.augemb_layer = nn.Linear(aug_label_dim, nf * 2, kernel_init=default_initializer(), use_bias=False)
