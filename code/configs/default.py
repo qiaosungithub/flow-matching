@@ -65,6 +65,13 @@ def get_config():
   model.beta_end = 0.02
   model.num_diffusion_timesteps = 1000
 
+  # CT
+  model.ema_target = False
+  model.weighting = 'icm'
+  model.loss_type = 'huber'
+  model.embedding_type = 'positional'
+  model.fourier_scale = 0.02
+
   config.aug = aug = ml_collections.ConfigDict()
   aug.use_edm_aug = False
 
@@ -73,6 +80,7 @@ def get_config():
   ct.start_ema = 0.9
   ct.start_scales = 2
   ct.end_scales = 150
+  ct.n_schedule = 'exp'
 
   # Dataset
   config.dataset = dataset = ml_collections.ConfigDict()

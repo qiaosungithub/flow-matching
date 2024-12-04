@@ -48,6 +48,8 @@ model:
     # ode_solver: scipy # rk45
     
     no_condition_t: False
+    # CT
+    fourier_scale: 0.02
 dataset:
     name: cifar10
     # root: CIFAR # pytorch

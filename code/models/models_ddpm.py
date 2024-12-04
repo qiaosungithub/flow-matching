@@ -90,25 +90,41 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
   end_scales = int(config.ct.end_scales)
   total_steps = config.num_epochs * steps_per_epoch
 
-  scales = jnp.ceil(jnp.sqrt((step / total_steps) * ((end_scales + 1) ** 2 - start_scales**2) + start_scales**2) - 1).astype(jnp.int32)
-  scales = jnp.maximum(scales, 1)
-  c = -jnp.log(start_ema) * start_scales
-  target_ema = jnp.exp(-c / scales)
+  if config.ct.n_schedule == 'orignal':
+    scales = jnp.ceil(jnp.sqrt((step / total_steps) * ((end_scales + 1) ** 2 - start_scales**2) + start_scales**2) - 1).astype(jnp.int32)
+    scales = jnp.maximum(scales, 1)
+  elif config.ct.n_schedule == 'exp':
+    s0 = start_scales
+    s1 = end_scales
+    K = total_steps
+    K_ = jnp.floor(K / (jnp.log2(jnp.floor(s1 / s0)) + 1))
+    scales = jnp.minimum(s0 * 2 ** jnp.floor(step / K_), s1)
+  else:
+    raise ValueError(f'Unknown schedule: {config.ct.n_schedule}')
+  
+  if config.model.ema_target == True:
+    raise NotImplementedError("我写了")
+    c = -jnp.log(start_ema) * start_scales
+    target_ema = jnp.exp(-c / scales)
+  else:
+    ema_halflife_kimg = 2000  # edm was 500 (2000 * 1000 / 50000 = 40ep)
+    ema_halflife_nimg = ema_halflife_kimg * 1000
+    target_ema = 0.5 ** (config.batch_size / jnp.maximum(ema_halflife_nimg, 1e-8))  # 0.9998 for batch 512
   scales = scales + 1
   return target_ema, scales
 
 
-def edm_ema_scales_schedules(step, config, steps_per_epoch):
-  # ema_halflife_kimg = 500  # from edm
-  ema_halflife_kimg = 50000  # log(0.5) / log(0.999999) * 128 / 1000 = 88722 kimg, from flow
-  ema_halflife_nimg = ema_halflife_kimg * 1000
+# def edm_ema_scales_schedules(step, config, steps_per_epoch):
+#   # ema_halflife_kimg = 500  # from edm
+#   ema_halflife_kimg = 50000  # log(0.5) / log(0.999999) * 128 / 1000 = 88722 kimg, from flow
+#   ema_halflife_nimg = ema_halflife_kimg * 1000
 
-  ema_rampup_ratio = 0.05
-  ema_halflife_nimg = jnp.minimum(ema_halflife_nimg, step * config.batch_size * ema_rampup_ratio)
+#   ema_rampup_ratio = 0.05
+#   ema_halflife_nimg = jnp.minimum(ema_halflife_nimg, step * config.batch_size * ema_rampup_ratio)
 
-  ema_beta = 0.5 ** (config.batch_size / jnp.maximum(ema_halflife_nimg, 1e-8))
-  scales = jnp.ones((1,), dtype=jnp.int32)
-  return ema_beta, scales
+#   ema_beta = 0.5 ** (config.batch_size / jnp.maximum(ema_halflife_nimg, 1e-8))
+#   scales = jnp.ones((1,), dtype=jnp.int32)
+#   return ema_beta, scales
 
 
 # move this out from model for JAX compilation
@@ -122,120 +138,19 @@ def generate(state: NNXTrainState, model, rng, n_sample):
   return shape: (n_sample, 32, 32, 3)
   """
 
-  # prepare schedule
-  num_steps = model.n_T
-
   # initialize noise
   x_shape = (n_sample, model.image_size, model.image_size, model.out_channels)
   rng_used, rng = jax.random.split(rng, 2)
   # sample from prior
   x_prior = jax.random.normal(rng_used, x_shape, dtype=model.dtype)
 
+  x_T = x_prior * model.t_max
 
-  if model.sampler in ['euler', 'heun']:
-      
-    x_i = x_prior
+  rng_z, 别传进去 = jax.random.split(rng, 2)
+  merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
+  outputs = merged_model.sample_one_step(x_T, rng_z, 0, jnp.array([0.0, model.t_max])) # TODO: what is API here
 
-    def step_fn(i, inputs):
-      x_i, rng = inputs
-      rng_this_step = jax.random.fold_in(rng, i)
-      rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
-
-      merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-      x_i = merged_model.sample_one_step(x_i, rng_z, i)
-      outputs = (x_i, rng)
-      return outputs
-
-    outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
-    images = outputs[0]
-    return images
-  
-  elif model.sampler in ['edm', 'edm-sde']:
-    t_steps = model.compute_t(jnp.arange(num_steps), num_steps)
-    t_steps = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
-    x_i = x_prior * t_steps[0]
-
-    # import jax.random as random
-    # x = random.normal(rng, x_shape, dtype=model.dtype)
-
-    def step_fn(i, inputs):
-      x_i, rng = inputs
-      rng_this_step = jax.random.fold_in(rng, i)
-      rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
-
-      merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-      x_i = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps)
-      # x_i, denoised = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps) # for debug
-
-      outputs = (x_i, rng)
-      return outputs
-      # return outputs, denoised # for debug
-
-    outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
-    images = outputs[0]
-    return images
-    # # for debug
-    # all_x = []
-    # denoised = []
-    # for i in range(num_steps):
-    #   D = step_fn(i, (x_i, rng))
-    #   x_i, rng = D[0]
-    #   denoised.append(D[1])
-    #   all_x.append(x_i)
-    # images = jnp.stack(all_x, axis=0)
-    # denoised = jnp.stack(denoised, axis=0)
-    # return images, denoised
-  elif model.sampler == 'DDIM':
-    skip = model.num_diffusion_timesteps // num_steps
-    # skip = 1
-    seq = range(0, model.num_timesteps, skip)
-    T = len(seq)
-    seq_next = [-1] + list(seq[:-1])
-    seq_reversed = jnp.array(list(reversed(seq)))
-    seq_next_reversed = jnp.array(list(reversed(seq_next)))
-    eta = 0.0 # control the noise level added every step, 0 -> ODE sampler TODO: implement eta > 0.0
-    n = x_prior.shape[0]
-    x0_preds = []
-    xs = [x_prior]
-
-    x_i = x_prior
-
-    def step_fn(i, inputs):
-      x_i, rng = inputs
-
-      _i = seq_reversed[i]
-      _j = seq_next_reversed[i]
-
-      t = jnp.ones(n) * _i
-      next_t = jnp.ones(n) * _j
-
-      rng_this_step = jax.random.fold_in(rng, i)
-      rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
-
-      merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-      x_i = merged_model.sample_one_step_DDIM(x_i, rng_z, t, next_t)
-      # x_i, denoised = merged_model.sample_one_step_DDIM(x_i, rng_z, t, next_t) # for debug
-
-      outputs = (x_i, rng)
-      return outputs
-      # return outputs, denoised # for debug
-
-    outputs = jax.lax.fori_loop(0, T, step_fn, (x_i, rng))
-    images = outputs[0]
-    return images
-    # all_x = []
-    # denoised = []
-    # for i in range(T):
-    #   D = step_fn(i, (x_i, rng))
-    #   x_i, rng = D[0]
-    #   denoised.append(D[1])
-    #   all_x.append(x_i)
-    # images = jnp.stack(all_x, axis=0)
-    # denoised = jnp.stack(denoised, axis=0)
-    # return images, denoised # for debug
-
-  else:
-    raise NotImplementedError
+  return outputs
 
 class SimDDPM(nn.Module):
   """Simple DDPM."""
@@ -253,16 +168,22 @@ class SimDDPM(nn.Module):
     dtype = jnp.float32,
     use_aug_label = False,
     average_loss = False,
-    eps=1e-3,
-    h_init=0.035,
+    eps=1e-3, # for FM use
+    h_init=0.035, # TODO: what is this? not in CT
     sampler='euler',
     ode_solver='jax',
     no_condition_t=False,
     rngs=None,
-    beta_schedule='linear',
-    beta_start=1e-4,
-    beta_end=0.02,
-    num_diffusion_timesteps=1000,
+    beta_schedule='linear', # DDIM
+    beta_start=1e-4, # DDIM
+    beta_end=0.02, # DDIM
+    num_diffusion_timesteps=1000, # DDIM
+    ema_target=False, # CT
+    weighting='uniform', # CT
+    loss_type='l2', # CT
+    huber_c = 0.03, # CT
+    embedding_type = 'fourier', # CT
+    fourier_scale = 16, # CT
     **kwargs
   ):
     self.image_size = image_size
@@ -299,6 +220,7 @@ class SimDDPM(nn.Module):
     # This is not used in flow matching
     self.data_std = 0.5
     self.t_min = 0.002
+    self.t_max = 80.0
 
     if self.net_type == 'context':
       raise NotImplementedError
