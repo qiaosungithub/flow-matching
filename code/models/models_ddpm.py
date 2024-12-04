@@ -361,7 +361,7 @@ def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o):
 
     # outputs = jax.lax.fori_loop(0, 1, step_fn, (x_i, rng))
     outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
-    # outputs = jax.lax.fori_loop(0, num_steps // 2, step_fn, (x_i, rng))
+    # outputs = jax.lax.fori_loop(0, num_steps-2, step_fn, (x_i, rng))
     images = outputs[0]
     
     # for debug
@@ -861,7 +861,7 @@ class SimDDPM(nn.Module):
         model_log_variance = batch_mul(frac, max_log)+ batch_mul((1 - frac), min_log)
         
         eps_prediction = model_output
-        x_start = batch_mul(sqrt_recip_alphas_cumprod, x_mixtue) + batch_mul(sqrt_recipm1_alphas_cumprod, eps_prediction)
+        x_start = batch_mul(sqrt_recip_alphas_cumprod, x_mixtue) - batch_mul(sqrt_recipm1_alphas_cumprod, eps_prediction)
         if self.sample_clip_denoised:
           x_start = jnp.clip(x_start, -1, 1)
         model_mean = batch_mul(posterior_mean_coef1, x_start) + batch_mul(posterior_mean_coef2, x_mixtue)
@@ -886,7 +886,7 @@ class SimDDPM(nn.Module):
         assert decoder_nll.shape == x_data.shape
         decoder_nll = decoder_nll.mean(axis=(1, 2, 3)) / jnp.log(2.0)  # mean over pixels
         
-        VLB = jnp.where((t == 0), decoder_nll, kld)
+        VLB = jnp.where((t < 0.5), decoder_nll, kld)
       
         ## --------------------- Finally done! -----------------
         loss = loss + VLB  # add VLB loss
