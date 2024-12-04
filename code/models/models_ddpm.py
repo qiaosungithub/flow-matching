@@ -40,6 +40,41 @@ from models.jcm.sde_lib import batch_mul
 
 ModuleDef = Any
 
+def get_beta_schedule(beta_schedule, *, beta_start, beta_end, num_diffusion_timesteps):
+    """
+    DDIM util function
+    """
+    def sigmoid(x):
+        return 1 / (jnp.exp(-x) + 1)
+
+    if beta_schedule == "quad":
+        betas = (
+            jnp.linspace(
+                beta_start ** 0.5,
+                beta_end ** 0.5,
+                num_diffusion_timesteps,
+                dtype=np.float64,
+            )
+            ** 2
+        )
+    elif beta_schedule == "linear":
+        betas = jnp.linspace(
+            beta_start, beta_end, num_diffusion_timesteps, dtype=np.float64
+        )
+    elif beta_schedule == "const":
+        betas = beta_end * jnp.ones(num_diffusion_timesteps, dtype=np.float64)
+    elif beta_schedule == "jsd":  # 1/T, 1/(T-1), 1/(T-2), ..., 1
+        betas = 1.0 / jnp.linspace(
+            num_diffusion_timesteps, 1, num_diffusion_timesteps, dtype=np.float64
+        )
+    elif beta_schedule == "sigmoid":
+        betas = jnp.linspace(-6, 6, num_diffusion_timesteps)
+        betas = sigmoid(betas) * (beta_end - beta_start) + beta_start
+    else:
+        raise NotImplementedError(beta_schedule)
+    assert betas.shape == (num_diffusion_timesteps,)
+    return betas
+
 
 class NNXTrainState(FlaxTrainState):
   batch_stats: Any
@@ -150,7 +185,55 @@ def generate(state: NNXTrainState, model, rng, n_sample):
     # images = jnp.stack(all_x, axis=0)
     # denoised = jnp.stack(denoised, axis=0)
     # return images, denoised
-  
+  elif model.sampler == 'DDIM':
+    skip = model.num_diffusion_timesteps // num_steps
+    # skip = 1
+    seq = range(0, model.num_timesteps, skip)
+    T = len(seq)
+    seq_next = [-1] + list(seq[:-1])
+    seq_reversed = jnp.array(list(reversed(seq)))
+    seq_next_reversed = jnp.array(list(reversed(seq_next)))
+    eta = 0.0 # control the noise level added every step, 0 -> ODE sampler TODO: implement eta > 0.0
+    n = x_prior.shape[0]
+    x0_preds = []
+    xs = [x_prior]
+
+    x_i = x_prior
+
+    def step_fn(i, inputs):
+      x_i, rng = inputs
+
+      _i = seq_reversed[i]
+      _j = seq_next_reversed[i]
+
+      t = jnp.ones(n) * _i
+      next_t = jnp.ones(n) * _j
+
+      rng_this_step = jax.random.fold_in(rng, i)
+      rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
+
+      merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
+      x_i = merged_model.sample_one_step_DDIM(x_i, rng_z, t, next_t)
+      # x_i, denoised = merged_model.sample_one_step_DDIM(x_i, rng_z, t, next_t) # for debug
+
+      outputs = (x_i, rng)
+      return outputs
+      # return outputs, denoised # for debug
+
+    outputs = jax.lax.fori_loop(0, T, step_fn, (x_i, rng))
+    images = outputs[0]
+    return images
+    # all_x = []
+    # denoised = []
+    # for i in range(T):
+    #   D = step_fn(i, (x_i, rng))
+    #   x_i, rng = D[0]
+    #   denoised.append(D[1])
+    #   all_x.append(x_i)
+    # images = jnp.stack(all_x, axis=0)
+    # denoised = jnp.stack(denoised, axis=0)
+    # return images, denoised # for debug
+
   else:
     raise NotImplementedError
 
@@ -176,6 +259,10 @@ class SimDDPM(nn.Module):
     ode_solver='jax',
     no_condition_t=False,
     rngs=None,
+    beta_schedule='linear',
+    beta_start=1e-4,
+    beta_end=0.02,
+    num_diffusion_timesteps=1000,
     **kwargs
   ):
     self.image_size = image_size
@@ -196,6 +283,10 @@ class SimDDPM(nn.Module):
     self.ode_solver = ode_solver
     self.no_condition_t = no_condition_t
     self.rngs = rngs
+    self.beta_schedule = beta_schedule
+    self.beta_start = beta_start
+    self.beta_end = beta_end
+    self.num_diffusion_timesteps = num_diffusion_timesteps
 
     # sde = sde_lib.KVESDE(
     #   t_min=0.002,
@@ -233,6 +324,7 @@ class SimDDPM(nn.Module):
     # # declare two networks
     # self.net = net_fn(name='net')
     # self.net_ema = net_fn(name='net_ema')
+    self.num_timesteps = num_diffusion_timesteps
     self.net = net_fn()
 
 
@@ -249,6 +341,16 @@ class SimDDPM(nn.Module):
     )
     t = t**rho
     return t
+
+  def compute_alpha(self, t):
+    """
+    DDIM util function
+    """
+    betas = get_beta_schedule(self.beta_schedule, beta_start=self.beta_start, beta_end=self.beta_end, num_diffusion_timesteps=self.num_diffusion_timesteps)
+    alpha = jnp.cumprod(1 - betas, axis=0)
+    alpha = jnp.concatenate([jnp.ones((1,)), alpha], axis=0)
+    a = jnp.take(alpha, t + 1).reshape(-1, 1, 1, 1)
+    return a
     
   def compute_losses(self, pred, gt):
     assert pred.shape == gt.shape
@@ -411,6 +513,27 @@ class SimDDPM(nn.Module):
     # return x_next, denoised # for debug
     return x_next
 
+  def sample_one_step_DDIM(self, x_i, rng, t, next_t):
+    """
+    rng here is useless, if we set eta = 0
+    """
+    # we only implement 'generalized' here
+    # we only implement 'skip_type=uniform' here
+    at = self.compute_alpha(t.astype(jnp.int32))
+    at_next = self.compute_alpha(next_t.astype(jnp.int32))
+
+    eps = self.forward_DDIM_pred_function(x_i, t, train=False)
+    # x0_t = (x_i - eps * jnp.sqrt(1 - at)) / jnp.sqrt(at)
+    x0_t = batch_mul(x_i - batch_mul(eps, jnp.sqrt(1 - at)), 1. / jnp.sqrt(at))  # when eta=0, no need to add noise
+    # when eta=0, no need to add noise
+    c2 = jnp.sqrt(1 - at_next)
+    # x_next = jnp.sqrt(at_next) * x0_t + c2 * eps
+    x_next = batch_mul(x0_t, jnp.sqrt(at_next)) + batch_mul(eps, c2)
+    return x_next
+    # x_next = x0_t = x_i
+    # print(at, at_next) # debug
+    # return x_next, x0_t # debug
+
   def forward_consistency_function(self, x, t, pred_t=None):
     raise NotImplementedError
     c_in = 1 / jnp.sqrt(t**2 + self.sde.data_std**2)
@@ -438,6 +561,11 @@ class SimDDPM(nn.Module):
     t_cond = jnp.zeros_like(t) if self.no_condition_t else jnp.log(t * 999)
     u_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
     return u_pred
+
+  def forward_DDIM_pred_function(self, z, t, augment_label=None, train: bool = True):  # DDIM
+    t_cond = jnp.zeros_like(t) if self.no_condition_t else t
+    eps_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
+    return eps_pred
   
   def forward_edm_denoising_function(self, x, sigma, augment_label=None, train: bool = True):  # EDM
     """
@@ -479,24 +607,31 @@ class SimDDPM(nn.Module):
     x_prior = noise_batch
 
     # sample t step
-    t = t_batch
+    t = t_batch # in DDIM, t may be discrete
     eps = 1e-3
     t = t * (1 - eps) + eps
+
+    # # DDIM training
+    # betas = get_beta_schedule(self.beta_schedule, beta_start=self.beta_start, beta_end=self.beta_end, num_diffusion_timesteps=self.num_diffusion_timesteps)
+    # alpha = jnp.cumprod(1 - betas, axis=0)
+    # alphas = jnp.take(alpha, t) # TODO: implement alpha in the model
 
     # create v target
     v_target = x_data - x_prior
     # v_target = jnp.ones_like(x_data)  # dummy
 
     # create z (as the network input)
-    # z = batch_mul(1 - t, x_data) + batch_mul(t, x_prior)
-    z = batch_mul(t, x_data) + batch_mul(1 - t, x_prior)
+    z = batch_mul(1 - t, x_data) + batch_mul(t, x_prior)
+    # z = batch_mul(jnp.sqrt(alphas), x_data) + batch_mul(jnp.sqrt(1-alphas), x_prior) # DDIM
 
     # forward network
     u_pred = self.forward_flow_pred_function(z, t)
+    # eps_pred = self.forward_DDIM_pred_function(z, t, augment_label=augment_label, train=train) # DDIM
 
 
     # loss
     loss = (v_target - u_pred)**2
+    # loss = (x_prior - eps_pred)**2 # DDIM
     if self.average_loss:
       loss = jnp.mean(loss, axis=(1, 2, 3))  # mean over pixels
     else:
@@ -513,8 +648,17 @@ class SimDDPM(nn.Module):
     # if we can pred u, then we can reconstruct x_data from x_prior
     # x_data_pred = z + batch_mul(t, u_pred)
     x_data_pred = z + batch_mul(1 - t, u_pred)
+    # x_data_pred = batch_mul(z - batch_mul(jnp.sqrt(1-alphas), eps_pred), 1./jnp.sqrt(alphas)) # DDIM
     
-
+    # # DDIM visualization
+    # images = self.get_visualization(
+    #   [gt,
+    #    x_prior,  # target of network (known)
+    #    eps_pred,
+    #    z,  # input to network (known)
+    #    x_data_pred,
+    #   ])
+    
     images = self.get_visualization(
       [gt,
        v_target,  # target of network (known)

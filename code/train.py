@@ -148,6 +148,11 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
     # Re-use same axis_name as in the call to `pmap(...train_step...)` below.
     grads = lax.pmean(grads, axis_name='batch')
 
+  # # clip grad with config.grad_clip
+  # if config.grad_clip > 0.0:
+  #   grads = optax.clip_by_global_norm(grads, config.grad_clip)[1]
+  # TODO: clip grad
+
   # for simplicity, we don't all gather images
   # loss = aux[0]
   new_batch_stats, new_rng_states, dict_losses, images = aux[1]
@@ -184,7 +189,7 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
   return new_state, metrics, images
 
 
-def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn):
+def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, model_config):
   """
   Perform a single training step.
   We will pmap this function
@@ -204,6 +209,12 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn):
   b1, b2 = images.shape[0], images.shape[1]
   noise_batch = jax.random.normal(rngs.train(), images.shape)
   t_batch = jax.random.uniform(rngs.train(), (b1, b2))
+
+  # # here is code for DDIM
+  # half = (b1 * b2) // 2 + 1
+  # t_batch = jax.random.randint(rngs.train(), (half, ), minval=0, maxval=model_config.num_diffusion_timesteps)
+  # t_batch = jnp.concatenate([t_batch, model_config.num_diffusion_timesteps - 1 - t_batch], axis=0)[:b1*b2]
+  # t_batch = t_batch.reshape(b1, b2)
 
   new_state, metrics, images = train_step_compute_fn(state, batch, noise_batch, t_batch)
 
@@ -402,6 +413,13 @@ def create_train_state(
       b1=config.adam_b1,
       b2=config.adam_b2,
     )
+  elif config.optimizer == 'adam':
+    log_for_0(f'Using Adam')
+    tx = optax.adam(
+      learning_rate=learning_rate_fn,
+      b1=config.adam_b1,
+      b2=config.adam_b2,
+    )
   else:
     raise ValueError(f'Unknown optimizer: {config.optimizer}')
   
@@ -486,7 +504,7 @@ def train_and_evaluate(
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='sqa_FM_kaiming_copied_nnx', dir=workdir)
+    wandb.init(project='LMCI', dir=workdir)
     # wandb.init(project='sqa_FM_compare', dir=workdir)
     wandb.config.update(config.to_dict())
   global_seed(config.seed)
@@ -733,7 +751,7 @@ def train_and_evaluate(
       #   exit(114514)
       # continue
 
-      state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute)
+      state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute, model_config)
       
       if epoch == epoch_offset and n_batch == 0:
         log_for_0('p_train_step compiled in {}s'.format(time.time() - train_metrics_last_t))
@@ -867,7 +885,7 @@ def just_evaluate(
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='sqa_FM_nnx_evaluate', dir=workdir)
+    wandb.init(project='LMCI-eval', dir=workdir)
     # wandb.init(project='sqa_edm_debug', dir=workdir)
     wandb.config.update(config.to_dict())
   # dtype = jnp.bfloat16 if model_config.half_precision else jnp.float32
@@ -898,17 +916,18 @@ def just_evaluate(
   state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
 
   
-  # ### debug edm here
+  # ### debug sampler here, please delete the above line
+  # num_steps = 1000
   # # state = state[0]
-  # t = model.compute_t(jnp.arange(35), 35)
+  # t = model.compute_t(jnp.arange(num_steps), num_steps)
   # vis, denoised = generate(state, model, random.PRNGKey(0), 1) # (num_steps, 32, 32, 3)
   # print("vis.shape: ", vis.shape)
-  # vis = vis.reshape(35, 32, 32, 3)
-  # denoised = denoised.reshape(35, 32, 32, 3)
-  # assert vis.shape == (35, 32, 32, 3)
-  # assert denoised.shape == (35, 32, 32, 3)
+  # vis = vis.reshape(num_steps, 32, 32, 3)
+  # denoised = denoised.reshape(num_steps, 32, 32, 3)
+  # assert vis.shape == (num_steps, 32, 32, 3)
+  # assert denoised.shape == (num_steps, 32, 32, 3)
   # from utils.vis_util import float_to_uint8
-  # for ep in range(35):
+  # for ep in range(num_steps):
   #   img = vis[ep]
   #   max = np.max(img)
   #   min = np.min(img)
@@ -1024,8 +1043,8 @@ def just_evaluate(
 
   if rank == 0 and config.wandb:
     nfe = config.model.n_T
-    if config.model.ode_solver == 'scipy': nfe=100
-    elif config.model.sampler != 'euler': nfe*=2
+    if config.model.ode_solver == 'scipy': nfe=100 # TODO: show the rk45 nfe
+    elif config.model.sampler not in ['euler', "DDIM"]: nfe*=2
     wandb.log({'NFE': nfe})
 
   jax.random.normal(jax.random.key(0), ()).block_until_ready()

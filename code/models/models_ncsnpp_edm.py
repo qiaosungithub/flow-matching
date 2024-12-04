@@ -102,7 +102,6 @@ class NCSNpp(nn.Module):
                 embedding_size=nf, scale=fourier_scale, name='map_noise', rngs=rngs
             )
         elif embedding_type == "positional":
-            # raise NotImplementedError
             # Sinusoidal positional embeddings.
             self.temb_layer = partial(layers.get_timestep_embedding, embedding_dim=nf)
         else:
