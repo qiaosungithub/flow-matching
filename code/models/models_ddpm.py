@@ -297,6 +297,8 @@ class SimDDPM(nn.Module):
     # )
     # self.sde = sde
     # This is not used in flow matching
+    self.data_std = 0.5
+    self.t_min = 0.002
 
     if self.net_type == 'context':
       raise NotImplementedError
@@ -372,8 +374,6 @@ class SimDDPM(nn.Module):
       x_next = self.sample_one_step_euler(x_i, i) 
     elif self.sampler == 'heun':
       x_next = self.sample_one_step_heun(x_i, i) 
-    elif self.sampler == 'edm':
-      raise LookupError("找对地方了")
     else:
       raise NotImplementedError
 
@@ -403,7 +403,6 @@ class SimDDPM(nn.Module):
     t_next = (i + 1) / self.n_T  # t start from 0 (t = 0 is noise here)
     t_next = t_next * (1 - self.eps) + self.eps
 
-    # TODO{kaiming}: revisit S_churn
     t_hat = t_cur
     x_hat = x_cur  # x_hat is always x_cur when gamma=0
 
@@ -447,7 +446,6 @@ class SimDDPM(nn.Module):
     t_cur = t_steps[i]
     t_next = t_steps[i + 1]
 
-    # TODO{kaiming}: revisit S_churn
     t_hat = t_cur
     x_hat = x_cur  # x_hat is always x_cur when gamma=0
 
@@ -535,21 +533,21 @@ class SimDDPM(nn.Module):
     # return x_next, x0_t # debug
 
   def forward_consistency_function(self, x, t, pred_t=None):
-    raise NotImplementedError
-    c_in = 1 / jnp.sqrt(t**2 + self.sde.data_std**2)
+    # raise NotImplementedError
+    c_in = 1 / jnp.sqrt(t**2 + self.data_std**2)
     in_x = batch_mul(x, c_in)  # input scaling of edm
-    cond_t = 0.25 * jnp.log(t)  # noise cond of edm
+    cond_t = jnp.zeros_like(t) if self.no_condition_t else 0.25 * jnp.log(t)  # noise cond of edm
 
     # forward
     denoiser = self.net(in_x, cond_t)
 
     if pred_t is None:  # TODO: what's this?
-      pred_t = self.sde.t_min
+      pred_t = self.t_min
 
-    c_out = (t - pred_t) * self.sde.data_std / jnp.sqrt(t**2 + self.sde.data_std**2)
+    c_out = (t - pred_t) * self.data_std / jnp.sqrt(t**2 + self.data_std**2)
     denoiser = batch_mul(denoiser, c_out)
 
-    c_skip = self.sde.data_std**2 / ((t - pred_t) ** 2 + self.sde.data_std**2)
+    c_skip = self.data_std**2 / ((t - pred_t) ** 2 + self.data_std**2)
     skip_x = batch_mul(x, c_skip)
 
     denoiser = skip_x + denoiser
