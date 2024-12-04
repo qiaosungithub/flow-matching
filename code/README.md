@@ -2,6 +2,8 @@
 
 This code is copied from Kaiming's rectified flow, but we want to change it into nnx for further use.
 
+This `FM` branch serves as the main branch of the repo. Any other modifications are based on this branch, and will merge useful stuff into this branch.
+
 ## FID mu and sigma
 
 For CIFAR10:
