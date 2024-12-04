@@ -635,7 +635,7 @@ class SimDDPM(nn.Module):
 
     # loss
     loss = (D_xn - gt)**2
-    loss = weight * loss
+    loss = batch_mul(loss, weight)
 
     if self.average_loss:
       raise ValueError("we recommend to use sum loss")

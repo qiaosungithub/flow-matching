@@ -39,7 +39,7 @@ model:
     use_aug_label: False
     dropout: 0.13 # EDM
     net_type: ncsnppedm
-    average_loss: True # use average or sum for loss
+    average_loss: False # use average or sum for loss
     # sampler: euler
     # sampler: heun
     sampler: edm

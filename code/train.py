@@ -672,7 +672,6 @@ def train_and_evaluate(
     for n_batch, batch in zip(range(steps_per_epoch), train_loader):
 
       step = epoch * steps_per_epoch + n_batch
-      assert config.aug.use_edm_aug == False, "we don't support edm aug for now"
       batch = prepare_batch_data(batch, config)
       ep = step / steps_per_epoch
 
