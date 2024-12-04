@@ -40,11 +40,11 @@ model:
     dropout: 0.20
     net_type: ncsnppedm
     average_loss: True # use average or sum for loss
-    # sampler: euler
+    sampler: euler
     # sampler: heun
     # sampler: edm
     # sampler: edm-sde
-    sampler: DDIM
+    # sampler: DDIM
     ode_solver: jax
     # ode_solver: scipy # rk45
     no_condition_t: False

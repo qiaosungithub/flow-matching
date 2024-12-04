@@ -611,27 +611,19 @@ class SimDDPM(nn.Module):
     eps = 1e-3
     t = t * (1 - eps) + eps
 
-    # # DDIM training
-    # betas = get_beta_schedule(self.beta_schedule, beta_start=self.beta_start, beta_end=self.beta_end, num_diffusion_timesteps=self.num_diffusion_timesteps)
-    # alpha = jnp.cumprod(1 - betas, axis=0)
-    # alphas = jnp.take(alpha, t) # TODO: implement alpha in the model
-
     # create v target
     v_target = x_data - x_prior
     # v_target = jnp.ones_like(x_data)  # dummy
 
     # create z (as the network input)
     z = batch_mul(1 - t, x_data) + batch_mul(t, x_prior)
-    # z = batch_mul(jnp.sqrt(alphas), x_data) + batch_mul(jnp.sqrt(1-alphas), x_prior) # DDIM
 
     # forward network
     u_pred = self.forward_flow_pred_function(z, t)
-    # eps_pred = self.forward_DDIM_pred_function(z, t, augment_label=augment_label, train=train) # DDIM
-
 
     # loss
     loss = (v_target - u_pred)**2
-    # loss = (x_prior - eps_pred)**2 # DDIM
+
     if self.average_loss:
       loss = jnp.mean(loss, axis=(1, 2, 3))  # mean over pixels
     else:
@@ -646,19 +638,8 @@ class SimDDPM(nn.Module):
 
     # prepare some visualization
     # if we can pred u, then we can reconstruct x_data from x_prior
-    # x_data_pred = z + batch_mul(t, u_pred)
     x_data_pred = z + batch_mul(1 - t, u_pred)
-    # x_data_pred = batch_mul(z - batch_mul(jnp.sqrt(1-alphas), eps_pred), 1./jnp.sqrt(alphas)) # DDIM
-    
-    # # DDIM visualization
-    # images = self.get_visualization(
-    #   [gt,
-    #    x_prior,  # target of network (known)
-    #    eps_pred,
-    #    z,  # input to network (known)
-    #    x_data_pred,
-    #   ])
-    
+
     images = self.get_visualization(
       [gt,
        v_target,  # target of network (known)

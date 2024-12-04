@@ -210,12 +210,6 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, model_c
   noise_batch = jax.random.normal(rngs.train(), images.shape)
   t_batch = jax.random.uniform(rngs.train(), (b1, b2))
 
-  # # here is code for DDIM
-  # half = (b1 * b2) // 2 + 1
-  # t_batch = jax.random.randint(rngs.train(), (half, ), minval=0, maxval=model_config.num_diffusion_timesteps)
-  # t_batch = jnp.concatenate([t_batch, model_config.num_diffusion_timesteps - 1 - t_batch], axis=0)[:b1*b2]
-  # t_batch = t_batch.reshape(b1, b2)
-
   new_state, metrics, images = train_step_compute_fn(state, batch, noise_batch, t_batch)
 
   return new_state, metrics, images
