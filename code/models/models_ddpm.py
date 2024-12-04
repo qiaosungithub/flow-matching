@@ -108,6 +108,61 @@ def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
         betas.append(min(1 - alpha_bar(t2) / alpha_bar(t1), max_beta))
     return jnp.array(betas)
   
+def space_timesteps(num_timesteps, section_counts):
+    """
+    Create a list of timesteps to use from an original diffusion process,
+    given the number of timesteps we want to take from equally-sized portions
+    of the original process.
+
+    For example, if there's 300 timesteps and the section counts are [10,15,20]
+    then the first 100 timesteps are strided to be 10 timesteps, the second 100
+    are strided to be 15 timesteps, and the final 100 are strided to be 20.
+
+    If the stride is a string starting with "ddim", then the fixed striding
+    from the DDIM paper is used, and only one section is allowed.
+
+    :param num_timesteps: the number of diffusion steps in the original
+                          process to divide up.
+    :param section_counts: either a list of numbers, or a string containing
+                           comma-separated numbers, indicating the step count
+                           per section. As a special case, use "ddimN" where N
+                           is a number of steps to use the striding from the
+                           DDIM paper.
+    :return: a set of diffusion steps from the original process to use.
+    """
+    if isinstance(section_counts, str):
+        if section_counts.startswith("ddim"):
+            desired_count = int(section_counts[len("ddim") :])
+            for i in range(1, num_timesteps):
+                if len(range(0, num_timesteps, i)) == desired_count:
+                    return set(range(0, num_timesteps, i))
+            raise ValueError(
+                f"cannot create exactly {num_timesteps} steps with an integer stride"
+            )
+        section_counts = [int(x) for x in section_counts.split(",")]
+    size_per = num_timesteps // len(section_counts)
+    extra = num_timesteps % len(section_counts)
+    start_idx = 0
+    all_steps = []
+    for i, section_count in enumerate(section_counts):
+        size = size_per + (1 if i < extra else 0)
+        if size < section_count:
+            raise ValueError(
+                f"cannot divide section of {size} steps into {section_count}"
+            )
+        if section_count <= 1:
+            frac_stride = 1
+        else:
+            frac_stride = (size - 1) / (section_count - 1)
+        cur_idx = 0.0
+        taken_steps = []
+        for _ in range(section_count):
+            taken_steps.append(start_idx + round(cur_idx))
+            cur_idx += frac_stride
+        all_steps += taken_steps
+        start_idx += size
+    return list(sorted(set(all_steps))) # this is: [0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80, 84, 88, 92, 96, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144, 148, 152, 156, 160, 164, 169, 173, 177, 181, 185, 189, 193, 197, 201, 205, 209, 213, 217, 221, 225, 229, 233, 237, 241, 245, 249, 253, 257, 261, 265, 269, 273, 277, 281, 285, 289, 293, 297, 301, 305, 309, 313, 317, 321, 325, 329, 333, 337, 341, 345, 349, 353, 357, 361, 365, 369, 373, 377, 381, 385, 389, 393, 397, 401, 405, 409, 413, 417, 421, 425, 429, 433, 437, 441, 445, 449, 453, 457, 461, 465, 469, 473, 477, 481, 485, 489, 493, 497, 502, 506, 510, 514, 518, 522, 526, 530, 534, 538, 542, 546, 550, 554, 558, 562, 566, 570, 574, 578, 582, 586, 590, 594, 598, 602, 606, 610, 614, 618, 622, 626, 630, 634, 638, 642, 646, 650, 654, 658, 662, 666, 670, 674, 678, 682, 686, 690, 694, 698, 702, 706, 710, 714, 718, 722, 726, 730, 734, 738, 742, 746, 750, 754, 758, 762, 766, 770, 774, 778, 782, 786, 790, 794, 798, 802, 806, 810, 814, 818, 822, 826, 830, 835, 839, 843, 847, 851, 855, 859, 863, 867, 871, 875, 879, 883, 887, 891, 895, 899, 903, 907, 911, 915, 919, 923, 927, 931, 935, 939, 943, 947, 951, 955, 959, 963, 967, 971, 975, 979, 983, 987, 991, 995, 999]
+  
 def create_zhh_diffusion_schedule(config):
   global zhh_diffusion_schedule
   if zhh_diffusion_schedule is None:
@@ -134,36 +189,52 @@ def create_zhh_diffusion_schedule(config):
 def create_zhh_SAMPLING_diffusion_schedule(config):
     diffusion_steps_total = config.diffusion_nT
     sample_steps_total = config.model.n_T
-    assert sample_steps_total == diffusion_steps_total, 'This is not supported: sample_steps_total {} != diffusion_steps_total {}'.format(sample_steps_total, diffusion_steps_total)
-    # raise NotImplementedError
     
     o = create_zhh_diffusion_schedule(config)
     global zhh_diffusion_schedule
     if 'sample_ts' not in o:
-        sample_ts = jnp.flip(jnp.arange(diffusion_steps_total), axis=0)
+        sample_ts = space_timesteps(diffusion_steps_total,str(sample_steps_total))[::-1]
+        
+        new_betas = []
+        new_alpha_cumprods = []
+        last_alpha_cumprod = 1.0
+        for i, alpha_cumprod in enumerate(o['alphas_cumprod']):
+          if i in sample_ts:
+              new_betas.append(1 - alpha_cumprod / last_alpha_cumprod)
+              last_alpha_cumprod = alpha_cumprod
+              new_alpha_cumprods.append(alpha_cumprod)
+              # self.timestep_map.append(i)
+        new_betas = jnp.array(new_betas)
+        new_alpha_cumprods = jnp.array(new_alpha_cumprods)
+        new_alphas_cumprod_prev = jnp.append(1.0, new_alpha_cumprods[:-1])
+        new_alphas_cumprod_next = jnp.append(new_alpha_cumprods[1:], 0.0)
+              
         # 更多的大便
-        posterior_variance = o['betas'] * (1.0 - o['alphas_cumprod_prev']) / (1.0 - o['alphas_cumprod'])
-        model_variance = jnp.append(posterior_variance[1],o['betas'][1:])
+        posterior_variance = new_betas * (1.0 - new_alphas_cumprod_prev) / (1.0 - new_alpha_cumprods)
+        model_variance = jnp.append(posterior_variance[1],new_betas[1:])
         log_model_variance = jnp.log(model_variance)
-        sqrt_recip_alphas_cumprod = jnp.sqrt(1.0 / o['alphas_cumprod'])
-        sqrt_recipm1_alphas_cumprod = jnp.sqrt(1.0 / o['alphas_cumprod'] - 1.0)
+        sqrt_recip_alphas_cumprod = jnp.sqrt(1.0 / new_alpha_cumprods)
+        sqrt_recipm1_alphas_cumprod = jnp.sqrt(1.0 / new_alpha_cumprods - 1.0)
         posterior_mean_coef1 = (
-            o['betas'] * jnp.sqrt(o['alphas_cumprod_prev']) / (1.0 - o['alphas_cumprod'])
+            new_betas * jnp.sqrt(new_alphas_cumprod_prev) / (1.0 - new_alpha_cumprods)
         )
         posterior_mean_coef2 = (
-            (1.0 - o['alphas_cumprod_prev'])
-            * np.sqrt(o['alphas'])
-            / (1.0 - o['alphas_cumprod'])
+            (1.0 - new_alphas_cumprod_prev)
+            * np.sqrt(1-new_betas)
+            / (1.0 - new_alpha_cumprods)
         )
+        
+        # finally convert to jax, to avoid stange
+        sample_ts = jnp.array(sample_ts)
         zhh_diffusion_schedule.update({
             'sample_ts': sample_ts,
-            'posterior_variance': posterior_variance,
-            'model_variance': model_variance,
-            'log_model_variance': log_model_variance,
-            'sqrt_recip_alphas_cumprod': sqrt_recip_alphas_cumprod,
-            'sqrt_recipm1_alphas_cumprod': sqrt_recipm1_alphas_cumprod,
-            'posterior_mean_coef1': posterior_mean_coef1,
-            'posterior_mean_coef2': posterior_mean_coef2
+            'sample_posterior_variance': posterior_variance[::-1],
+            'sample_model_variance': model_variance[::-1],
+            'sample_log_model_variance': log_model_variance[::-1],
+            'sample_sqrt_recip_alphas_cumprod': sqrt_recip_alphas_cumprod[::-1],
+            'sample_sqrt_recipm1_alphas_cumprod': sqrt_recipm1_alphas_cumprod[::-1],
+            'sample_posterior_mean_coef1': posterior_mean_coef1[::-1],
+            'sample_posterior_mean_coef2': posterior_mean_coef2[::-1]
         })
     return zhh_diffusion_schedule
     
@@ -264,11 +335,11 @@ def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o):
     # o = create_zhh_SAMPLING_diffusion_schedule(config)
     o = zhh_o
     t_steps = o['sample_ts']
-    sqrt_recip_alphas_cumprod_steps = o['sqrt_recip_alphas_cumprod'][::-1]
-    sqrt_recipm1_alphas_cumprod_steps = o['sqrt_recipm1_alphas_cumprod'][::-1]
-    posterior_mean_coef1_steps = o['posterior_mean_coef1'][::-1]
-    posterior_mean_coef2_steps = o['posterior_mean_coef2'][::-1]
-    log_model_variance_steps = o['log_model_variance'][::-1]
+    sqrt_recip_alphas_cumprod_steps = o['sample_sqrt_recip_alphas_cumprod']
+    sqrt_recipm1_alphas_cumprod_steps = o['sample_sqrt_recipm1_alphas_cumprod']
+    posterior_mean_coef1_steps = o['sample_posterior_mean_coef1']
+    posterior_mean_coef2_steps = o['sample_posterior_mean_coef2']
+    log_model_variance_steps = o['sample_log_model_variance']
 
     def step_fn(i, inputs):
       x_i, rng = inputs

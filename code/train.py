@@ -1030,7 +1030,7 @@ def just_evaluate(
     # exit("王广廷")
     canvas = Image.fromarray(vis)
     canvas.save(f"{workdir}/sample.png")
-    # assert False, 'done!'
+    assert False, 'Image saved'
     
     # vis, denoise_vis = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx)
     # print('saving images...')
