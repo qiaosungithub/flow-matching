@@ -45,6 +45,8 @@ import utils.sample_util as sample_util
 
 import models.models_ddpm as models_ddpm
 from models.models_ddpm import generate, edm_ema_scales_schedules
+import input_pipeline
+from input_pipeline import prepare_batch_data
 
 NUM_CLASSES = 10
 
@@ -428,52 +430,52 @@ def create_train_state(
   )
   return state
 
-def prepare_batch_data(batch, config, batch_size=None):
-  """Reformat a input batch from TF Dataloader.
+# def prepare_batch_data(batch, config, batch_size=None):
+#   """Reformat a input batch from TF Dataloader.
   
-  Args:
-    batch: dict
-      image: shape (b1, b2, h, w, c)
-      label: shape (b1, b2)
-    batch_size = expected batch_size of this node, for eval's drop_last=False only
-  """
-  image, label = batch["image"], batch["label"]
-  # print("In prepare_batch_data, image.shape: ", image.shape) # (8, 64, 32, 32, 3)
-  # print("In prepare_batch_data, label.shape: ", label.shape) # (8, 64)
+#   Args:
+#     batch: dict
+#       image: shape (b1, b2, h, w, c)
+#       label: shape (b1, b2)
+#     batch_size = expected batch_size of this node, for eval's drop_last=False only
+#   """
+#   image, label = batch["image"], batch["label"]
+#   # print("In prepare_batch_data, image.shape: ", image.shape) # (8, 64, 32, 32, 3)
+#   # print("In prepare_batch_data, label.shape: ", label.shape) # (8, 64)
 
-  if config.aug.use_edm_aug:
-    raise NotImplementedError
-    augment_pipe = AugmentPipe(p=0.12, xflip=1e8, yflip=1, scale=1, rotate_frac=1, aniso=1, translate_frac=1)
-    image, augment_label = augment_pipe(image)
-  else:
-    augment_label = None
+#   if config.aug.use_edm_aug:
+#     raise NotImplementedError
+#     augment_pipe = AugmentPipe(p=0.12, xflip=1e8, yflip=1, scale=1, rotate_frac=1, aniso=1, translate_frac=1)
+#     image, augment_label = augment_pipe(image)
+#   else:
+#     augment_label = None
 
-  # pad the batch if smaller than batch_size
-  if batch_size is not None and batch_size > image.shape[0]:
-    raise ValueError("not supported")
-    image = np.cat([image, np.zeros((batch_size - image.shape[0],) + image.shape[1:], dtype=image.dtype)], axis=0)
-    label = np.cat([label, -np.ones((batch_size - label.shape[0],), dtype=label.dtype)], axis=0)
-    assert augment_label is None  # don't support padding augment_label
+#   # pad the batch if smaller than batch_size
+#   if batch_size is not None and batch_size > image.shape[0]:
+#     raise ValueError("not supported")
+#     image = np.cat([image, np.zeros((batch_size - image.shape[0],) + image.shape[1:], dtype=image.dtype)], axis=0)
+#     label = np.cat([label, -np.ones((batch_size - label.shape[0],), dtype=label.dtype)], axis=0)
+#     assert augment_label is None  # don't support padding augment_label
 
-  # reshape (host_batch_size, 3, height, width) to
-  # (local_devices, device_batch_size, height, width, 3)
-  local_device_count = jax.local_device_count()
-  assert image.shape[0] == local_device_count
+#   # reshape (host_batch_size, 3, height, width) to
+#   # (local_devices, device_batch_size, height, width, 3)
+#   local_device_count = jax.local_device_count()
+#   assert image.shape[0] == local_device_count
 
-  if config.model.use_aug_label:
-    assert config.aug.use_edm_aug
-    augment_label = augment_label.reshape((local_device_count, -1) + augment_label.shape[1:])
-    augment_label = augment_label.numpy()
-  else:
-    augment_label = None
+#   if config.model.use_aug_label:
+#     assert config.aug.use_edm_aug
+#     augment_label = augment_label.reshape((local_device_count, -1) + augment_label.shape[1:])
+#     augment_label = augment_label.numpy()
+#   else:
+#     augment_label = None
 
-  return_dict = {
-    'image': image,
-    'label': label,
-    'augment_label': augment_label,
-  }
+#   return_dict = {
+#     'image': image,
+#     'label': label,
+#     'augment_label': augment_label,
+#   }
 
-  return return_dict
+#   return return_dict
 
 def _update_model_avg(model_avg, state_params, ema_decay):
   return jax.tree_util.tree_map(lambda x, y: ema_decay * x + (1.0 - ema_decay) * y, model_avg, state_params)
@@ -513,50 +515,29 @@ def train_and_evaluate(
   # log_for_0(f"save directory: {sampling_config.save_dir}")
 
   ########### Create DataLoaders ###########
-  # if config.batch_size % jax.process_count() > 0:
-  #   raise ValueError('Batch size must be divisible by the number of processes')
-  # local_batch_size = config.batch_size // jax.process_count()
-  # log_for_0('local_batch_size: {}'.format(local_batch_size))
-  # log_for_0('jax.local_device_count: {}'.format(jax.local_device_count()))
-
-  # if local_batch_size % jax.local_device_count() > 0:
-  #   raise ValueError('Local batch size must be divisible by the number of local devices')
-
-  # train_set = train_set_(root=dataset_config.root)
-  # val_set = val_set_(root=dataset_config.root)
-
-  # train_loader, steps_per_epoch = create_split(
-  #   train_set, local_batch_size, 'train', dataset_config
-  # )
-
-  # # eval_loader, steps_per_eval = create_split(
-  # #   val_set, local_batch_size, 'val', config
-  # # )
-
-  # eval_loader = DataLoader(val_set, batch_size=config.eval_batch_size, shuffle=True, drop_last=False, pin_memory=True)
-
-  # log_for_0('steps_per_epoch: {}'.format(steps_per_epoch))
-
-  # if config.steps_per_eval != -1:
-  #   steps_per_eval = config.steps_per_eval
-
-  input_pipeline = get_input_pipeline(dataset_config)
-  input_type = tf.bfloat16 if config.half_precision else tf.float32
-  dataset_builder = tfds.builder(dataset_config.name)
+  # input_pipeline = get_input_pipeline(dataset_config)
+  # input_type = tf.bfloat16 if config.half_precision else tf.float32
+  # dataset_builder = tfds.builder(dataset_config.name)
   assert config.batch_size % jax.process_count() == 0, ValueError('Batch size must be divisible by the number of devices')
   local_batch_size = config.batch_size // jax.process_count()
   assert local_batch_size % jax.local_device_count() == 0, ValueError('Local batch size must be divisible by the number of local devices')
   log_for_0('local_batch_size: {}'.format(local_batch_size))
   log_for_0('jax.local_device_count: {}'.format(jax.local_device_count()))
   log_for_0('global batch_size: {}'.format(config.batch_size))
-  train_loader, steps_per_epoch, yierbayiyiliuqi = input_pipeline.create_split(
-    dataset_builder,
-    dataset_config=dataset_config,
-    training_config=config,
-    local_batch_size=local_batch_size,
-    input_type=input_type,
-    train=False if dataset_config.fake_data else True
+  train_loader, steps_per_epoch = input_pipeline.create_split(
+    config.dataset,
+    local_batch_size,
+    split='train',
+    # split='val',
   )
+  # train_loader, steps_per_epoch, yierbayiyiliuqi = input_pipeline.create_split(
+  #   dataset_builder,
+  #   dataset_config=dataset_config,
+  #   training_config=config,
+  #   local_batch_size=local_batch_size,
+  #   input_type=input_type,
+  #   train=False if dataset_config.fake_data else True
+  # )
   # val_loader, val_steps, _ = create_split(
   #   dataset_builder,
   #   dataset_config=dataset_config,
@@ -693,7 +674,7 @@ def train_and_evaluate(
       step = epoch * steps_per_epoch + n_batch
       assert config.aug.use_edm_aug == False, "we don't support edm aug for now"
       batch = prepare_batch_data(batch, config)
-      ep = step * config.batch_size / yierbayiyiliuqi
+      ep = step / steps_per_epoch
 
       # img = batch['image']
       # print(f"img.shape: {img.shape}")
