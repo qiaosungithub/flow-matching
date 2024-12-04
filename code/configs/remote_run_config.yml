@@ -34,6 +34,7 @@ model:
     image_size: 32
     out_channels: 3
     base_width: 128
+    learn_var: True # default: False
     n_T: 250 # num of sample steps, matches "diffusion_nT"
     use_aug_label: False
     dropout: 0.15

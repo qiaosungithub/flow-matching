@@ -34,7 +34,8 @@ model:
     image_size: 32
     out_channels: 3
     base_width: 128
-    n_T: 25 # num of sample steps, matches "diffusion_nT"
+    learn_var: True # default: False
+    n_T: 250 # num of sample steps, matches "diffusion_nT"
     use_aug_label: False
     dropout: 0.15
     net_type: ncsnppedm
@@ -81,12 +82,12 @@ log_per_step: 20
 visualize_per_epoch: 1
 eval_per_epoch: 1
 checkpoint_per_epoch: 10086
-load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241204_011334_dqn8iq_kmh-tpuvm-v2-32-4__b_lr_ep_eval
+# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241204_011334_dqn8iq_kmh-tpuvm-v2-32-4__b_lr_ep_eval
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241203_222646_g1nh1t_kmh-tpuvm-v2-32-4__b_lr_ep_eval
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241130_140252_c95a47_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/checkpoint_194000
 
 # diffusion:
-diffusion_nT: 500
+diffusion_nT: 4000
 diffusion_schedule: cosine
 time_weighting: const 
 

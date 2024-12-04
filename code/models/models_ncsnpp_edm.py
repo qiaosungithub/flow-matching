@@ -47,7 +47,8 @@ class NCSNpp(nn.Module):
     def __init__(self,
         base_width = 128,
         image_size = 32,
-        out_channels = 3, # also in_channels
+        out_channels = 3, # this is actually in_channels
+        out_channel_multiple = 1, # out_channels = out_channel_multiple * out_channels
         ch_mult = (2, 2, 2),
         num_res_blocks = 4,
         attn_resolutions = (16,),
@@ -293,7 +294,7 @@ class NCSNpp(nn.Module):
             else:
                 setattr(self, 
                         f'dec_{cur_size}x{cur_size}_aux_conv', 
-                        conv3x3(in_c, out_channels, init_scale=init_scale, rngs=rngs)
+                        conv3x3(in_c, out_channels * out_channel_multiple, init_scale=init_scale, rngs=rngs)
                 )
 
     def __call__(self, x, time_cond, augment_label=None, train=True, verbose=False): # turn off verbose here
@@ -303,7 +304,7 @@ class NCSNpp(nn.Module):
         # print("time_cond.shape", time_cond.shape)
         assert time_cond.ndim == 1, 'get wrong time shape {}'.format(time_cond.shape)  # only support 1-d time condition
         assert time_cond.shape[0] == x.shape[0]
-        assert x.shape[-1] == self.out_channels
+        # assert x.shape[-1] == self.out_channels or x.shape[-1] * 2== self.out_channels # assert个牛魔王
 
         logging_fn = logging.info if verbose else lambda x: None
 

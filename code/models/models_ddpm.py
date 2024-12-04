@@ -176,8 +176,11 @@ def create_zhh_diffusion_schedule(config):
       alphas_cumprod = jnp.cumprod(alphas, axis=0)
       alphas_cumprod_prev = jnp.append(1.0, alphas_cumprod[:-1])
       alphas_cumprod_next = jnp.append(alphas_cumprod[1:], 0.0)
+      posterior_variance = betas * (1.0 - alphas_cumprod_prev) / (1.0 - alphas_cumprod)
+      posterior_log_variance_clipped = jnp.log(jnp.append(posterior_variance[1], posterior_variance[1:]))
       zhh_diffusion_schedule = {
-        'betas': betas, 'alphas': alphas, 'alphas_cumprod': alphas_cumprod, 'alphas_cumprod_prev': alphas_cumprod_prev, 'alphas_cumprod_next': alphas_cumprod_next
+        'betas': betas, 'alphas': alphas, 'alphas_cumprod': alphas_cumprod, 'alphas_cumprod_prev': alphas_cumprod_prev, 'alphas_cumprod_next': alphas_cumprod_next,
+        'posterior_variance': posterior_variance, 'posterior_log_variance_clipped': posterior_log_variance_clipped,
       }
       # cosine schedule
     elif config.diffusion_schedule == 'linear':
@@ -211,6 +214,7 @@ def create_zhh_SAMPLING_diffusion_schedule(config):
               
         # 更多的大便
         posterior_variance = new_betas * (1.0 - new_alphas_cumprod_prev) / (1.0 - new_alpha_cumprods)
+        posterior_log_variance_clipped = jnp.log(jnp.append(posterior_variance[1], posterior_variance[1:]))
         model_variance = jnp.append(posterior_variance[1],new_betas[1:])
         log_model_variance = jnp.log(model_variance)
         sqrt_recip_alphas_cumprod = jnp.sqrt(1.0 / new_alpha_cumprods)
@@ -229,19 +233,21 @@ def create_zhh_SAMPLING_diffusion_schedule(config):
         zhh_diffusion_schedule.update({
             'sample_ts': sample_ts,
             'sample_posterior_variance': posterior_variance[::-1],
+            'sample_posterior_log_variance_clipped': posterior_log_variance_clipped[::-1],
             'sample_model_variance': model_variance[::-1],
             'sample_log_model_variance': log_model_variance[::-1],
             'sample_sqrt_recip_alphas_cumprod': sqrt_recip_alphas_cumprod[::-1],
             'sample_sqrt_recipm1_alphas_cumprod': sqrt_recipm1_alphas_cumprod[::-1],
             'sample_posterior_mean_coef1': posterior_mean_coef1[::-1],
-            'sample_posterior_mean_coef2': posterior_mean_coef2[::-1]
-        })
+            'sample_posterior_mean_coef2': posterior_mean_coef2[::-1],
+            'sample_beta': new_betas[::-1],
+        }) # note we flip t
     return zhh_diffusion_schedule
     
 
 def diffusion_schedule_fn_some(config, t_batch):
   o = create_zhh_diffusion_schedule(config)
-  return o['alphas_cumprod'][t_batch], o['betas'][t_batch]
+  return o['alphas_cumprod'][t_batch], o['betas'][t_batch], o['alphas_cumprod_prev'][t_batch], o['posterior_log_variance_clipped'][t_batch]
 
 def get_t_process_fn(t_condition_method):
   if t_condition_method == 'log999':
@@ -340,6 +346,8 @@ def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o):
     posterior_mean_coef1_steps = o['sample_posterior_mean_coef1']
     posterior_mean_coef2_steps = o['sample_posterior_mean_coef2']
     log_model_variance_steps = o['sample_log_model_variance']
+    posterior_log_variance_clipped_steps = o['sample_posterior_log_variance_clipped']
+    beta_steps = o['sample_beta']
 
     def step_fn(i, inputs):
       x_i, rng = inputs
@@ -347,7 +355,7 @@ def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o):
       rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
 
       merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-      x_i = merged_model.sample_one_step_ddpm(x_i, rng_z, i, t_steps=t_steps, sqrt_recip_alphas_cumprod_steps=sqrt_recip_alphas_cumprod_steps, sqrt_recipm1_alphas_cumprod_steps=sqrt_recipm1_alphas_cumprod_steps,posterior_mean_coef1_steps=posterior_mean_coef1_steps,posterior_mean_coef2_steps=posterior_mean_coef2_steps,log_model_variance_steps=log_model_variance_steps)
+      x_i = merged_model.sample_one_step_ddpm(x_i, rng_z, i, t_steps=t_steps, sqrt_recip_alphas_cumprod_steps=sqrt_recip_alphas_cumprod_steps, sqrt_recipm1_alphas_cumprod_steps=sqrt_recipm1_alphas_cumprod_steps,posterior_mean_coef1_steps=posterior_mean_coef1_steps,posterior_mean_coef2_steps=posterior_mean_coef2_steps,log_model_variance_steps=log_model_variance_steps,posterior_log_variance_clipped_steps=posterior_log_variance_clipped_steps,beta_steps=beta_steps)
       outputs = (x_i, rng)
       return outputs
 
@@ -374,6 +382,43 @@ def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o):
   else:
     raise NotImplementedError
 
+def approx_standard_normal_cdf(x):
+    """
+    A fast approximation of the cumulative distribution function of the
+    standard normal.
+    """
+    return 0.5 * (1.0 + jnp.tanh(jnp.sqrt(2.0 / jnp.pi) * (x + 0.044715 * jnp.pow(x, 3))))
+
+def discretized_gaussian_log_likelihood(x, means, log_scales):
+    """
+    Compute the log-likelihood of a Gaussian distribution discretizing to a
+    given image.
+
+    :param x: the target images. It is assumed that this was uint8 values,
+              rescaled to the range [-1, 1].
+    :param means: the Gaussian mean Tensor.
+    :param log_scales: the Gaussian log stddev Tensor.
+    :return: a tensor like x of log probabilities (in nats).
+    """
+    assert x.shape == means.shape == log_scales.shape
+    centered_x = x - means
+    inv_stdv = jnp.exp(-log_scales)
+    plus_in = inv_stdv * (centered_x + 1.0 / 255.0)
+    cdf_plus = approx_standard_normal_cdf(plus_in)
+    min_in = inv_stdv * (centered_x - 1.0 / 255.0)
+    cdf_min = approx_standard_normal_cdf(min_in)
+    log_cdf_plus = jnp.log(jnp.clip(cdf_plus,min=1e-12,max=None))
+    log_one_minus_cdf_min = jnp.log(jnp.clip(1.0 - cdf_min,min=1e-12))
+    cdf_delta = cdf_plus - cdf_min
+    log_probs = jnp.where(
+        x < -0.999,
+        log_cdf_plus,
+        jnp.where(x > 0.999, log_one_minus_cdf_min, jnp.log(jnp.clip(cdf_delta,min=1e-12))),
+    )
+    # assert log_probs.shape == x.shape
+    return log_probs
+
+
 class SimDDPM(nn.Module):
   """Simple DDPM."""
 
@@ -398,6 +443,7 @@ class SimDDPM(nn.Module):
     no_condition_t=False,
     t_condition_method = 'log999',
     rngs=None,
+    learn_var=False,
     **kwargs
   ):
     self.image_size = image_size
@@ -416,6 +462,7 @@ class SimDDPM(nn.Module):
     self.h_init = h_init
     self.sampler = sampler
     self.ode_solver = ode_solver
+    self.learn_var = learn_var
     # self.no_condition_t = no_condition_t
     assert no_condition_t == False, 'This is deprecated'
     self.t_preprocess_fn = get_t_process_fn(t_condition_method)
@@ -450,6 +497,7 @@ class SimDDPM(nn.Module):
         base_width=self.base_width,
         image_size=self.image_size,
         out_channels=self.out_channels,
+        out_channel_multiple = (2 if self.learn_var else 1),
         dropout=self.dropout,
         rngs=self.rngs)
     else:
@@ -636,7 +684,7 @@ class SimDDPM(nn.Module):
     # return x_next, denoised # for debug
     return x_next
 
-  def sample_one_step_ddpm(self, x_i, rng, i, t_steps, sqrt_recip_alphas_cumprod_steps, sqrt_recipm1_alphas_cumprod_steps, posterior_mean_coef1_steps, posterior_mean_coef2_steps,log_model_variance_steps):
+  def sample_one_step_ddpm(self, x_i, rng, i, t_steps, sqrt_recip_alphas_cumprod_steps, sqrt_recipm1_alphas_cumprod_steps, posterior_mean_coef1_steps, posterior_mean_coef2_steps,log_model_variance_steps,posterior_log_variance_clipped_steps, beta_steps):
       """
       DDPM
       """
@@ -646,10 +694,19 @@ class SimDDPM(nn.Module):
       sqrt_recipm1_alphas_cumprod = batch_t(sqrt_recipm1_alphas_cumprod_steps[i],b)
       posterior_mean_coef1 = batch_t(posterior_mean_coef1_steps[i],b)
       posterior_mean_coef2 = batch_t(posterior_mean_coef2_steps[i],b)
-      log_model_variance = batch_t(log_model_variance_steps[i],b)
+      posterior_log_variance_clipped = batch_t(posterior_log_variance_clipped_steps[i],b)
+      betas = batch_t(beta_steps[i],b)
       
-      eps_pred = self.forward_flow_pred_function(x_i, t, train=False)
       
+      if self.learn_var:
+        eps_pred, model_var_values = self.forward_flow_pred_function(x_i, t, train=False)
+        min_log = posterior_log_variance_clipped
+        max_log = jnp.log(betas)
+        frac = (model_var_values + 1) / 2 # shape as x
+        log_model_variance = batch_mul(frac, max_log)+ batch_mul((1 - frac), min_log)
+      else:
+        eps_pred = self.forward_flow_pred_function(x_i, t, train=False)
+        log_model_variance = batch_t(log_model_variance_steps[i],b)
       
       # get x_start from eps
       x_start = batch_mul(sqrt_recip_alphas_cumprod, x_i) - batch_mul(sqrt_recipm1_alphas_cumprod, eps_pred)
@@ -697,6 +754,8 @@ class SimDDPM(nn.Module):
     # t_cond = jnp.zeros_like(t) if self.no_condition_t else jnp.log(t * 999)
     t_cond = self.t_preprocess_fn(t).astype(self.dtype)
     u_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
+    if self.learn_var:
+      return jnp.split(u_pred, 2, axis=-1)
     return u_pred
   
   def forward_edm_denoising_function(self, x, sigma, augment_label=None, train: bool = True):  # EDM
@@ -718,7 +777,7 @@ class SimDDPM(nn.Module):
     D_x = in_x + batch_mul(F_x, c_out)
     return D_x
 
-  def forward(self, imgs, labels, augment_label, noise_batch, t_batch,alpha_cumprod_batch, beta_batch, train: bool = True):
+  def forward(self, imgs, labels, augment_label, noise_batch, t_batch,alpha_cumprod_batch, alpha_cumprod_prev_batch, posterior_log_variance_clipped_batch, beta_batch, train: bool = True):
     """
     You should first sample the noise and t and input them
     """
@@ -753,7 +812,7 @@ class SimDDPM(nn.Module):
     # sample from prior (noise)
     x_prior = noise_batch
 
-    z = batch_mul(sqrt_alphas_cumprod, x_data) + batch_mul(sqrt_one_minus_alphas_cumprod, x_prior)
+    x_mixtue = batch_mul(sqrt_alphas_cumprod, x_data) + batch_mul(sqrt_one_minus_alphas_cumprod, x_prior)
     
     t = t_batch
 
@@ -763,17 +822,76 @@ class SimDDPM(nn.Module):
 
 
     # forward network
-    u_pred = self.forward_flow_pred_function(z, t)
-
+    if self.learn_var:
+      u_pred, model_var_output = self.forward_flow_pred_function(x_mixtue, t)
+    else:
+      u_pred = self.forward_flow_pred_function(x_mixtue, t)
 
     # loss
     loss = (v_target - u_pred)**2
+        
     if self.average_loss:
       loss = jnp.mean(loss, axis=(1, 2, 3))  # mean over pixels
     else:
       loss = jnp.sum(loss, axis=(1, 2, 3))  # sum over pixels
-    loss = loss.mean()  # mean over batch
+    
+    if self.learn_var:
+        assert self.average_loss # incompatible scale
+        ####  if learn var, then have a VLB loss ####
+        
+        ## ------------------ constants ----------------------
+        alphas_cumprod_prev = alpha_cumprod_prev_batch
+        posterior_mean_coef1 = betas * jnp.sqrt(alphas_cumprod_prev) / (1.0 - alphas_cumprod)
+        posterior_mean_coef2 = (1.0 - alphas_cumprod_prev) * jnp.sqrt(1 - betas) / (1.0 - alphas_cumprod)
+        posterior_variance = betas * (1.0 - alphas_cumprod_prev) / (1.0 - alphas_cumprod)
+        posterior_log_variance_clipped = posterior_log_variance_clipped_batch
+        sqrt_recip_alphas_cumprod = jnp.sqrt(1.0 / alphas_cumprod)
+        sqrt_recipm1_alphas_cumprod = jnp.sqrt(1.0 / alphas_cumprod - 1.0)
+        
+        ## ------------------ GT values -------------------
+        posterior_mean = batch_mul(posterior_mean_coef1, x_data) + batch_mul(posterior_mean_coef2, x_mixtue)
+        true_mean = posterior_mean
+        true_log_variance_clipped = posterior_log_variance_clipped # these two has no rely on model
+        
+        ## ------------------ Model values -------------------
+        model_output, model_var_values = jax.lax.stop_gradient(u_pred), model_var_output # follow the paper: stop grad at here
+        min_log = posterior_log_variance_clipped
+        max_log = jnp.log(betas)
+        frac = (model_var_values + 1) / 2 # shape as x
+        model_log_variance = batch_mul(frac, max_log)+ batch_mul((1 - frac), min_log)
+        
+        eps_prediction = model_output
+        x_start = batch_mul(sqrt_recip_alphas_cumprod, x_mixtue) + batch_mul(sqrt_recipm1_alphas_cumprod, eps_prediction)
+        if self.sample_clip_denoised:
+          x_start = jnp.clip(x_start, -1, 1)
+        model_mean = batch_mul(posterior_mean_coef1, x_start) + batch_mul(posterior_mean_coef2, x_mixtue)
+        
+        ## --------------------- calculate VLB ------------------
+        # KL divergence
+        assert true_mean.shape == model_mean.shape == model_log_variance.shape == x_data.shape, 'true_mean shape: {t}, model_mean shape: {m}, x_data shape: {x}, model_log_variance shape: {v}'.format(t=true_mean.shape, m=model_mean.shape, x=x_data.shape, v=model_log_variance.shape)
+        
+        true_log_variance_clipped_shape_as_x = true_log_variance_clipped.reshape(bz, 1, 1, 1)
+        
+        kld = 0.5 * (
+          -1.0 # broadcast
+          + model_log_variance # shape as x
+          - true_log_variance_clipped_shape_as_x # shape as x
+          + jnp.exp(true_log_variance_clipped_shape_as_x - model_log_variance) # shape as x
+          + (model_mean - true_mean)**2 * jnp.exp(-model_log_variance) # shape as x
+        ) # kld has same shape as x
+        kld = kld.mean(axis=(1,2,3)) / jnp.log(2.0)
+        
+        # corner case: when t=0, becomes NLL
+        decoder_nll = - discretized_gaussian_log_likelihood(x=x_data, means=model_mean, log_scales=0.5 *model_log_variance)
+        assert decoder_nll.shape == x_data.shape
+        decoder_nll = decoder_nll.mean(axis=(1, 2, 3)) / jnp.log(2.0)  # mean over pixels
+        
+        VLB = jnp.where((t == 0), decoder_nll, kld)
+      
+        ## --------------------- Finally done! -----------------
+        loss = loss + VLB  # add VLB loss
 
+    loss = loss.mean()  # mean over batch
     loss_train = loss
 
     dict_losses = {}
@@ -786,17 +904,17 @@ class SimDDPM(nn.Module):
     # x_data_pred = z + batch_mul(1 - t, u_pred)
     sqrt_recip_alphas_cumprod = jnp.sqrt(1.0 / alphas_cumprod)
     sqrt_recipm1_alphas_cumprod = jnp.sqrt(1.0 / alphas_cumprod - 1.0)
-    x_data_pred = batch_mul(sqrt_recip_alphas_cumprod, z) - batch_mul(sqrt_recipm1_alphas_cumprod, u_pred)
-    x_data_sanity = batch_mul(sqrt_recip_alphas_cumprod, z) - batch_mul(sqrt_recipm1_alphas_cumprod, v_target)
+    x_data_pred = batch_mul(sqrt_recip_alphas_cumprod, x_mixtue) - batch_mul(sqrt_recipm1_alphas_cumprod, u_pred)
+    # x_data_sanity = batch_mul(sqrt_recip_alphas_cumprod, x_mixtue) - batch_mul(sqrt_recipm1_alphas_cumprod, v_target)
     
 
     images = self.get_visualization(
       [gt,        # image (from dataset)
        v_target,  # target of network (known)
        u_pred,    # prediction of network
-       z,         # input to network (noisy image)
+       x_mixtue,         # input to network (noisy image)
        x_data_pred, # prediction of clean image, reparameterized by the network
-      x_data_sanity, # sanity check, this should be the same as `gt`
+      # x_data_sanity, # sanity check, this should be the same as `gt`
       ])
 
     return loss_train, dict_losses, images

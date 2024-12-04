@@ -138,12 +138,12 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
   ema_decay, scales = ema_scales_fn(state.step)
   
   # use "diffusion_schedule_fn" to process t_batch
-  alpha_cumprod_batch, beta_batch = diffusion_schedule_fn(t_batch=t_batch)
+  alpha_cumprod_batch, beta_batch, alpha_cumprod_prev_batch, posterior_log_variance_clipped_batch = diffusion_schedule_fn(t_batch=t_batch)
 
   def loss_fn(params_to_train):
     """loss function used for training."""
     
-    outputs = state.apply_fn(state.graphdef, params_to_train, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'], batch['label'], batch['augment_label'], noise_batch, t_batch, alpha_cumprod_batch=alpha_cumprod_batch, beta_batch=beta_batch)
+    outputs = state.apply_fn(state.graphdef, params_to_train, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'], batch['label'], batch['augment_label'], noise_batch, t_batch, alpha_cumprod_batch=alpha_cumprod_batch, beta_batch=beta_batch,alpha_cumprod_prev_batch=alpha_cumprod_prev_batch,posterior_log_variance_clipped_batch=posterior_log_variance_clipped_batch)
     loss, new_batch_stats, new_rng_states, dict_losses, images = outputs
 
     return loss, (new_batch_stats, new_rng_states, dict_losses, images)
@@ -374,7 +374,7 @@ def create_train_state(
 
   print_params(params)
 
-  def apply_fn(graphdef2, params2, rng_states2, batch_stats2, useless_, is_training, images, labels, augment_labels, noise_batch, t_batch,alpha_cumprod_batch,beta_batch):
+  def apply_fn(graphdef2, params2, rng_states2, batch_stats2, useless_, is_training, images, labels, augment_labels, noise_batch, t_batch,alpha_cumprod_batch,beta_batch,alpha_cumprod_prev_batch,posterior_log_variance_clipped_batch):
     """
     input:
       images
@@ -394,7 +394,7 @@ def create_train_state(
     else:
       merged_model.eval()
     del params2, rng_states2, batch_stats2, useless_
-    loss_train, dict_losses, images = merged_model.forward(images, labels, augment_labels, noise_batch, t_batch, alpha_cumprod_batch=alpha_cumprod_batch, beta_batch=beta_batch)
+    loss_train, dict_losses, images = merged_model.forward(images, labels, augment_labels, noise_batch, t_batch, alpha_cumprod_batch=alpha_cumprod_batch, beta_batch=beta_batch, alpha_cumprod_prev_batch=alpha_cumprod_prev_batch, posterior_log_variance_clipped_batch=posterior_log_variance_clipped_batch)
     new_batch_stats, new_rng_states, _ = nn.state(merged_model, nn.BatchStat, nn.RngState, ...)
     return loss_train, new_batch_stats, new_rng_states, dict_losses, images
 
@@ -839,8 +839,11 @@ def train_and_evaluate(
       # print(vis.shape)
       # exit("王广廷")
       canvas = Image.fromarray(vis)
-      if config.wandb and index == 0:
-        wandb.log({'gen': wandb.Image(canvas)})
+      if index == 0:
+        if config.wandb:
+          wandb.log({'gen': wandb.Image(canvas)})
+        else:
+          canvas.save(os.path.join(workdir, f'epoch_{epoch}_sample.png'))
       # sample_step(eval_state, image_size, sampling_config, epoch, use_wandb=config.wandb)
 
     ########### FID ###########
