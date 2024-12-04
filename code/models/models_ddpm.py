@@ -183,8 +183,8 @@ def generate(state: NNXTrainState, model, rng, n_sample):
     # denoised = jnp.stack(denoised, axis=0)
     # return images, denoised
   elif model.sampler == 'DDIM':
-    # skip = model.num_timesteps // self.args.timesteps
-    skip = 1
+    skip = model.num_diffusion_timesteps // num_steps
+    # skip = 1
     seq = range(0, model.num_timesteps, skip)
     T = len(seq)
     seq_next = [-1] + list(seq[:-1])
