@@ -37,12 +37,12 @@ model:
     base_width: 4
     n_T: 50
     use_aug_label: False
-    dropout: 0.20
+    dropout: 0.13 # EDM
     net_type: ncsnppedm
     average_loss: True # use average or sum for loss
-    sampler: euler
+    # sampler: euler
     # sampler: heun
-    # sampler: edm
+    sampler: edm
     # sampler: edm-sde
     # sampler: DDIM
     ode_solver: jax
@@ -55,7 +55,7 @@ dataset:
     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
     cache: False
 aug: 
-    use_edm_aug: False # TODO: enable this and test
+    use_edm_aug: True
 fid:
     eval_only: False
     fid_per_epoch: 100
@@ -66,7 +66,7 @@ evalu:
     sample: True
 batch_size: 512
 num_epochs: 400
-learning_rate: 0.0008
+learning_rate: 0.001 # EDM
 lr_schedule: const
 weight_decay: 0
 optimizer: adamw

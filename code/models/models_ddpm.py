@@ -327,6 +327,11 @@ class SimDDPM(nn.Module):
     self.num_timesteps = num_diffusion_timesteps
     self.net = net_fn()
 
+    self.data_std = 0.5
+    self.t_min = 0.002
+    self.t_max = 80.0
+    self.rho = 7.0
+
 
   def get_visualization(self, list_imgs):
     vis = jnp.concatenate(list_imgs, axis=1)
@@ -557,12 +562,13 @@ class SimDDPM(nn.Module):
     return denoiser
 
   def forward_flow_pred_function(self, z, t, augment_label=None, train: bool = True):  # EDM
-
+    raise NotImplementedError
     t_cond = jnp.zeros_like(t) if self.no_condition_t else jnp.log(t * 999)
     u_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
     return u_pred
 
   def forward_DDIM_pred_function(self, z, t, augment_label=None, train: bool = True):  # DDIM
+    raise NotImplementedError
     t_cond = jnp.zeros_like(t) if self.no_condition_t else t
     eps_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
     return eps_pred
@@ -576,19 +582,39 @@ class SimDDPM(nn.Module):
     our network has F((1-t)x + t*noise) = x - noise
     """
 
+    # # use FM network to denoise
+    # c_in = 1 / (sigma + 1)
+    # in_x = batch_mul(x, c_in)
+    # c_out = sigma / (sigma + 1)
+
+    # F_x = self.forward_flow_pred_function(in_x, c_in, augment_label=augment_label, train=train)
+
+    # D_x = in_x + batch_mul(F_x, c_out)
+    # return D_x
+
+    # edm network
+    c_skip = self.data_std ** 2 / (sigma ** 2 + self.data_std ** 2)
+    c_out = sigma * self.data_std / jnp.sqrt(sigma ** 2 + self.data_std ** 2)
+
+    c_in = 1 / jnp.sqrt(sigma ** 2 + self.data_std ** 2)
+    c_noise = jnp.zeros_like(sigma) if self.no_condition_t else 0.25 * jnp.log(sigma)
+
     # forward network
-    c_in = 1 / (sigma + 1)
     in_x = batch_mul(x, c_in)
-    c_out = sigma / (sigma + 1)
+    c_noise = c_noise.reshape(c_noise.shape[0])
 
-    F_x = self.forward_flow_pred_function(in_x, c_in, augment_label=augment_label, train=train)
+    F_x = self.net(in_x, c_noise, augment_label=augment_label, train=train)
 
-    D_x = in_x + batch_mul(F_x, c_out)
+    D_x = batch_mul(x, c_skip) + batch_mul(F_x, c_out)
     return D_x
 
   def forward(self, imgs, labels, augment_label, noise_batch, t_batch, train: bool = True):
     """
+    edm version
+    ---
     You should first sample the noise and t and input them
+    ---
+    t_batch: here is normal (bs,), we will process it into sigma batch
     """
     imgs = imgs.astype(self.dtype)
     gt = imgs
@@ -600,31 +626,19 @@ class SimDDPM(nn.Module):
     # t_batch = t_batch.reshape(bz, 1, 1, 1)
 
     # -----------------------------------------------------------------
-
-    # sample from data
-    x_data = x
-    # sample from prior (noise)
-    x_prior = noise_batch
-
     # sample t step
-    t = t_batch # in DDIM, t may be discrete
-    eps = 1e-3
-    t = t * (1 - eps) + eps
+    sigma = jnp.exp(t_batch * self.P_std + self.P_mean)
+    weight = (sigma ** 2 + self.data_std ** 2) / (sigma * self.data_std) ** 2
 
-    # create v target
-    v_target = x_data - x_prior
-    # v_target = jnp.ones_like(x_data)  # dummy
-
-    # create z (as the network input)
-    z = batch_mul(1 - t, x_data) + batch_mul(t, x_prior)
-
-    # forward network
-    u_pred = self.forward_flow_pred_function(z, t)
+    xn = x + batch_mul(noise_batch, sigma)
+    D_xn = self.forward_edm_denoising_function(xn, sigma, augment_label)
 
     # loss
-    loss = (v_target - u_pred)**2
+    loss = (D_xn - gt)**2
+    loss = weight * loss
 
     if self.average_loss:
+      raise ValueError("we recommend to use sum loss")
       loss = jnp.mean(loss, axis=(1, 2, 3))  # mean over pixels
     else:
       loss = jnp.sum(loss, axis=(1, 2, 3))  # sum over pixels
@@ -638,15 +652,7 @@ class SimDDPM(nn.Module):
 
     # prepare some visualization
     # if we can pred u, then we can reconstruct x_data from x_prior
-    x_data_pred = z + batch_mul(1 - t, u_pred)
-
-    images = self.get_visualization(
-      [gt,
-       v_target,  # target of network (known)
-       u_pred,
-       z,  # input to network (known)
-       x_data_pred,
-      ])
+    images = self.get_visualization([gt, xn, D_xn])
 
     return loss_train, dict_losses, images
 
@@ -654,6 +660,6 @@ class SimDDPM(nn.Module):
     # initialization only
     t = jnp.ones((imgs.shape[0],))
     augment_label = jnp.ones((imgs.shape[0], 9)) if self.use_aug_label else None  # fixed augment_dim # TODO: what is this?
-    out = self.net(imgs, t, augment_label) # TODO: whether to add train=train
+    out = self.net(imgs, t, augment_label)
     out_ema = None   # no need to initialize it here
     return out, out_ema
