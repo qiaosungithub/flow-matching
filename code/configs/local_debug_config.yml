@@ -40,23 +40,25 @@ model:
     dropout: 0.20
     net_type: ncsnppedm
     average_loss: True # use average or sum for loss
-    # sampler: euler
+    sampler: ddpm
+    sample_clip_denoised: True
     # sampler: heun
     # sampler: edm
-    sampler: edm-sde
+    # sampler: edm-sde
     ode_solver: jax
     # ode_solver: scipy # rk45
     no_condition_t: False
+    t_condition_method: direct # default: log999
 dataset:
     name: cifar10
     # root: CIFAR # pytorch
     prefetch_factor: 2
     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
-    cache: False
+    cache: True
 aug: 
     use_edm_aug: False # TODO: enable this and test
 fid:
-    eval_only: True
+    eval_only: False
     fid_per_epoch: 100
     num_samples: 1000
     # cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
@@ -64,20 +66,22 @@ evalu:
     ema: True
     sample: True
 batch_size: 512
-num_epochs: 400
+num_epochs: 2
 learning_rate: 0.0008
 lr_schedule: const
-weight_decay: 0
+weight_decay: 0.0
 optimizer: adamw
-adam_b2: 0.999
+adam_b2: 0.95
 warmup_epochs: 200
-log_per_step: 30
-visualize_per_epoch: 100
+log_per_step: 20
+visualize_per_epoch: 50
 eval_per_epoch: 100
 wandb: False
 checkpoint_per_epoch: 100
-load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241127_010129_q9ifcu_kmh-tpuvm-v2-32-6__b_lr_ep_eval/checkpoint_194000
-
+# load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241127_010129_q9ifcu_kmh-tpuvm-v2-32-6__b_lr_ep_eval/checkpoint_194000
+diffusion_nT: 4000
+diffusion_schedule: cosine
+time_weighting: const
 
 # # Here is for IMAGENET32x32:
 # training:

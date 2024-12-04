@@ -50,6 +50,7 @@ model:
     # ode_solver: scipy # rk45
     
     no_condition_t: False
+    class_conditional: True
     t_condition_method: direct # default: log999
 dataset:
     name: cifar10
@@ -82,7 +83,7 @@ log_per_step: 20
 visualize_per_epoch: 1
 eval_per_epoch: 1
 checkpoint_per_epoch: 10086
-load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241204_152427_ohz71r_kmh-tpuvm-v3-32-1__b_lr_ep_eval
+# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241204_152427_ohz71r_kmh-tpuvm-v3-32-1__b_lr_ep_eval
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241203_222646_g1nh1t_kmh-tpuvm-v2-32-4__b_lr_ep_eval
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241130_140252_c95a47_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/checkpoint_194000
 

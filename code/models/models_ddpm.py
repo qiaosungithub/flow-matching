@@ -263,7 +263,7 @@ def batch_t(t,b):
   return t.reshape(1,).repeat(b, axis=0)
 
 # move this out from model for JAX compilation
-def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o):
+def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o,label_type='random'):
   """
   Generate samples from the model
 
@@ -278,12 +278,27 @@ def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o):
 
   # initialize noise
   x_shape = (n_sample, model.image_size, model.image_size, model.out_channels)
-  rng_used, rng = jax.random.split(rng, 2)
+  别传进去 = rng
+  只能用一次, 别传进去 = jax.random.split(别传进去, 2)
   # sample from prior
-  x_prior = jax.random.normal(rng_used, x_shape, dtype=model.dtype)
+  x_prior = jax.random.normal(只能用一次, x_shape, dtype=model.dtype)
+  
+  只能用一次啊, 别传进去 = jax.random.split(别传进去, 2)
+  # generate labels
+  if label_type == 'random':
+    y = jax.random.randint(只能用一次啊, (n_sample,), 0, model.num_classes)
+  elif label_type == 'order':
+    y = jnp.arange(n_sample) % model.num_classes
+  elif label_type == 'none':
+    y = None
+  else:
+    raise NotImplementedError(f'Unknown label type: {label_type}')
 
+  只能用一次诶, 别传进去 = jax.random.split(别传进去, 2)
+  rng = 只能用一次诶
 
   if model.sampler in ['euler', 'heun']:
+    assert y is None, NotImplementedError()
       
     x_i = x_prior
 
@@ -302,6 +317,7 @@ def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o):
     return images
   
   elif model.sampler in ['edm', 'edm-sde']:
+    assert y is None, NotImplementedError()
     t_steps = model.compute_t(jnp.arange(num_steps), num_steps)
     t_steps = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
     x_i = x_prior * t_steps[0]
@@ -355,7 +371,7 @@ def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o):
       rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
 
       merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-      x_i = merged_model.sample_one_step_ddpm(x_i, rng_z, i, t_steps=t_steps, sqrt_recip_alphas_cumprod_steps=sqrt_recip_alphas_cumprod_steps, sqrt_recipm1_alphas_cumprod_steps=sqrt_recipm1_alphas_cumprod_steps,posterior_mean_coef1_steps=posterior_mean_coef1_steps,posterior_mean_coef2_steps=posterior_mean_coef2_steps,log_model_variance_steps=log_model_variance_steps,posterior_log_variance_clipped_steps=posterior_log_variance_clipped_steps,beta_steps=beta_steps)
+      x_i = merged_model.sample_one_step_ddpm(x_i, rng_z, i, y=y, t_steps=t_steps, sqrt_recip_alphas_cumprod_steps=sqrt_recip_alphas_cumprod_steps, sqrt_recipm1_alphas_cumprod_steps=sqrt_recipm1_alphas_cumprod_steps,posterior_mean_coef1_steps=posterior_mean_coef1_steps,posterior_mean_coef2_steps=posterior_mean_coef2_steps,log_model_variance_steps=log_model_variance_steps,posterior_log_variance_clipped_steps=posterior_log_variance_clipped_steps,beta_steps=beta_steps)
       outputs = (x_i, rng)
       return outputs
 
@@ -444,6 +460,7 @@ class SimDDPM(nn.Module):
     t_condition_method = 'log999',
     rngs=None,
     learn_var=False,
+    class_conditional=False,
     **kwargs
   ):
     self.image_size = image_size
@@ -468,6 +485,7 @@ class SimDDPM(nn.Module):
     self.t_preprocess_fn = get_t_process_fn(t_condition_method)
     self.rngs = rngs
     self.sample_clip_denoised = sample_clip_denoised
+    self.class_conditional = class_conditional
 
     # sde = sde_lib.KVESDE(
     #   t_min=0.002,
@@ -499,6 +517,8 @@ class SimDDPM(nn.Module):
         out_channels=self.out_channels,
         out_channel_multiple = (2 if self.learn_var else 1),
         dropout=self.dropout,
+        class_conditional=self.class_conditional,
+        num_classes=self.num_classes,
         rngs=self.rngs)
     else:
       raise ValueError(f'Unknown net type: {self.net_type}')
@@ -684,7 +704,7 @@ class SimDDPM(nn.Module):
     # return x_next, denoised # for debug
     return x_next
 
-  def sample_one_step_ddpm(self, x_i, rng, i, t_steps, sqrt_recip_alphas_cumprod_steps, sqrt_recipm1_alphas_cumprod_steps, posterior_mean_coef1_steps, posterior_mean_coef2_steps,log_model_variance_steps,posterior_log_variance_clipped_steps, beta_steps):
+  def sample_one_step_ddpm(self, x_i, rng, i, t_steps, sqrt_recip_alphas_cumprod_steps, sqrt_recipm1_alphas_cumprod_steps, posterior_mean_coef1_steps, posterior_mean_coef2_steps,log_model_variance_steps,posterior_log_variance_clipped_steps, beta_steps,y=None):
       """
       DDPM
       """
@@ -699,13 +719,13 @@ class SimDDPM(nn.Module):
       
       
       if self.learn_var:
-        eps_pred, model_var_values = self.forward_flow_pred_function(x_i, t, train=False)
+        eps_pred, model_var_values = self.forward_flow_pred_function(x_i, t, train=False,y=y)
         min_log = posterior_log_variance_clipped
         max_log = jnp.log(betas)
         frac = (model_var_values + 1) / 2 # shape as x
         log_model_variance = batch_mul(frac, max_log)+ batch_mul((1 - frac), min_log)
       else:
-        eps_pred = self.forward_flow_pred_function(x_i, t, train=False)
+        eps_pred = self.forward_flow_pred_function(x_i, t, train=False,y=y)
         log_model_variance = batch_t(log_model_variance_steps[i],b)
       
       # get x_start from eps
@@ -749,11 +769,11 @@ class SimDDPM(nn.Module):
 
     return denoiser
 
-  def forward_flow_pred_function(self, z, t, augment_label=None, train: bool = True):  # EDM
+  def forward_flow_pred_function(self, z, t, augment_label=None,y=None, train: bool = True):  # EDM
 
     # t_cond = jnp.zeros_like(t) if self.no_condition_t else jnp.log(t * 999)
     t_cond = self.t_preprocess_fn(t).astype(self.dtype)
-    u_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
+    u_pred = self.net(z, t_cond, augment_label=augment_label, train=train,y=y)
     if self.learn_var:
       return jnp.split(u_pred, 2, axis=-1)
     return u_pred
@@ -791,6 +811,7 @@ class SimDDPM(nn.Module):
 
     assert noise_batch.shape == x.shape
     assert t_batch.shape == (bz,)
+    assert labels.shape == (bz,)
     # t_batch = t_batch.reshape(bz, 1, 1, 1)
 
     # -----------------------------------------------------------------
@@ -923,6 +944,6 @@ class SimDDPM(nn.Module):
     # initialization only
     t = jnp.ones((imgs.shape[0],))
     augment_label = jnp.ones((imgs.shape[0], 9)) if self.use_aug_label else None  # fixed augment_dim # TODO: what is this?
-    out = self.net(imgs, t, augment_label) # TODO: whether to add train=train
+    out = self.net(imgs, t, augment_label,y=jnp.ones((imgs.shape[0],))) # TODO: whether to add train=train
     out_ema = None   # no need to initialize it here
     return out, out_ema

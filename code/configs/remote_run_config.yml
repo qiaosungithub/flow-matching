@@ -50,6 +50,7 @@ model:
     # ode_solver: scipy # rk45
     
     no_condition_t: False
+    class_conditional: True
     # t_condition_method: not # for No T experiments
     t_condition_method: direct # default: log999
 dataset:

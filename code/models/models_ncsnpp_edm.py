@@ -59,6 +59,8 @@ class NCSNpp(nn.Module):
         rngs = None,
         use_aug_label = False,
         aug_label_dim = None,
+        class_conditional = False,
+        num_classes = 0,
         **kwargs
     ):
 
@@ -75,6 +77,7 @@ class NCSNpp(nn.Module):
         self.rngs = rngs
         self.use_aug_label = use_aug_label
         self.aug_label_dim = aug_label_dim
+        self.class_conditional = class_conditional
 
         self.act = act = nn.swish
         self.conditional = conditional = True  # noise-conditional
@@ -113,6 +116,11 @@ class NCSNpp(nn.Module):
         if use_aug_label:
             assert aug_label_dim is not None
             self.augemb_layer = nn.Linear(aug_label_dim, nf * 2, kernel_init=default_initializer(), use_bias=False)
+            
+        #################### class condition ############################
+        if class_conditional:
+            self.class_embed = nn.Embed(num_embeddings=num_classes,features=nf * 4, embedding_init=nn.initializers.normal(stddev=1),rngs=rngs)
+        
         #################### noise condition ############################
         if conditional:
             input_temb_dim = nf * 2 if use_aug_label else nf
@@ -297,7 +305,7 @@ class NCSNpp(nn.Module):
                         conv3x3(in_c, out_channels * out_channel_multiple, init_scale=init_scale, rngs=rngs)
                 )
 
-    def __call__(self, x, time_cond, augment_label=None, train=True, verbose=False): # turn off verbose here
+    def __call__(self, x, time_cond, augment_label=None,y=None, train=True, verbose=False): # turn off verbose here
 
         # print("in call of ncsnpp model")
         # print("x.shape", x.shape)
@@ -305,6 +313,8 @@ class NCSNpp(nn.Module):
         assert time_cond.ndim == 1, 'get wrong time shape {}'.format(time_cond.shape)  # only support 1-d time condition
         assert time_cond.shape[0] == x.shape[0]
         # assert x.shape[-1] == self.out_channels or x.shape[-1] * 2== self.out_channels # assert个牛魔王
+        
+        if y is not None: assert self.class_conditional
 
         logging_fn = logging.info if verbose else lambda x: None
 
@@ -328,7 +338,7 @@ class NCSNpp(nn.Module):
         # --------------------
 
         # timestep/noise_level embedding; only for continuous training
-        temb = self.temb_layer(time_cond)
+        temb = self.temb_layer(time_cond) # this is just sin/cos
 
         if augment_label is not None:
             assert self.use_aug_label
@@ -337,11 +347,15 @@ class NCSNpp(nn.Module):
             temb += aemb 
 
         if self.conditional:
-            temb = self.cond_MLP(temb)
+            temb = self.cond_MLP(temb) # this pass through a MLP
         else:
             raise NotImplementedError
             temb = None
-
+        
+        if y is not None:
+            assert self.class_conditional
+            assert y.shape == (x.shape[0],)
+            temb += self.class_embed(y)
 
         # utility function to count number of parameters
         def pms(self, name):
