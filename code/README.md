@@ -2,7 +2,7 @@
 
 This code is copied from Kaiming's rectified flow, but we want to change it into nnx for further use.
 
-This `FM` branch serves as the main branch of the repo. Any other modifications are based on this branch, and will merge useful stuff into this branch.
+This `FM-nnx` branch serves as the main branch of the repo. Any other modifications are based on this branch, and will merge useful stuff into this branch.
 
 ## FID mu and sigma
 
@@ -29,4 +29,6 @@ DDIM: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241202_214940_zd8s4j_k
 
 ## datasets
 
-We now use pytorch dataset. To use tfds, ???
+We now use pytorch dataset. To use tfds, switch to the `FM-nnx-tfds` branch.
+
+__TODO__: change all other branches to use pytorch dataset.
