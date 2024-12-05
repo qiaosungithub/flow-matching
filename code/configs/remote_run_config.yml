@@ -52,6 +52,7 @@ model:
     # CT
     fourier_scale: 0.02 # CT
     embedding_type: positional # TODO: try fourier
+    t_sampling: icm # or original
 ct:
     start_scales: 10
     end_scales: 1280

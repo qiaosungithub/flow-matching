@@ -66,12 +66,15 @@ def get_config():
   model.num_diffusion_timesteps = 1000
 
   # CT
+  model.P_mean = - 1.2
+  model.P_std = 1.2
   model.ema_target = False
   model.weighting = 'icm'
   model.loss_type = 'huber'
   model.huber_c = 0.03
   model.embedding_type = 'positional'
   model.fourier_scale = 0.02
+  model.t_sampling = 'original'
 
   config.aug = aug = ml_collections.ConfigDict()
   aug.use_edm_aug = False

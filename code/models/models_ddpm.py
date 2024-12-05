@@ -36,9 +36,7 @@ from models.models_ncsnpp_edm import NCSNpp as NCSNppEDM
 # import models.jcm.sde_lib as sde_lib
 from models.jcm.sde_lib import batch_mul
 
-
-
-ModuleDef = Any
+from jax.scipy.special import erf
 
 def get_beta_schedule(beta_schedule, *, beta_start, beta_end, num_diffusion_timesteps):
     """
@@ -153,6 +151,49 @@ def generate(state: NNXTrainState, model, rng, n_sample):
 
   return outputs
 
+def sample_icm_t(
+  samples_shape,
+  model,
+  scale: int,
+  rng,
+) -> jnp.array:
+  """
+  from improved CM. util function
+  ----------
+  Draws timesteps from a lognormal distribution.
+
+  Parameters
+  ----------
+  samples_shape: the shape of the samples to draw
+  model
+  scale: a scalar
+  rng: a key
+
+  Returns
+  -------
+  Tensor
+      Timesteps drawn from the lognormal distribution.
+
+  References
+  ----------
+  [1] [Improved Techniques For Consistency Training](https://arxiv.org/pdf/2310.14189.pdf)
+  """
+  # first compute sigma
+  indices = jnp.arange(scale) # [0, scale)
+  sigmas = model.compute_t(indices, scale)
+
+  mean = model.P_mean
+  std = model.P_std
+
+  pdf = erf((jnp.log(sigmas[1:]) - mean) / (std * jnp.sqrt(2))) - erf(
+        (jnp.log(sigmas[:-1]) - mean) / (std * jnp.sqrt(2))
+    )
+  pdf = pdf / jnp.sum(pdf)
+
+  timesteps = jax.random.choice(rng, a=len(pdf), shape=samples_shape, p=pdf)
+
+  return timesteps
+
 class SimDDPM(nn.Module):
   """Simple DDPM."""
 
@@ -185,6 +226,7 @@ class SimDDPM(nn.Module):
     huber_c = 0.03, # CT
     embedding_type = 'fourier', # CT
     fourier_scale = 16, # CT
+    t_sampling='original', # CT
     **kwargs
   ):
     self.image_size = image_size
@@ -215,6 +257,7 @@ class SimDDPM(nn.Module):
     self.huber_c = huber_c
     self.embedding_type = embedding_type
     self.fourier_scale = fourier_scale
+    self.t_sampling = t_sampling
 
     assert not ema_target, "我写了"
 
@@ -533,7 +576,7 @@ class SimDDPM(nn.Module):
     You should first sample the noise and t and input them
     ---CT---
     scales: the number of scales
-    here the input t_batch is the indices batch, 0 ~ scales-1
+    here the input t_batch is the indices batch, 0 ~ scales-2
     """
     assert augment_label is None, "不支持"
     imgs = imgs.astype(self.dtype)
@@ -545,7 +588,7 @@ class SimDDPM(nn.Module):
     assert t_batch.shape == (bz,)
 
     # -----------------------------------------------------------------
-
+    # here t, t2 stands for noise level
     t = self.compute_t(t_batch, scales)
     t2 = self.compute_t(t_batch + 1, scales)
 

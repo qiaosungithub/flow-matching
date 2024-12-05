@@ -44,7 +44,7 @@ import utils.fid_util as fid_util
 import utils.sample_util as sample_util
 
 import models.models_ddpm as models_ddpm
-from models.models_ddpm import generate, ct_ema_scales_schedules
+from models.models_ddpm import generate, ct_ema_scales_schedules, sample_icm_t
 
 NUM_CLASSES = 10
 
@@ -170,7 +170,7 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
   return new_state, metrics, images
 
 
-def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, ema_scales_fn, model_config):
+def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, ema_scales_fn, model): # TODO: change the API
   """
   CT version
   ---
@@ -194,7 +194,10 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, ema_sca
   # print("images.shape: ", images.shape) # (8, 64, 32, 32, 3)
   b1, b2 = images.shape[0], images.shape[1]
   noise_batch = jax.random.normal(rngs.train(), images.shape)
-  t_batch = jax.random.randint(rngs.train(), (b1, b2), minval=0, maxval=scales[0]-1)
+  if model.t_sampling == 'original':
+    t_batch = jax.random.randint(rngs.train(), (b1, b2), minval=0, maxval=scales[0]-1)
+  elif model.t_sampling == 'icm':
+    t_batch = sample_icm_t((b1, b2), model, scales[0], rngs.train())
 
   new_state, metrics, images = train_step_compute_fn(state, batch, noise_batch, t_batch)
 
@@ -732,7 +735,7 @@ def train_and_evaluate(
       #   exit(114514)
       # continue
 
-      state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute, ema_scales_fn, model_config)
+      state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute, ema_scales_fn, model)
       
       if epoch == epoch_offset and n_batch == 0:
         log_for_0('p_train_step compiled in {}s'.format(time.time() - train_metrics_last_t))
