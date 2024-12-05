@@ -69,6 +69,7 @@ def get_config():
   model.ema_target = False
   model.weighting = 'icm'
   model.loss_type = 'huber'
+  model.huber_c = 0.03
   model.embedding_type = 'positional'
   model.fourier_scale = 0.02
 

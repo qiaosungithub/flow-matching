@@ -561,6 +561,8 @@ class SimDDPM(nn.Module):
     nn.reseed(self, dropout=rng_dropout_this_step)
     Ft2 = self.forward_consistency_function(x_t2, t2) # Here we do not support ema target
 
+    Ft2 = jax.lax.stop_gradient(Ft2)  # stop gradient here
+
     diffs = Ft - Ft2
 
     if self.weighting == 'uniform':
