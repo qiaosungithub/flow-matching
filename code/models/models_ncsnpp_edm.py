@@ -314,7 +314,7 @@ class NCSNpp(nn.Module):
         assert time_cond.shape[0] == x.shape[0]
         # assert x.shape[-1] == self.out_channels or x.shape[-1] * 2== self.out_channels # assert个牛魔王
         
-        if y is not None: assert self.class_conditional
+        assert (y is None) == (not self.class_conditional)
 
         logging_fn = logging.info if verbose else lambda x: None
 

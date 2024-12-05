@@ -272,6 +272,7 @@ def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o,label_type=
   ---
   return shape: (n_sample, 32, 32, 3)
   """
+  # assert False, n_sample
 
   # prepare schedule
   num_steps = model.n_T
@@ -289,7 +290,8 @@ def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o,label_type=
     y = jax.random.randint(只能用一次啊, (n_sample,), 0, model.num_classes)
   elif label_type == 'order':
     y = jnp.arange(n_sample) % model.num_classes
-  elif label_type == 'none':
+    # y = jnp.ones((n_sample,), dtype=jnp.int32) * 9
+  elif label_type == 'none': # no condition
     y = None
   else:
     raise NotImplementedError(f'Unknown label type: {label_type}')
@@ -394,6 +396,7 @@ def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o,label_type=
     # return images, denoised
   
     return images
+    # return (y / 5 - 1).reshape(-1,1,1,1).repeat(32, axis=1).repeat(32, axis=2).repeat(3, axis=3).astype(jnp.float32)
   
   else:
     raise NotImplementedError
@@ -844,9 +847,9 @@ class SimDDPM(nn.Module):
 
     # forward network
     if self.learn_var:
-      u_pred, model_var_output = self.forward_flow_pred_function(x_mixtue, t)
+      u_pred, model_var_output = self.forward_flow_pred_function(x_mixtue, t,y=labels)
     else:
-      u_pred = self.forward_flow_pred_function(x_mixtue, t)
+      u_pred = self.forward_flow_pred_function(x_mixtue, t,y=labels)
 
     # loss
     loss = (v_target - u_pred)**2

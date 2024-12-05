@@ -232,7 +232,7 @@ def sample_step(state, sample_idx, model, rng_init, device_batch_size, config,zh
   """
   rng_sample = random.fold_in(rng_init, sample_idx)  # fold in sample_idx
   # images, denoised = generate(state, model, rng_sample, n_sample=device_batch_size, config=config,zhh_o=zhh_o) # for debug
-  images = generate(state, model, rng_sample, n_sample=device_batch_size, config=config,zhh_o=zhh_o,label_type='order' if option=='vis' else 'random')
+  images = generate(state, model, rng_sample, n_sample=device_batch_size, config=config,zhh_o=zhh_o,label_type=('order' if option=='vis' else 'random') if config.model.class_conditional else 'none')
 
   images_all = lax.all_gather(images, axis_name='batch')  # each device has a copy  
   images_all = images_all.reshape(-1, *images_all.shape[2:])
@@ -723,6 +723,7 @@ def train_and_evaluate(
       batch = prepare_batch_data(batch, config)
       # batch['label'].shape: (b1, b2), each element is 0-9
       ep = step * config.batch_size / yierbayiyiliuqi
+      # ep = epoch + n_batch * config.batch_size / yierbayiyiliuqi
 
       # img = batch['image']
       # print(f"img.shape: {img.shape}")
@@ -994,23 +995,23 @@ def just_evaluate(
       partial(sample_step, 
               model=model, 
               rng_init=random.PRNGKey(0), 
-              device_batch_size=config.fid.device_batch_size, 
+              device_batch_size=100, 
               config=config,
               zhh_o = create_zhh_SAMPLING_diffusion_schedule(config),
-              option='vis'
+              option='vis',
               # MEAN_RGB=input_pipeline.MEAN_RGB, 
               # STDDEV_RGB=input_pipeline.STDDEV_RGB
       ),
       axis_name='batch'
     )
 
-    def run_p_sample_step(p_sample_step, state, sample_idx):
+    def run_p_sample_step(p_sample_step_, state, sample_idx):
       """
       state: train state
       """
       # redefine the interface
       # images, denoised = p_sample_step(state, sample_idx=sample_idx) # debug
-      images = p_sample_step(state, sample_idx=sample_idx)
+      images = p_sample_step_(state, sample_idx=sample_idx)
       # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
       jax.random.normal(random.key(0), ()).block_until_ready()
       # return images[0], denoised[0]  # images have been all /gathered
@@ -1055,6 +1056,7 @@ def just_evaluate(
     # sync batch statistics across replicas
     # eval_state = eval_state.replace(params=model_avg)
     vis = run_p_sample_step(p_visualize_sample_step, eval_state, vis_sample_idx)
+    # assert False, vis.shape
     vis = make_grid_visualization(vis,grid=10,max_bz=10)
     vis = jax.device_get(vis) # np.ndarray
     vis = vis[0]
