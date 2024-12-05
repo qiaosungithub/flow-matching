@@ -83,6 +83,9 @@ class NNXTrainState(FlaxTrainState):
 
 
 def ct_ema_scales_schedules(step, config, steps_per_epoch):
+  """
+  ICM improved version
+  """
   start_ema = float(config.ct.start_ema)
   start_scales = int(config.ct.start_scales)
   end_scales = int(config.ct.end_scales)
@@ -185,8 +188,8 @@ def sample_icm_t(
   mean = model.P_mean
   std = model.P_std
 
-  pdf = erf((jnp.log(sigmas[1:]) - mean) / (std * jnp.sqrt(2))) - erf(
-        (jnp.log(sigmas[:-1]) - mean) / (std * jnp.sqrt(2))
+  pdf = erf((jnp.log(sigmas[:-1]) - mean) / (std * jnp.sqrt(2))) - erf(
+        (jnp.log(sigmas[1:]) - mean) / (std * jnp.sqrt(2))
     )
   pdf = pdf / jnp.sum(pdf)
 
@@ -312,6 +315,9 @@ class SimDDPM(nn.Module):
     return vis
 
   def compute_t(self, indices, scales):
+    """
+    from big noise to small noise, which is different with Song's code
+    """
     # t_max = 80
     # t_min = 0.002
     # rho = 7.0
@@ -528,7 +534,9 @@ class SimDDPM(nn.Module):
     cond_t = jnp.zeros_like(t) if self.no_condition_t else 0.25 * jnp.log(t)  # noise cond of edm
 
     # forward network
-    in_x = batch_mul(x, c_in)  # input scaling of edm
+    # TODO: 我好像没看到 Song 的代码里面有 c_in
+    # in_x = batch_mul(x, c_in)  # input scaling of edm
+    in_x = x
     
     assert not ema, "我写了"
     net = self.net if not ema else self.net_ema
@@ -618,7 +626,7 @@ class SimDDPM(nn.Module):
     if self.loss_type == 'l2':
       loss = diffs ** 2
       loss = jnp.mean(loss, axis=(1, 2, 3))  # mean over pixels following jcm's code
-    elif self.loss_type == 'huber_bug':  # bugged?
+    elif self.loss_type == 'huber_bug':  # bugged? TODO: try both, this is the same as Song's code
       loss = (diffs ** 2 + self.huber_c ** 2) ** .5 - self.huber_c
       loss = jnp.mean(loss, axis=(1, 2, 3))  # mean over pixels in jcm
     elif self.loss_type == 'huber':

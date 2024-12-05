@@ -198,6 +198,8 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, ema_sca
     t_batch = jax.random.randint(rngs.train(), (b1, b2), minval=0, maxval=scales[0]-1)
   elif model.t_sampling == 'icm':
     t_batch = sample_icm_t((b1, b2), model, scales[0], rngs.train())
+  else:
+    raise NotImplementedError
 
   new_state, metrics, images = train_step_compute_fn(state, batch, noise_batch, t_batch)
 
