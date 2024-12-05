@@ -50,7 +50,8 @@ model:
     no_condition_t: False
     # CT
     fourier_scale: 0.02 # CT
-    embedding_type: positional # TODO: try fourier
+    # embedding_type: positional 
+    embedding_type: fourier 
     t_sampling: icm # or original
 ct:
     start_scales: 10
@@ -74,10 +75,10 @@ evalu:
     sample: True
 batch_size: 512
 num_epochs: 400
-learning_rate: 0.0004 # CT
+learning_rate: 0.0001 # CT
 lr_schedule: const
 weight_decay: 0
-optimizer: adamw
+optimizer: radam
 adam_b2: 0.999
 grad_clip: 0.0
 warmup_epochs: 0 # CT

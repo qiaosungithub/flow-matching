@@ -34,16 +34,16 @@ default_init = layers.default_init
 class GaussianFourierProjection(nn.Module):
     """Gaussian Fourier embeddings for noise levels."""
 
-    def __init__(self, embedding_size = 256, scale = 1.0, freqs_name = 'freqs', rngs=None):
+    def __init__(self, embedding_size = 256, scale = 1.0, rngs=None):
         self.embedding_size = embedding_size
         self.scale = scale
-        self.freqs_name = freqs_name
         self.rngs = rngs
 
         self.freqs = nn.Embed(num_embeddings=1, features=self.embedding_size, embedding_init=jax.nn.initializers.normal(stddev=self.scale), rngs=rngs)
 
     def __call__(self, x):
-        freqs = jax.lax.stop_gradient(self.freqs)
+        freqs = jax.lax.stop_gradient(self.freqs(jnp.zeros(1, dtype=jnp.int32)))
+        freqs = jnp.squeeze(freqs, axis=0)
         assert x.ndim == 1
         x_proj = x[:, None] * freqs[None, :] * 2 * jnp.pi
 
