@@ -554,8 +554,11 @@ class SimDDPM(nn.Module):
 
     x_t = x + batch_mul(t, z)
     x_t2 = x + batch_mul(t2, z)
-    # TODO: how to make sure that the rng is the same???
+    # make sure that the rng is the same
+    rng_dropout_this_step = self.rngs.dropout()
+    nn.reseed(self, dropout=rng_dropout_this_step)
     Ft = self.forward_consistency_function(x_t, t)
+    nn.reseed(self, dropout=rng_dropout_this_step)
     Ft2 = self.forward_consistency_function(x_t2, t2) # Here we do not support ema target
 
     diffs = Ft - Ft2
