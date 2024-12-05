@@ -616,7 +616,7 @@ class SimDDPM(nn.Module):
     # v_target = jnp.ones_like(x_data)  # dummy
 
     # create z (as the network input)
-    z = batch_mul(1 - t, x_data) + batch_mul(t, x_prior)
+    z = batch_mul(t, x_data) + batch_mul(1 - t, x_prior) # FM
 
     # forward network
     u_pred = self.forward_flow_pred_function(z, t)
