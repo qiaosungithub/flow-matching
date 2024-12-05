@@ -56,7 +56,7 @@ model:
     t_condition_method: direct # default: log999
 dataset:
     name: cifar10
-    # root: CIFAR # pytorch
+    root: CIFAR # pytorch
     prefetch_factor: 2
     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
     cache: True
@@ -66,7 +66,7 @@ fid:
     eval_only: False
     fid_per_epoch: 200
     num_samples: 50000
-    # cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
+    cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
 evalu:
     ema: True
     sample: True
