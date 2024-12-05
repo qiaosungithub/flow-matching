@@ -77,8 +77,8 @@ num_epochs: 2000
 learning_rate: 0.0004 # CT
 lr_schedule: const
 weight_decay: 0.0
-optimizer: adamw # TODO: try adam
-adam_b2: 0.95
+optimizer: radam # TODO: radam / adamw?
+adam_b2: 0.999
 grad_clip: 0.0
 warmup_epochs: 0 # CT
 log_per_step: 100

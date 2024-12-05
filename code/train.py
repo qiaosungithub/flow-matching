@@ -752,7 +752,8 @@ def train_and_evaluate(
               'loss_train': loss_to_display, 
               'lr': train_metrics['lr'], 
               'step': step, 
-              'step_per_sec': step_per_sec})
+              'step_per_sec': step_per_sec,
+              'scale': train_metrics['scales']})
           # log_for_0('epoch: {} step: {} loss: {}, step_per_sec: {}'.format(ep, step, loss_to_display, step_per_sec))
           log_for_0(f'step: {step}, loss: {loss_to_display}, step_per_sec: {step_per_sec}')
           train_metrics_buffer = []
