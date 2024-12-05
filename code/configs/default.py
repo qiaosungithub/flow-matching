@@ -59,11 +59,11 @@ def get_config():
 
   model.no_condition_t = False
 
-  # DDIM
-  model.beta_schedule = 'linear'
-  model.beta_start = 1e-4
-  model.beta_end = 0.02
-  model.num_diffusion_timesteps = 1000
+  # # DDIM
+  # model.beta_schedule = 'linear'
+  # model.beta_start = 1e-4
+  # model.beta_end = 0.02
+  # model.num_diffusion_timesteps = 1000
 
   # CT
   model.P_mean = - 1.2
