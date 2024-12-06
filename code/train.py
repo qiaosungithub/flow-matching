@@ -199,6 +199,11 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, ema_sca
   if model.t_sampling == 'original':
     t_batch = jax.random.randint(rngs.train(), (b1, b2), minval=0, maxval=scales[0]-1)
   elif model.t_sampling == 'icm':
+    # #### test
+    # for i in range(8):
+    #   s = 10 * (2 ** i)
+    #   t_batch = sample_icm_t((b1, b2), model, s, rngs.train())
+    # exit("6.7900")
     t_batch = sample_icm_t((b1, b2), model, scales[0], rngs.train())
   else:
     raise NotImplementedError

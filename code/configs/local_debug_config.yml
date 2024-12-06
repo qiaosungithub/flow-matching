@@ -66,6 +66,7 @@ dataset:
 aug: 
     use_edm_aug: False # TODO: enable this and test
 fid:
+    on_use: False # 不想 initialize InceptionV3
     eval_only: False
     fid_per_epoch: 100
     num_samples: 1000

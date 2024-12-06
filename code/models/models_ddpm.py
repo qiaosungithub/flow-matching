@@ -193,7 +193,15 @@ def sample_icm_t(
     )
   pdf = pdf / jnp.sum(pdf)
 
+  # print(f"mean: {mean}")
+  # print(f"std: {std}")
+
+  # print(f"sigmas: {sigmas}")
+  # print(f"pdf: {pdf}")
+
   timesteps = jax.random.choice(rng, a=len(pdf), shape=samples_shape, p=pdf)
+
+  # print(f"timesteps: {timesteps}")
 
   return timesteps
 
@@ -205,8 +213,6 @@ class SimDDPM(nn.Module):
     base_width,
     num_classes = 10,
     out_channels = 1,
-    P_std = 1.2,
-    P_mean = -1.2,
     n_T = 18,  # inference steps
     net_type = 'ncsnpp',
     dropout = 0.0,
@@ -273,6 +279,8 @@ class SimDDPM(nn.Module):
     # )
     # self.sde = sde
     # This is not used in flow matching
+    self.P_mean = -1.1
+    self.P_std = 2 # These must be fixed
     self.data_std = 0.5
     self.t_min = 0.002
     self.t_max = 80.0
