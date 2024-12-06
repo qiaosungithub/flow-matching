@@ -54,6 +54,7 @@ model:
     embedding_type: positional
     # embedding_type: fourier
     t_sampling: icm # or original
+    loss_type: "huber"
 ct:
     start_scales: 10
     end_scales: 1280
@@ -68,14 +69,14 @@ aug:
     use_edm_aug: False
 fid:
     eval_only: False
-    fid_per_epoch: 50
+    fid_per_epoch: 200
     num_samples: 50000
     cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
 evalu:
     ema: True
     sample: False
-batch_size: 512
-num_epochs: 3000
+batch_size: 2048
+num_epochs: 2000
 learning_rate: 0.0004
 # learning_rate: 0.0001
 lr_schedule: const
@@ -84,9 +85,9 @@ optimizer: radam # CT, TODO: radam / adamw?
 adam_b2: 0.999
 grad_clip: 0.0
 warmup_epochs: 0 # CT
-log_per_step: 100
+log_per_step: 20
 visualize_per_epoch: 50
-eval_per_epoch: 50
+eval_per_epoch: 100
 checkpoint_per_epoch: 500
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241202_214940_zd8s4j_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_48500
 

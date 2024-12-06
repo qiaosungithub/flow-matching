@@ -37,6 +37,7 @@ from models.models_ncsnpp_edm import NCSNpp as NCSNppEDM
 from models.jcm.sde_lib import batch_mul
 
 from jax.scipy.special import erf
+import math
 
 def get_beta_schedule(beta_schedule, *, beta_start, beta_end, num_diffusion_timesteps):
     """
@@ -91,7 +92,7 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
   end_scales = int(config.ct.end_scales)
   total_steps = config.num_epochs * steps_per_epoch
 
-  if config.ct.n_schedule == 'orignal':
+  if config.ct.n_schedule == 'orignal': # NOTE: 其实敲对了
     scales = jnp.ceil(jnp.sqrt((step / total_steps) * ((end_scales + 1) ** 2 - start_scales**2) + start_scales**2) - 1).astype(jnp.int32)
     scales = jnp.maximum(scales, 1)
   elif config.ct.n_schedule == 'exp':
@@ -99,7 +100,7 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
     s1 = end_scales
     K = total_steps
     K_ = jnp.floor(K / (jnp.log2(jnp.floor(s1 / s0)) + 1))
-    scales = jnp.minimum(s0 * 2 ** jnp.floor(step / K_), s1)
+    scales = jnp.minimum(s0 * (2 ** jnp.floor(step / K_)), s1)
   else:
     raise ValueError(f'Unknown schedule: {config.ct.n_schedule}')
   
@@ -133,6 +134,7 @@ def edm_ema_scales_schedules(step, config, steps_per_epoch):
 def generate(state: NNXTrainState, model, rng, n_sample):
   """
   Generate samples from the model
+  一步生成爽
 
   Here we tend to not use nnx.Rngs
   state: maybe a train state
@@ -182,15 +184,19 @@ def sample_icm_t(
   [1] [Improved Techniques For Consistency Training](https://arxiv.org/pdf/2310.14189.pdf)
   """
   # first compute sigma
-  indices = jnp.arange(scale) # [0, scale)
+  indices = jnp.arange(scale) + 1 # [1, scale]
   sigmas = model.compute_t(indices, scale)
 
   mean = model.P_mean
   std = model.P_std
 
-  pdf = erf((jnp.log(sigmas[:-1]) - mean) / (std * jnp.sqrt(2))) - erf(
-        (jnp.log(sigmas[1:]) - mean) / (std * jnp.sqrt(2))
+  # pdf = erf((jnp.log(sigmas[:-1]) - mean) / (std * jnp.sqrt(2))) - erf(
+  #       (jnp.log(sigmas[1:]) - mean) / (std * jnp.sqrt(2))
+  #   )
+  pdf = erf((jnp.log(sigmas[1:]) - mean) / (std * jnp.sqrt(2))) - erf(
+        (jnp.log(sigmas[:-1]) - mean) / (std * jnp.sqrt(2))
     )
+  
   pdf = pdf / jnp.sum(pdf)
 
   # print(f"mean: {mean}")
@@ -199,7 +205,7 @@ def sample_icm_t(
   # print(f"sigmas: {sigmas}")
   # print(f"pdf: {pdf}")
 
-  timesteps = jax.random.choice(rng, a=len(pdf), shape=samples_shape, p=pdf)
+  timesteps = jax.random.choice(rng, a=jnp.arange(1,scale), shape=samples_shape, p=pdf) # i is chosen from [1, scale-1]
 
   # print(f"timesteps: {timesteps}")
 
@@ -239,6 +245,7 @@ class SimDDPM(nn.Module):
     **kwargs
   ):
     self.image_size = image_size
+    assert image_size == 32, "only support 32"
     self.base_width = base_width
     self.num_classes = num_classes
     self.out_channels = out_channels
@@ -322,13 +329,19 @@ class SimDDPM(nn.Module):
 
   def compute_t(self, indices, scales):
     """
+    scales \in [1, scales]
+    
     from big noise to small noise, which is different with Song's code
+    那其实就要不一样，不高兴的
     """
     # t_max = 80
     # t_min = 0.002
     # rho = 7.0
-    t = self.t_max ** (1 / self.rho) + indices / (scales - 1) * (
-        self.t_min ** (1 / self.rho) - self.t_max ** (1 / self.rho)
+    # t = self.t_max ** (1 / self.rho) + indices / (scales - 1) * (
+    #     self.t_min ** (1 / self.rho) - self.t_max ** (1 / self.rho)
+    # )
+    t = self.t_min ** (1 / self.rho) + (indices - 1) / (scales - 1) * (
+        self.t_max ** (1 / self.rho) - self.t_min ** (1 / self.rho)
     )
     t = t**self.rho
     return t
@@ -533,11 +546,12 @@ class SimDDPM(nn.Module):
     # return x_next, x0_t # debug
 
   def forward_consistency_function(self, x, t, ema=False, rng=None, train: bool = True):
-    c_skip = self.data_std ** 2 / ((t - self.t_min) ** 2 + self.data_std ** 2)
+    c_skip = self.data_std ** 2 / ((t - self.t_min) ** 2 + self.data_std ** 2) #
     c_out = (t - self.t_min) * self.data_std / jnp.sqrt(t ** 2 + self.data_std ** 2)
 
     c_in = 1 / jnp.sqrt(t ** 2 + self.data_std ** 2)
-    cond_t = jnp.zeros_like(t) if self.no_condition_t else 0.25 * jnp.log(t)  # noise cond of edm
+    # cond_t = jnp.zeros_like(t) if self.no_condition_t else 0.25 * jnp.log(t)  # noise cond of edm
+    cond_t = 1000 * 0.25 * jnp.log(t + 1e-44) # 仓库里嫖的
 
     # forward network
     # TODO: 我好像没看到 Song 的代码里面有 c_in
@@ -545,8 +559,8 @@ class SimDDPM(nn.Module):
     in_x = x
     
     assert not ema, "我写了"
-    net = self.net if not ema else self.net_ema
-    denoiser = net(in_x, cond_t, train=train)
+    # net = self.net if not ema else self.net_ema
+    denoiser = self.net(batch_mul(c_in,in_x), cond_t, train=train)
 
     denoiser = batch_mul(denoiser, c_out)
     skip_x = batch_mul(x, c_skip)
@@ -618,14 +632,15 @@ class SimDDPM(nn.Module):
     nn.reseed(self, dropout=rng_dropout_this_step)
     Ft2 = self.forward_consistency_function(x_t2, t2) # Here we do not support ema target
 
-    Ft2 = jax.lax.stop_gradient(Ft2)  # stop gradient here
+    # Ft2 = jax.lax.stop_gradient(Ft2)  # stop gradient here
+    Ft = jax.lax.stop_gradient(Ft) # stop gradient here
 
     diffs = Ft - Ft2
 
     if self.weighting == 'uniform':
       weight = jnp.ones_like(t)
     elif self.weighting == 'icm':
-      weight = 1. / (t - t2)
+      weight = 1. / (t2 - t)
     else:
       raise ValueError(f'Unknown weighting: {self.weighting}')
 
@@ -638,7 +653,11 @@ class SimDDPM(nn.Module):
     elif self.loss_type == 'huber':
       l2 = diffs ** 2
       l2 = jnp.sum(l2, axis=(1, 2, 3))  # sum over pixels following l2's definition
-      loss = (l2 + self.huber_c ** 2) ** .5 - self.huber_c
+      # C = 0.00054 * math.sqrt(32*32*3)
+      C = 0.03
+      loss = jnp.sqrt(l2 + C ** 2) - C
+      # we then devide back
+      loss = loss / (32 * 32 * 3)
     else:
       raise ValueError(f'Unknown loss type: {self.loss_type}')
 
