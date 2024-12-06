@@ -246,7 +246,7 @@ class SimDDPM(nn.Module):
     num_classes = 10,
     out_channels = 1,
     P_std = 1.2,
-    P_mean = -1.2,
+    P_mean = -1.2, # P_mean and P_std are for EDM use
     n_T = 18,  # inference steps
     net_type = 'ncsnpp',
     dropout = 0.0,
@@ -372,8 +372,6 @@ class SimDDPM(nn.Module):
       x_next = self.sample_one_step_euler(x_i, i) 
     elif self.sampler == 'heun':
       x_next = self.sample_one_step_heun(x_i, i) 
-    elif self.sampler == 'edm':
-      raise LookupError("找对地方了")
     else:
       raise NotImplementedError
 
@@ -403,7 +401,6 @@ class SimDDPM(nn.Module):
     t_next = (i + 1) / self.n_T  # t start from 0 (t = 0 is noise here)
     t_next = t_next * (1 - self.eps) + self.eps
 
-    # TODO{kaiming}: revisit S_churn
     t_hat = t_cur
     x_hat = x_cur  # x_hat is always x_cur when gamma=0
 
@@ -447,7 +444,6 @@ class SimDDPM(nn.Module):
     t_cur = t_steps[i]
     t_next = t_steps[i + 1]
 
-    # TODO{kaiming}: revisit S_churn
     t_hat = t_cur
     x_hat = x_cur  # x_hat is always x_cur when gamma=0
 
@@ -570,6 +566,7 @@ class SimDDPM(nn.Module):
   def forward_edm_denoising_function(self, x, sigma, augment_label=None, train: bool = True):  # EDM
     """
     code from edm
+    for FM API use
     ---
     input: x (noisy image, =x+sigma*noise), sigma (condition)
     We hope this function operates D(x+sigma*noise) = x
@@ -607,7 +604,7 @@ class SimDDPM(nn.Module):
     x_prior = noise_batch
 
     # sample t step
-    t = t_batch # in DDIM, t may be discrete
+    t = t_batch
     eps = 1e-3
     t = t * (1 - eps) + eps
 
@@ -616,7 +613,6 @@ class SimDDPM(nn.Module):
     # v_target = jnp.ones_like(x_data)  # dummy
 
     # create z (as the network input)
-    # z = batch_mul(1 - t, x_data) + batch_mul(t, x_prior)
     z = batch_mul(t, x_data) + batch_mul(1 - t, x_prior)
 
     # forward network
