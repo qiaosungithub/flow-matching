@@ -614,7 +614,7 @@ class SimDDPM(nn.Module):
     ---
     You should first sample the noise and t and input them
     ---
-    t_batch: here is normal (bs,), we will process it into sigma batch
+    t_batch: here is normal (bs,), we will process it into sigma batch. NOTE: this is normal, not uniform
     """
     imgs = imgs.astype(self.dtype)
     gt = imgs

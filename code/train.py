@@ -210,7 +210,8 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, model_c
   # print("images.shape: ", images.shape) # (8, 64, 32, 32, 3)
   b1, b2 = images.shape[0], images.shape[1]
   noise_batch = jax.random.normal(rngs.train(), images.shape)
-  t_batch = jax.random.uniform(rngs.train(), (b1, b2))
+  # EDM: t_batch is normal
+  t_batch = jax.random.normal(rngs.train(), (b1, b2)) 
 
   new_state, metrics, images = train_step_compute_fn(state, batch, noise_batch, t_batch)
 

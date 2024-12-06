@@ -36,7 +36,7 @@ model:
     out_channels: 3
     base_width: 4
     n_T: 50
-    use_aug_label: False
+    use_aug_label: True
     dropout: 0.13 # EDM
     net_type: ncsnppedm
     average_loss: False # use average or sum for loss
@@ -57,6 +57,7 @@ dataset:
 aug: 
     use_edm_aug: True
 fid:
+    on_use: False # we don't want to initialize InceptionV3
     eval_only: False
     fid_per_epoch: 100
     num_samples: 1000

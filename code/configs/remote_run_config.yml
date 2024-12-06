@@ -35,7 +35,7 @@ model:
     out_channels: 3
     base_width: 128
     n_T: 50
-    use_aug_label: False
+    use_aug_label: True
     dropout: 0.13 # EDM
     net_type: ncsnppedm
     average_loss: False # use average or sum for loss
