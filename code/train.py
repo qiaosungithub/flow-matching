@@ -676,6 +676,9 @@ def train_and_evaluate(
       batch = prepare_batch_data(batch, config)
       ep = step / steps_per_epoch
 
+      # print(f"aug label dim: {batch['augment_label'].shape}")
+      # continue # debug
+
       # img = batch['image']
       # print(f"img.shape: {img.shape}")
       # print(f'image max: {jnp.max(img)}, min: {jnp.min(img)}') # [-1, 1]
