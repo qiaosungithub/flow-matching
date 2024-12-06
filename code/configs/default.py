@@ -60,10 +60,10 @@ def get_config():
   model.no_condition_t = False
 
   # DDIM
-  model.beta_schedule = 'linear'
-  model.beta_start = 1e-4
-  model.beta_end = 0.02
-  model.num_diffusion_timesteps = 1000
+  # model.beta_schedule = 'linear'
+  # model.beta_start = 1e-4
+  # model.beta_end = 0.02
+  # model.num_diffusion_timesteps = 1000
 
   config.aug = aug = ml_collections.ConfigDict()
   aug.use_edm_aug = False
@@ -105,7 +105,7 @@ def get_config():
   config.weight_decay = 0.0001  
   config.adam_b1 = 0.9
   config.adam_b2 = 0.95
-  config.grad_clip = 0.0
+  # config.grad_clip = 0.0
 
   config.warmup_epochs = 5.
   config.momentum = 0.9

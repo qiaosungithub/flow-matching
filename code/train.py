@@ -409,13 +409,13 @@ def create_train_state(
       b1=config.adam_b1,
       b2=config.adam_b2,
     )
-  elif config.optimizer == 'adam':
-    log_for_0(f'Using Adam')
-    tx = optax.adam(
-      learning_rate=learning_rate_fn,
-      b1=config.adam_b1,
-      b2=config.adam_b2,
-    )
+  # elif config.optimizer == 'adam':
+  #   log_for_0(f'Using Adam')
+  #   tx = optax.adam(
+  #     learning_rate=learning_rate_fn,
+  #     b1=config.adam_b1,
+  #     b2=config.adam_b2,
+  #   )
   else:
     raise ValueError(f'Unknown optimizer: {config.optimizer}')
   
@@ -500,7 +500,7 @@ def train_and_evaluate(
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='LMCI', dir=workdir)
+    wandb.init(project='LMCI', dir=workdir, tags=['Sanity_Check'])
     # wandb.init(project='sqa_FM_compare', dir=workdir)
     wandb.config.update(config.to_dict())
   global_seed(config.seed)
@@ -675,7 +675,8 @@ def train_and_evaluate(
       step = epoch * steps_per_epoch + n_batch
       assert config.aug.use_edm_aug == False, "we don't support edm aug for now"
       batch = prepare_batch_data(batch, config)
-      ep = step / steps_per_epoch
+      # ep = step / steps_per_epoch
+      ep = epoch + n_batch / steps_per_epoch # avoid jumping
 
       # img = batch['image']
       # print(f"img.shape: {img.shape}")
@@ -728,7 +729,7 @@ def train_and_evaluate(
       # continue
 
       state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute, model_config)
-      
+      # raise LookupError('看这里！')
       if epoch == epoch_offset and n_batch == 0:
         log_for_0('p_train_step compiled in {}s'.format(time.time() - train_metrics_last_t))
         log_for_0('Initial compilation completed. Reset timer.')
@@ -861,7 +862,7 @@ def just_evaluate(
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='LMCI-eval', dir=workdir)
+    wandb.init(project='LMCI-eval', dir=workdir, tags=['Sanity_Check'])
     # wandb.init(project='sqa_edm_debug', dir=workdir)
     wandb.config.update(config.to_dict())
   # dtype = jnp.bfloat16 if model_config.half_precision else jnp.float32

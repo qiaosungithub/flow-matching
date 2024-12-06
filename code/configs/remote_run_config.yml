@@ -45,6 +45,7 @@ model:
     # sampler: edm
     # sampler: edm-sde
     # sampler: DDIM
+    ode_solver: jax # rk45
     # ode_solver: scipy # rk45
     
     no_condition_t: False
@@ -64,7 +65,7 @@ fid:
 evalu:
     ema: True
     sample: False
-batch_size: 512
+batch_size: 2048
 num_epochs: 2000
 learning_rate: 0.0008 # FM
 lr_schedule: const
