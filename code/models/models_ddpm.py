@@ -278,7 +278,7 @@ class SimDDPM(nn.Module):
     # self.sde = sde
     # This is not used in flow matching
     self.P_mean = -1.1
-    self.P_std = 2 # These must be fixed
+    self.P_std = 2 # These must be fixed for CM
     self.data_std = 0.5
     self.t_min = 0.002
     self.t_max = 80.0
