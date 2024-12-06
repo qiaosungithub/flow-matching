@@ -620,7 +620,7 @@ def train_and_evaluate(
           acc_to_display = train_metrics['acc_train']
           if config.wandb and index == 0:
             wandb.log({
-              'ema_decay': train_metrics['ema_decay'],
+              # 'ema_decay': train_metrics['ema_decay'],
               'ep:': ep, 
               'loss_train': loss_to_display, 
               'acc_train': acc_to_display,

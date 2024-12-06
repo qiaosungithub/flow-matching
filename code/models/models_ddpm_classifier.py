@@ -239,7 +239,7 @@ class SimDDPM(nn.Module):
     # vis & log
     best_pred = jnp.argmax(u_pred, axis=-1)
     sftmx_pred = jax.nn.softmax(u_pred, axis=-1)
-    sftmx_pred = jnp.concatenate([sftmx_pred, jnp.zeros((bz, 20))], axis=-1).reshape(bz, 10, 3).transpose((0, 2, 1)).reshape(bz, 30)
+    sftmx_pred = jnp.concatenate([sftmx_pred, jnp.zeros((bz, 20))], axis=-1).reshape(bz, 3, 10).transpose((0, 2, 1)).reshape(bz, 30)
     sftmx_pred = jnp.concatenate([sftmx_pred, jnp.zeros((bz, 2))], axis=-1)
     best_pred_img = jax.nn.one_hot(best_pred * 3, 32).reshape(bz, 32, 1, 1).repeat(32,axis=2).repeat(3,axis=3)
     sftmx_pred_img = sftmx_pred.reshape(bz, 32, 1, 1).repeat(32,axis=2).repeat(3,axis=3)
@@ -252,9 +252,9 @@ class SimDDPM(nn.Module):
     images = self.get_visualization(
       [gt,        # image (from dataset)
        x_mixtue,  # mixture of data and noise
-       v_target.transpose((0,2,1,3)).astype(jnp.float32),  # target of network (known)
-       best_pred_img.transpose((0,2,1,3)).astype(jnp.float32),    # argmax pred of network
-       sftmx_pred_img.transpose((0,2,1,3)).astype(jnp.float32),   # softmax pred of network
+       (v_target*2-1).transpose((0,2,1,3)).astype(jnp.float32),  # target of network (known)
+       (best_pred_img*2-1).transpose((0,2,1,3)).astype(jnp.float32),    # argmax pred of network
+       (sftmx_pred_img*2-1).transpose((0,2,1,3)).astype(jnp.float32),   # softmax pred of network
       ])
 
     return loss_train, dict_losses, images
