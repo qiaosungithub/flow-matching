@@ -242,8 +242,6 @@ class SimDDPM(nn.Module):
     self.base_width = base_width
     self.num_classes = num_classes
     self.out_channels = out_channels
-    self.P_std = P_std
-    self.P_mean = P_mean
     self.n_T = n_T
     self.net_type = net_type
     self.dropout = dropout
