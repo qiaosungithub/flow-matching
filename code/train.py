@@ -306,7 +306,7 @@ def restore_checkpoint(model_init_fn, state, workdir, model_config, ema=False):
     batch_stats=batch_stats,
     opt_state=opt_state,
     step=step
-  )
+  ), loaded_state['ema_mo_xing'] if not ema else loaded_state['mo_xing']
 
 # zhh's nnx version
 def save_checkpoint(state:NNXTrainState, workdir, model_avg):
@@ -613,20 +613,24 @@ def train_and_evaluate(
   #   state = restore_pretrained(state, config.pretrain, config)
 
   # restore checkpoint zhh
+  model_avg = None
   if config.load_from is not None:
     if not os.path.isabs(config.load_from):
       raise ValueError('Checkpoint path must be absolute')
     if not os.path.exists(config.load_from):
       raise ValueError('Checkpoint path {} does not exist'.format(config.load_from))
-    state = restore_checkpoint(model_init_fn ,state, config.load_from)
+    state, model_avg = restore_checkpoint(model_init_fn, state, config.load_from, model_config, ema=False) # NOTE: whether to use the ema model
     # sanity check, as in Kaiming's code
-    assert state.step > 0 and state.step % steps_per_epoch == 0, ValueError('Got an invalid checkpoint with step {}'.format(state.step))
+    # assert state.step > 0 and state.step % steps_per_epoch == 0, ValueError('Got an invalid checkpoint with step {}'.format(state.step))
   step_offset = int(state.step)
   epoch_offset = step_offset // steps_per_epoch  # sanity check for resuming
   assert epoch_offset * steps_per_epoch == step_offset
 
   state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
-  model_avg = state.params
+  if model_avg is None:
+    model_avg = state.params
+  else:
+    model_avg = ju.replicate(model_avg)
 
   p_train_step_compute = jax.pmap(
     partial(train_step_compute, 

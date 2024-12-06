@@ -72,7 +72,7 @@ def main(argv):
   #   with jax.disable_jit():
   #     train.train_and_evaluate(FLAGS.config, FLAGS.workdir)
   # else:
-  if FLAGS.config.load_from is not None:
+  if (FLAGS.config.load_from is not None) and not (FLAGS.config.continue_training):
     train.just_evaluate(FLAGS.config, FLAGS.workdir)
   elif FLAGS.debug:
     with jax.disable_jit():
