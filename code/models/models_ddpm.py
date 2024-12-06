@@ -317,6 +317,8 @@ class SimDDPM(nn.Module):
         image_size=self.image_size,
         out_channels=self.out_channels,
         dropout=self.dropout,
+        use_aug_label=self.use_aug_label,
+        aug_label_dim=9,
         rngs=self.rngs)
     else:
       raise ValueError(f'Unknown net type: {self.net_type}')

@@ -55,7 +55,7 @@ dataset:
     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
     cache: False
 aug: 
-    use_edm_aug: False # TODO: enable this and test
+    use_edm_aug: False # NOTE: if you want to turn on this, also turn on model.use_aug_label
 fid:
     eval_only: False
     fid_per_epoch: 100
