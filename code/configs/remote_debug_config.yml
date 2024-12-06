@@ -34,7 +34,7 @@ model:
     image_size: 32
     out_channels: 3
     base_width: 128
-    learn_var: True # default: False
+    learn_var: False # default: False
     n_T: 250 # num of sample steps, matches "diffusion_nT"
     use_aug_label: False
     dropout: 0.15
@@ -50,8 +50,12 @@ model:
     # ode_solver: scipy # rk45
     
     no_condition_t: False
-    class_conditional: True
+    class_conditional: False
     t_condition_method: direct # default: log999
+
+    # classifier-specific configs
+    classifier_model_depth: 2
+
 dataset:
     name: cifar10
     root: CIFAR # pytorch
@@ -60,22 +64,25 @@ dataset:
     cache: True
 aug: 
     use_edm_aug: False
-fid:
-    on_use: False
-    eval_only: False
-    fid_per_epoch: 200
-    num_samples: 50000
-    device_batch_size: 64
-    cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
+# 我们应该用不到fid
+# fid:
+#     on_use: False
+#     eval_only: False
+#     fid_per_epoch: 200
+#     num_samples: 50000
+#     device_batch_size: 64
+#     cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
 evalu:
     ema: True
     sample: True
+train_classifier: True # default: False
+
 wandb: False # no 💩
 batch_size: 2048
 num_epochs: 2
 learning_rate: 0.0008
 lr_schedule: const
-weight_decay: 0.0
+weight_decay: 0.05
 optimizer: adamw
 adam_b2: 0.95
 warmup_epochs: 200

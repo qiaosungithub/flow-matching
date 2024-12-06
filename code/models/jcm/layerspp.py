@@ -508,7 +508,8 @@ class ResnetBlockBigGANpp(nn.Module):
         skip_rescale=True,
         init_scale=0.0,
         temb_dim=None,
-        rngs=None
+        rngs=None,
+        use_scale_shift_norm=False,
     ):
         self.in_planes = in_planes
         self.act = act
@@ -522,13 +523,14 @@ class ResnetBlockBigGANpp(nn.Module):
         self.init_scale = init_scale
         self.temb_dim = temb_dim
         self.rngs = rngs
+        self.use_scale_shift_norm = use_scale_shift_norm
 
         self.group_norm1 = nn.GroupNorm(num_features=in_planes, num_groups=min(self.in_planes // 4, 32), rngs=self.rngs)
 
         self.conv1 = conv3x3(self.in_planes, self.out_ch, rngs=self.rngs)
 
         if self.temb_dim is not None:
-            self.temb_linear = nn.Linear(self.temb_dim, self.out_ch, kernel_init=default_init(), rngs=self.rngs)
+            self.temb_linear = nn.Linear(self.temb_dim, self.out_ch * (1 if not self.use_scale_shift_norm else 2), kernel_init=default_init(), rngs=self.rngs)
 
         self.group_norm2 = nn.GroupNorm(num_features=self.out_ch, num_groups=min(self.out_ch // 4, 32), rngs=self.rngs)
 
@@ -564,9 +566,14 @@ class ResnetBlockBigGANpp(nn.Module):
         # Add bias to each feature map conditioned on the time embedding
         if temb is not None:
             assert temb.shape == (B, self.temb_dim)
-            h += self.temb_linear(self.act(temb))[
-                :, None, None, :
-            ]
+            if self.use_scale_shift_norm:
+                shift, scale = jnp.split(self.temb_linear(self.act(temb)), 2, axis=-1)
+            else:
+                shift = self.temb_linear(self.act(temb))
+                scale = jnp.ones_like(shift)
+                
+            h = h * scale[:, None, None, :] + shift[:, None, None, :]
+            
         h = self.act(self.group_norm2(h))
         h = self.dropout(h, deterministic=not train)
         h = self.conv2(h)

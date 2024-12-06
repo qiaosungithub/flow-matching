@@ -29,6 +29,7 @@ import jax
 from ml_collections import config_flags
 
 import train
+import train_classifier
 from utils import logging_util
 from utils.logging_util import log_for_0
 logging_util.supress_checkpt_info()
@@ -72,7 +73,10 @@ def main(argv):
   #   with jax.disable_jit():
   #     train.train_and_evaluate(FLAGS.config, FLAGS.workdir)
   # else:
-  if (FLAGS.config.load_from is not None) and not (FLAGS.config.continue_training):
+  if FLAGS.config.train_classifier:
+    train_classifier.train_and_evaluate(FLAGS.config, FLAGS.workdir)
+    exit(0)
+  if FLAGS.config.load_from is not None and not (FLAGS.config.continue_training):
     train.just_evaluate(FLAGS.config, FLAGS.workdir)
   elif FLAGS.debug:
     with jax.disable_jit():
