@@ -144,7 +144,7 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
   def loss_fn(params_to_train):
     """loss function used for training."""
     
-    outputs = state.apply_fn(state.graphdef, params_to_train, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'],  batch['augment_label'], noise_batch, t_batch, label=batch['label'] if config.model.class_conditional else None,alpha_cumprod_batch=alpha_cumprod_batch, beta_batch=beta_batch,alpha_cumprod_prev_batch=alpha_cumprod_prev_batch,posterior_log_variance_clipped_batch=posterior_log_variance_clipped_batch)
+    outputs = state.apply_fn(state.graphdef, params_to_train, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'], batch['label'] if config.model.class_conditional else None, batch['augment_label'], noise_batch, t_batch, alpha_cumprod_batch=alpha_cumprod_batch, beta_batch=beta_batch,alpha_cumprod_prev_batch=alpha_cumprod_prev_batch,posterior_log_variance_clipped_batch=posterior_log_variance_clipped_batch)
     loss, new_batch_stats, new_rng_states, dict_losses, images = outputs
 
     return loss, (new_batch_stats, new_rng_states, dict_losses, images)

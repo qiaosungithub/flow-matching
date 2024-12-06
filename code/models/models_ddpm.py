@@ -814,7 +814,7 @@ class SimDDPM(nn.Module):
 
     assert noise_batch.shape == x.shape
     assert t_batch.shape == (bz,)
-    assert labels.shape == (bz,)
+    assert (labels is None) or labels.shape == (bz,)
     # t_batch = t_batch.reshape(bz, 1, 1, 1)
 
     # -----------------------------------------------------------------
