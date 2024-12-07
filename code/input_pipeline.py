@@ -143,7 +143,7 @@ def create_split(
         ]),
       )
     else:
-      raise NotImplementedError
+      raise NotImplementedError('Get config: {}'.format(dataset_cfg.root))
       ds = datasets.ImageFolder(
         os.path.join(dataset_cfg.root, split),
         transform=transforms.Compose([

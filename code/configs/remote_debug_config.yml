@@ -76,9 +76,10 @@ fid:
 evalu:
     ema: True
     sample: False
+wandb: False
 ema_value: 0.9993
 batch_size: 2048
-num_epochs: 2000
+num_epochs: 2
 learning_rate: 0.0004
 # learning_rate: 0.0001
 lr_schedule: const
@@ -88,8 +89,8 @@ adam_b2: 0.999
 grad_clip: 0.0
 warmup_epochs: 0 # CT
 log_per_step: 20
-visualize_per_epoch: 50
-eval_per_epoch: 100
+visualize_per_epoch: 1
+eval_per_epoch: 1
 checkpoint_per_epoch: 500
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241202_214940_zd8s4j_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_48500
 

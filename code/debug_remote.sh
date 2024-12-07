@@ -19,7 +19,7 @@ source ka.sh
 
 echo Running at $VM_NAME $ZONE
 
-STAGEDIR=/$DATA_ROOT/staging/$(whoami)/debug
+STAGEDIR=/$DATA_ROOT/staging/$(whoami)/debug-$VM_NAME
 sudo mkdir -p $STAGEDIR
 sudo chmod 777 -R $STAGEDIR
 echo 'Staging files...'
@@ -55,7 +55,6 @@ python3 main.py \
     --workdir=${LOGDIR} \
     --mode=remote_debug \
     --config=configs/load_config.py:remote_debug \
-    --config.dataset.root=$USE_DATA_ROOT \
 " 2>&1 | tee -a $LOGDIR/output.log
 
 ############# No need to modify [END] #############

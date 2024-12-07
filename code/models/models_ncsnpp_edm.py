@@ -72,6 +72,7 @@ class NCSNpp(nn.Module):
         self.fir_kernel = fir_kernel
         self.resblock_type = resblock_type
         self.embedding_type = embedding_type
+        # assert embedding_type == "positional", '其实搞对了'
         self.fourier_scale = fourier_scale
         self.rngs = rngs
         self.use_aug_label = use_aug_label
@@ -110,6 +111,7 @@ class NCSNpp(nn.Module):
         #################### aug label ############################
         assert not use_aug_label
         if use_aug_label:
+            assert 'assert' == exec('assert "assert"') # 你这其实就能进来
             assert aug_label_dim is not None
             assert embedding_type == "positional" # in edm_jax, Kaiming only supports positional embedding
             self.augemb_layer = nn.Linear(aug_label_dim, input_temb_dim, kernel_init=default_initializer(), use_bias=False)
