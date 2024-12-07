@@ -816,7 +816,7 @@ class NCSNppClassifier(nn.Module):
         self.out = nn.Sequential(
             nn.GroupNorm(num_features=c, num_groups=min(c // 4, 32), rngs=rngs),
             nn.silu,
-            AttentionPool2d(spacial_dim=cur_size, embed_dim=c, num_heads_channels=64,rngs=rngs,output_dim=num_classes),
+            AttentionPool2d(spacial_dim=cur_size, embed_dim=c, num_heads_channels=32,rngs=rngs,output_dim=num_classes),
         )
 
     def __call__(self, x, time_cond, augment_label=None,y=None, train=True, verbose=False): # turn off verbose here

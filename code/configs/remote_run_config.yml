@@ -34,12 +34,12 @@ train_classifier: True # default: False
 model:
     image_size: 32
     out_channels: 3
-    base_width: 128
+    base_width: 64
     # learn_var: True # default: False
     learn_var: False # default: False
     n_T: 250 # num of sample steps, matches "diffusion_nT"
     use_aug_label: False
-    dropout: 0.15
+    dropout: 0.3
     net_type: ncsnppedm
     average_loss: True # use average or sum for loss
 
@@ -56,7 +56,7 @@ model:
     # class_conditional: True
     # t_condition_method: not # for No T experiments
     t_condition_method: direct # default: log999
-    classifier_model_depth: 2
+    classifier_model_depth: 3
 dataset:
     name: cifar10
     root: CIFAR # pytorch
@@ -74,10 +74,10 @@ evalu:
     ema: True
     sample: True
 batch_size: 2048
-num_epochs: 2000
+num_epochs: 500
 learning_rate: 0.0008
 lr_schedule: classifier_specific
-weight_decay: 0.05
+weight_decay: 0.099
 optimizer: adamw
 adam_b2: 0.95
 warmup_epochs: 200
