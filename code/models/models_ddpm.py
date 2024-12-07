@@ -113,7 +113,8 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
     ema_halflife_nimg = ema_halflife_kimg * 1000
     target_ema = 0.5 ** (config.batch_size / jnp.maximum(ema_halflife_nimg, 1e-8))  # 0.9998 for batch 512
   scales = scales + 1
-  return target_ema, scales
+  # return target_ema, scales
+  return jnp.array([config.ema_value],dtype=jnp.float32), scales
 
 
 def edm_ema_scales_schedules(step, config, steps_per_epoch):
