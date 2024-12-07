@@ -87,12 +87,14 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
   """
   ICM improved version
   """
-  start_ema = float(config.ct.start_ema)
+  # start_ema = float(config.ct.start_ema)
+  start_ema = NameError
   start_scales = int(config.ct.start_scales)
   end_scales = int(config.ct.end_scales)
   total_steps = config.num_epochs * steps_per_epoch
 
   if config.ct.n_schedule == 'orignal': # NOTE: 其实敲对了
+    raise LookupError('看上去就不对')
     scales = jnp.ceil(jnp.sqrt((step / total_steps) * ((end_scales + 1) ** 2 - start_scales**2) + start_scales**2) - 1).astype(jnp.int32)
     scales = jnp.maximum(scales, 1)
   elif config.ct.n_schedule == 'exp':
@@ -100,21 +102,23 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
     s1 = end_scales
     K = total_steps
     K_ = jnp.floor(K / (jnp.log2(jnp.floor(s1 / s0)) + 1))
-    scales = jnp.minimum(s0 * (2 ** jnp.floor(step / K_)), s1)
+    scales = jnp.minimum(s0 * (2 ** jnp.floor(step / K_)), s1) + 1
   else:
     raise ValueError(f'Unknown schedule: {config.ct.n_schedule}')
   
+  # 不知道这一段在干什么
   if config.model.ema_target == True:
     raise NotImplementedError("我写了")
     c = -jnp.log(start_ema) * start_scales
     target_ema = jnp.exp(-c / scales)
-  else:
+  elif False:
     ema_halflife_kimg = 2000  # edm was 500 (2000 * 1000 / 50000 = 40ep)
     ema_halflife_nimg = ema_halflife_kimg * 1000
-    target_ema = 0.5 ** (config.batch_size / jnp.maximum(ema_halflife_nimg, 1e-8))  # 0.9998 for batch 512
-  scales = scales + 1
-  # return target_ema, scales
-  return jnp.array([config.ema_value],dtype=jnp.float32), scales
+    target_ema = 0.5 ** (config.batch_size / jnp.maximum(ema_halflife_nimg, 1e-8))  # 0.9998 for batch 512'
+  else:
+    pass
+  
+  return jnp.array([config.ema_value],dtype=jnp.float32), scales.astype(jnp.int32)
 
 
 def edm_ema_scales_schedules(step, config, steps_per_epoch):
@@ -164,6 +168,8 @@ def sample_icm_t(
   rng,
 ) -> jnp.array:
   """
+  这个应该返回 [1, scales-1] 之内的数
+  
   from improved CM. util function
   ----------
   Draws timesteps from a lognormal distribution.
@@ -197,8 +203,8 @@ def sample_icm_t(
   pdf = erf((jnp.log(sigmas[1:]) - mean) / (std * jnp.sqrt(2))) - erf(
         (jnp.log(sigmas[:-1]) - mean) / (std * jnp.sqrt(2))
     )
-  
-  pdf = pdf / jnp.sum(pdf)
+  assert pdf.ndim == 1, 'pdf should be 1D'
+  # pdf = pdf / jnp.sum(pdf) # 多余的，没准反而高兴
 
   # print(f"mean: {mean}")
   # print(f"std: {std}")
@@ -330,7 +336,7 @@ class SimDDPM(nn.Module):
 
   def compute_t(self, indices, scales):
     """
-    scales \in [1, scales]
+    indices \in [1, scales]
     
     from big noise to small noise, which is different with Song's code
     那其实就要不一样，不高兴的
@@ -552,7 +558,8 @@ class SimDDPM(nn.Module):
 
     c_in = 1 / jnp.sqrt(t ** 2 + self.data_std ** 2)
     # cond_t = jnp.zeros_like(t) if self.no_condition_t else 0.25 * jnp.log(t)  # noise cond of edm
-    cond_t = 1000 * 0.25 * jnp.log(t + 1e-44) # 仓库里嫖的
+    cond_t = 0.25 * jnp.log(t) # 这个才是对的
+    # cond_t = 1000 * 0.25 * jnp.log(t + 1e-44) # 仓库里嫖的
 
     # forward network
     # TODO: 我好像没看到 Song 的代码里面有 c_in
