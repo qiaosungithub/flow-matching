@@ -77,7 +77,7 @@ def main(argv):
   if FLAGS.config.train_classifier:
     train_classifier.train_and_evaluate(FLAGS.config, FLAGS.workdir)
     exit(0)
-  elif FLAGS.config.run_classifier_guidance:
+  elif FLAGS.config.get('run_classifier_guidance', False):
     classifier_guidance.just_evaluate(FLAGS.config, FLAGS.workdir)
     exit(0)
   if FLAGS.config.load_from is not None and not (FLAGS.config.continue_training):

@@ -273,7 +273,7 @@ def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o,label_type=
   return shape: (n_sample, 32, 32, 3)
   """
   # assert False, n_sample
-  assert label_type != 'none', 'CG'
+  # assert label_type != 'none', 'CG'
   assert (classifier is None) == (classifier_state is None), 'classifier and classifier_state should be None or not None at the same time'
 
   # prepare schedule

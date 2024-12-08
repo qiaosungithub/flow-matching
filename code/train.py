@@ -711,6 +711,8 @@ def train_and_evaluate(
   log_for_0('Initial compilation, this might take some minutes...')
 
   p_update_model_avg = jax.pmap(_update_model_avg, axis_name='batch')
+  
+  BEST_FID_UNTIL_NOW = config.get('best_fid_until_now', float('inf'))
 
   for epoch in range(epoch_offset, config.num_epochs):
 
@@ -895,6 +897,18 @@ def train_and_evaluate(
       canvas = Image.fromarray(vis)
       if config.wandb and index == 0:
         wandb.log({'gen_fid': wandb.Image(canvas)})
+    
+      if fid_score_ema < BEST_FID_UNTIL_NOW:
+        BEST_FID_UNTIL_NOW = fid_score_ema
+        import shutil
+        if os.path.exists(os.path.join(workdir, 'best_fid')):
+          shutil.rmtree(os.path.join(workdir, 'best_fid'))
+        os.makedirs(os.path.join(workdir, 'best_fid'))
+        if index == 0:
+          with open(os.path.join(workdir,'best_fid', 'FID.txt'), 'w') as f:
+            f.write(str(BEST_FID_UNTIL_NOW))
+        save_checkpoint(state, os.path.join(workdir, 'best_fid'), model_avg)
+        log_for_0(f'[BEST FID HAS CHANGED]: {BEST_FID_UNTIL_NOW}')
 
   # Wait until computations are done before exiting
   jax.random.normal(jax.random.key(0), ()).block_until_ready()
