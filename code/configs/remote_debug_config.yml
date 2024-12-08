@@ -34,7 +34,7 @@ model:
     image_size: 32
     out_channels: 3
     base_width: 128
-    learn_var: False # default: False
+    learn_var: True # default: False
     n_T: 250 # num of sample steps, matches "diffusion_nT"
     use_aug_label: False
     dropout: 0.15
@@ -55,7 +55,32 @@ model:
 
     # classifier-specific configs
     classifier_model_depth: 2
+classifier_model:
+    image_size: 32
+    out_channels: 3
+    base_width: 32
+    # learn_var: True # default: False
+    learn_var: False # default: False
+    n_T: 250 # num of sample steps, matches "diffusion_nT"
+    use_aug_label: False
+    dropout: 0.3
+    net_type: ncsnppedm
+    average_loss: True # use average or sum for loss
 
+    sampler: ddpm
+    sample_clip_denoised: True # this is only useful for ddpm sampler
+    # sampler: heun
+    # sampler: edm
+    # sampler: edm-sde
+    ode_solver: jax
+    # ode_solver: scipy # rk45
+    
+    no_condition_t: False
+    class_conditional: False
+    # class_conditional: True
+    # t_condition_method: not # for No T experiments
+    t_condition_method: direct # default: log999
+    classifier_model_depth: 3
 dataset:
     name: cifar10
     root: CIFAR # pytorch
@@ -75,7 +100,8 @@ aug:
 evalu:
     ema: True
     sample: True
-train_classifier: True # default: False
+
+train_classifier: False # default: False
 
 wandb: False # no 💩
 batch_size: 2048
@@ -90,7 +116,11 @@ log_per_step: 20
 visualize_per_epoch: 1
 eval_per_epoch: 1
 checkpoint_per_epoch: 10086
-# load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241204_211307_5t6h77_kmh-tpuvm-v2-32-7__b_lr_ep_eval
+load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241206_003350_u92vg3_kmh-tpuvm-v2-32-4__b_lr_ep_eval # this is an unconditional model
+# load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241205_221059_kqzx8e_kmh-tpuvm-v2-32-preemptible-1__b_lr_ep_eval # this is an conditional model
+run_classifier_guidance: True
+load_classifier_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241206_233913_v8zrw5_kmh-tpuvm-v2-32-preemptible-1__b_lr_ep_eval
+classifier_scale: 10.0
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241203_222646_g1nh1t_kmh-tpuvm-v2-32-4__b_lr_ep_eval
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241130_140252_c95a47_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/checkpoint_194000
 

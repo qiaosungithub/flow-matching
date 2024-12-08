@@ -263,6 +263,7 @@ class SimDDPM(nn.Module):
     # initialization only
     t = jnp.ones((imgs.shape[0],))
     augment_label = jnp.ones((imgs.shape[0], 9)) if self.use_aug_label else None  # fixed augment_dim # TODO: what is this?
-    out = self.net(imgs, t, augment_label,y=jnp.ones((imgs.shape[0],))) # TODO: whether to add train=train
+    out = self.net(imgs, t, augment_label) # TODO: whether to add train=train
+    # out = self.net(imgs, t, augment_label,y=jnp.ones((imgs.shape[0],))) # TODO: whether to add train=train
     out_ema = None   # no need to initialize it here
     return out, out_ema

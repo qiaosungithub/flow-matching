@@ -59,6 +59,25 @@ def get_config():
 
   model.no_condition_t = False
 
+  # Classifier model  
+  config.classifier_model = classifier_model = ml_collections.ConfigDict()
+  classifier_model.image_size = 32
+  classifier_model.out_channels = 1
+
+  classifier_model.base_width = 64
+  classifier_model.n_T = 18  # inference stepss
+  classifier_model.dropout = 0.0
+
+  classifier_model.use_aug_label = False
+  classifier_model.average_loss = False
+
+  classifier_model.sampler = 'euler' # or 'heun'
+  classifier_model.ode_solver = 'jax'  # or 'scipy', which use RK45 solver
+  classifier_model.net_type = 'ncsnpp'
+
+  classifier_model.no_condition_t = False
+
+  # Augmentation
   config.aug = aug = ml_collections.ConfigDict()
   aug.use_edm_aug = False
 

@@ -263,7 +263,7 @@ def batch_t(t,b):
   return t.reshape(1,).repeat(b, axis=0)
 
 # move this out from model for JAX compilation
-def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o,label_type='random'):
+def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o,label_type='random',classifier=None,classifier_state=None,classifier_scale=0.0):
   """
   Generate samples from the model
 
@@ -273,6 +273,8 @@ def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o,label_type=
   return shape: (n_sample, 32, 32, 3)
   """
   # assert False, n_sample
+  assert label_type != 'none', 'CG'
+  assert (classifier is None) == (classifier_state is None), 'classifier and classifier_state should be None or not None at the same time'
 
   # prepare schedule
   num_steps = model.n_T
@@ -301,6 +303,7 @@ def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o,label_type=
 
   if model.sampler in ['euler', 'heun']:
     assert y is None, NotImplementedError()
+    assert classifier is None, NotImplementedError()
       
     x_i = x_prior
 
@@ -320,6 +323,7 @@ def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o,label_type=
   
   elif model.sampler in ['edm', 'edm-sde']:
     assert y is None, NotImplementedError()
+    assert classifier is None, NotImplementedError()
     t_steps = model.compute_t(jnp.arange(num_steps), num_steps)
     t_steps = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
     x_i = x_prior * t_steps[0]
@@ -366,6 +370,21 @@ def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o,label_type=
     log_model_variance_steps = o['sample_log_model_variance']
     posterior_log_variance_clipped_steps = o['sample_posterior_log_variance_clipped']
     beta_steps = o['sample_beta']
+    
+    def classifier_fn(x, y, t):
+      b = x.shape[0]
+      # x.shape: [b, 32, 32, 3]
+      # y.shape: [b]
+      # t.shape: [b]
+      assert x.shape[1:] == (32, 32, 3), 'Get x.shape {s}'.format(s=x.shape)
+      assert y.shape == (b,), 'Get y.shape {s}'.format(s=y.shape)
+      assert t.shape == (b,), 'Get t.shape {s}'.format(s=t.shape)
+      
+      merged_classifier = nn.merge(classifier_state.graphdef, classifier_state.params, classifier_state.rng_states, classifier_state.batch_stats, classifier_state.useless_variable_state)
+      logits = merged_classifier.forward_flow_pred_function(x,t)
+      logits = jax.nn.log_softmax(logits, axis=-1)
+      selected_logits = logits[jnp.arange(b), y]
+      return selected_logits.sum()
 
     def step_fn(i, inputs):
       x_i, rng = inputs
@@ -373,7 +392,7 @@ def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o,label_type=
       rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
 
       merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-      x_i = merged_model.sample_one_step_ddpm(x_i, rng_z, i, y=y, t_steps=t_steps, sqrt_recip_alphas_cumprod_steps=sqrt_recip_alphas_cumprod_steps, sqrt_recipm1_alphas_cumprod_steps=sqrt_recipm1_alphas_cumprod_steps,posterior_mean_coef1_steps=posterior_mean_coef1_steps,posterior_mean_coef2_steps=posterior_mean_coef2_steps,log_model_variance_steps=log_model_variance_steps,posterior_log_variance_clipped_steps=posterior_log_variance_clipped_steps,beta_steps=beta_steps)
+      x_i = merged_model.sample_one_step_ddpm(x_i, rng_z, i, y=y, t_steps=t_steps, sqrt_recip_alphas_cumprod_steps=sqrt_recip_alphas_cumprod_steps, sqrt_recipm1_alphas_cumprod_steps=sqrt_recipm1_alphas_cumprod_steps,posterior_mean_coef1_steps=posterior_mean_coef1_steps,posterior_mean_coef2_steps=posterior_mean_coef2_steps,log_model_variance_steps=log_model_variance_steps,posterior_log_variance_clipped_steps=posterior_log_variance_clipped_steps,beta_steps=beta_steps,classifier_grad_fn=jax.grad(classifier_fn) if classifier is not None else None,classifier_scale=classifier_scale)
       outputs = (x_i, rng)
       return outputs
 
@@ -707,10 +726,13 @@ class SimDDPM(nn.Module):
     # return x_next, denoised # for debug
     return x_next
 
-  def sample_one_step_ddpm(self, x_i, rng, i, t_steps, sqrt_recip_alphas_cumprod_steps, sqrt_recipm1_alphas_cumprod_steps, posterior_mean_coef1_steps, posterior_mean_coef2_steps,log_model_variance_steps,posterior_log_variance_clipped_steps, beta_steps,y=None):
+  def sample_one_step_ddpm(self, x_i, rng, i, t_steps, sqrt_recip_alphas_cumprod_steps, sqrt_recipm1_alphas_cumprod_steps, posterior_mean_coef1_steps, posterior_mean_coef2_steps,log_model_variance_steps,posterior_log_variance_clipped_steps, beta_steps,y=None,classifier_grad_fn=None,classifier_scale=None):
       """
       DDPM
       """
+      if (y is not None) and (not self.class_conditional):
+        assert classifier_grad_fn is not None, 'We assume that you are doing conditional generation for an unconditional model, so you must use classifier guidance'
+      
       b = x_i.shape[0]
       t = batch_t(t_steps[i],b)
       sqrt_recip_alphas_cumprod = batch_t(sqrt_recip_alphas_cumprod_steps[i],b)
@@ -739,7 +761,14 @@ class SimDDPM(nn.Module):
           
       model_mean = batch_mul(posterior_mean_coef1, x_start) + batch_mul(posterior_mean_coef2, x_i) # 这里写错了就高兴
       
+      #### Classifier Guidance ####
+      if classifier_grad_fn is not None:
+        # assert False, 'classifier scale is: {s}'.format(s=classifier_scale)
+        model_mean = model_mean + classifier_scale * jax.lax.stop_gradient(classifier_grad_fn(x_start, y, t))
+        # assert False, '不高兴的'
       
+      #### END ####
+
       noise = jax.random.normal(rng, x_i.shape)
 
       nonzero_mask = jnp.where(t > 0.5, 1, 0) # no noise when t == 0
@@ -775,6 +804,8 @@ class SimDDPM(nn.Module):
   def forward_flow_pred_function(self, z, t, augment_label=None,y=None, train: bool = True):  # EDM
 
     # t_cond = jnp.zeros_like(t) if self.no_condition_t else jnp.log(t * 999)
+    if not self.class_conditional:
+      y = None
     t_cond = self.t_preprocess_fn(t).astype(self.dtype)
     u_pred = self.net(z, t_cond, augment_label=augment_label, train=train,y=y)
     if self.learn_var:
