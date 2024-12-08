@@ -85,13 +85,16 @@ class NNXTrainState(FlaxTrainState):
 def ct_ema_scales_schedules(step, config, steps_per_epoch):
   """
   ICM improved version
+  modified by zhh
   """
-  start_ema = float(config.ct.start_ema)
+  # start_ema = float(config.ct.start_ema)
+  start_ema = NameError
   start_scales = int(config.ct.start_scales)
   end_scales = int(config.ct.end_scales)
   total_steps = config.num_epochs * steps_per_epoch
 
-  if config.ct.n_schedule == 'orignal':
+  if config.ct.n_schedule == 'original':
+    raise LookupError('看上去就不对')
     scales = jnp.ceil(jnp.sqrt((step / total_steps) * ((end_scales + 1) ** 2 - start_scales**2) + start_scales**2) - 1).astype(jnp.int32)
     scales = jnp.maximum(scales, 1)
   elif config.ct.n_schedule == 'exp':
@@ -99,7 +102,7 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
     s1 = end_scales
     K = total_steps
     K_ = jnp.floor(K / (jnp.log2(jnp.floor(s1 / s0)) + 1))
-    scales = jnp.minimum(s0 * 2 ** jnp.floor(step / K_), s1)
+    scales = jnp.minimum(s0 * (2 ** jnp.floor(step / K_)), s1) + 1
   else:
     raise ValueError(f'Unknown schedule: {config.ct.n_schedule}')
   
@@ -107,12 +110,14 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
     raise NotImplementedError("我写了")
     c = -jnp.log(start_ema) * start_scales
     target_ema = jnp.exp(-c / scales)
-  else:
+  elif False:
     ema_halflife_kimg = 2000  # edm was 500 (2000 * 1000 / 50000 = 40ep)
     ema_halflife_nimg = ema_halflife_kimg * 1000
-    target_ema = 0.5 ** (config.batch_size / jnp.maximum(ema_halflife_nimg, 1e-8))  # 0.9998 for batch 512
-  scales = scales + 1
-  return target_ema, scales
+    target_ema = 0.5 ** (config.batch_size / jnp.maximum(ema_halflife_nimg, 1e-8))  # 0.9998 for batch 512'
+  else:
+    pass
+  
+  return jnp.array([config.ema_value],dtype=jnp.float32), scales.astype(jnp.int32) # here config.ema_value is ema value we can tune; Kaiming's original code has ema_value = 0.9993
 
 
 def edm_ema_scales_schedules(step, config, steps_per_epoch):
@@ -161,6 +166,8 @@ def sample_icm_t(
   rng,
 ) -> jnp.array:
   """
+  这个应该返回 [1, scales-1] 之内的数
+  
   from improved CM. util function
   ----------
   Draws timesteps from a lognormal distribution.
@@ -182,16 +189,20 @@ def sample_icm_t(
   [1] [Improved Techniques For Consistency Training](https://arxiv.org/pdf/2310.14189.pdf)
   """
   # first compute sigma
-  indices = jnp.arange(scale) # [0, scale)
+  indices = jnp.arange(scale) + 1 # [1, scale]
   sigmas = model.compute_t(indices, scale)
 
   mean = model.P_mean
   std = model.P_std
 
-  pdf = erf((jnp.log(sigmas[:-1]) - mean) / (std * jnp.sqrt(2))) - erf(
-        (jnp.log(sigmas[1:]) - mean) / (std * jnp.sqrt(2))
-    )
-  pdf = pdf / jnp.sum(pdf)
+  # pdf = erf((jnp.log(sigmas[:-1]) - mean) / (std * jnp.sqrt(2))) - erf(
+  #       (jnp.log(sigmas[1:]) - mean) / (std * jnp.sqrt(2))
+  #   )
+  pdf = erf((jnp.log(sigmas[1:]) - mean) / (std * jnp.sqrt(2))) - erf(
+        (jnp.log(sigmas[:-1]) - mean) / (std * jnp.sqrt(2))
+    ) # this one is consistent with ICM paper
+  assert pdf.ndim == 1, 'pdf should be 1D'
+  # pdf = pdf / jnp.sum(pdf) # 多余的，没准反而高兴
 
   # print(f"mean: {mean}")
   # print(f"std: {std}")
@@ -199,7 +210,7 @@ def sample_icm_t(
   # print(f"sigmas: {sigmas}")
   # print(f"pdf: {pdf}")
 
-  timesteps = jax.random.choice(rng, a=len(pdf), shape=samples_shape, p=pdf)
+  timesteps = jax.random.choice(rng, a=jnp.arange(1,scale), shape=samples_shape, p=pdf) # i is chosen from [1, scale-1]
 
   # print(f"timesteps: {timesteps}")
 
@@ -239,6 +250,7 @@ class SimDDPM(nn.Module):
     **kwargs
   ):
     self.image_size = image_size
+    assert image_size == 32, "only support 32"
     self.base_width = base_width
     self.num_classes = num_classes
     self.out_channels = out_channels
@@ -322,13 +334,16 @@ class SimDDPM(nn.Module):
 
   def compute_t(self, indices, scales):
     """
-    from big noise to small noise, which is different with Song's code
+    indices \in [1, scales]
+    
+    legacy: from big noise to small noise, which is different with Song's code
+    now (zhh modified): from small noise to big noise
     """
-    # t_max = 80
-    # t_min = 0.002
-    # rho = 7.0
-    t = self.t_max ** (1 / self.rho) + indices / (scales - 1) * (
-        self.t_min ** (1 / self.rho) - self.t_max ** (1 / self.rho)
+    # t = self.t_max ** (1 / self.rho) + indices / (scales - 1) * (
+    #     self.t_min ** (1 / self.rho) - self.t_max ** (1 / self.rho)
+    # )
+    t = self.t_min ** (1 / self.rho) + (indices - 1) / (scales - 1) * (
+        self.t_max ** (1 / self.rho) - self.t_min ** (1 / self.rho)
     )
     t = t**self.rho
     return t
@@ -545,8 +560,8 @@ class SimDDPM(nn.Module):
     in_x = x
     
     assert not ema, "我写了"
-    net = self.net if not ema else self.net_ema
-    denoiser = net(in_x, cond_t, train=train)
+    # net = self.net if not ema else self.net_ema
+    denoiser = self.net(in_x, cond_t, train=train)
 
     denoiser = batch_mul(denoiser, c_out)
     skip_x = batch_mul(x, c_skip)
@@ -618,14 +633,15 @@ class SimDDPM(nn.Module):
     nn.reseed(self, dropout=rng_dropout_this_step)
     Ft2 = self.forward_consistency_function(x_t2, t2) # Here we do not support ema target
 
-    Ft2 = jax.lax.stop_gradient(Ft2)  # stop gradient here
+    # Ft2 = jax.lax.stop_gradient(Ft2)  # stop gradient here, legacy
+    Ft = jax.lax.stop_gradient(Ft) # stop gradient here
 
     diffs = Ft - Ft2
 
     if self.weighting == 'uniform':
       weight = jnp.ones_like(t)
     elif self.weighting == 'icm':
-      weight = 1. / (t - t2)
+      weight = 1. / (t2 - t)
     else:
       raise ValueError(f'Unknown weighting: {self.weighting}')
 

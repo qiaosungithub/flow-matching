@@ -193,6 +193,7 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, ema_sca
   images = batch['image']
 
   _, scales = ema_scales_fn(state.step) # here scales shape is (b1,)
+  scales = scales.astype(jnp.int32) # avoid sb issue
   # print("images.shape: ", images.shape) # (8, 64, 32, 32, 3)
   b1, b2 = images.shape[0], images.shape[1]
   noise_batch = jax.random.normal(rngs.train(), images.shape)
@@ -204,7 +205,7 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, ema_sca
     #   s = 10 * (2 ** i)
     #   t_batch = sample_icm_t((b1, b2), model, s, rngs.train())
     # exit("6.7900")
-    t_batch = sample_icm_t((b1, b2), model, scales[0], rngs.train())
+    t_batch = sample_icm_t((b1, b2), model, scales[0], rngs.train()) # this is index, instead of sigma
   else:
     raise NotImplementedError
 
@@ -497,7 +498,7 @@ def train_and_evaluate(
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='LMCI', dir=workdir)
+    wandb.init(project='LMCI', dir=workdir, tags=['SQA-CM'])
     # wandb.init(project='sqa_FM_compare', dir=workdir)
     wandb.config.update(config.to_dict())
   global_seed(config.seed)
@@ -796,7 +797,7 @@ def train_and_evaluate(
       log_for_0(f'Sample epoch {epoch}...')
       # sync batch statistics across replicas
       eval_state = sync_batch_stats(state)
-      eval_state = eval_state.replace(params=model_avg)
+      # eval_state = eval_state.replace(params=model_avg) # aid for debug
       vis = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx)
       vis = make_grid_visualization(vis)
       vis = jax.device_get(vis) # np.ndarray
