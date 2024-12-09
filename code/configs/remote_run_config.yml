@@ -49,6 +49,7 @@ model:
     # ode_solver: scipy # rk45
     
     no_condition_t: False
+    embedding_type: positional # FM
 dataset:
     name: cifar10
     root: CIFAR # pytorch
