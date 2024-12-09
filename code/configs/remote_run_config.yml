@@ -38,21 +38,12 @@ model:
     use_aug_label: False
     dropout: 0.3 # CT
     net_type: ncsnppedm
-    average_loss: True # use average or sum for loss
 
-    # sampler: euler
-    # sampler: heun
-    # sampler: edm
-    # sampler: edm-sde
-    sampler: DDIM
-    ode_solver: jax
-    # ode_solver: scipy # rk45
-    
     no_condition_t: False
     # CT
     fourier_scale: 0.02 # CT
-    embedding_type: positional
-    # embedding_type: fourier
+    # embedding_type: positional
+    embedding_type: fourier
     t_sampling: icm # or original
     # loss_type: "l2"
     loss_type: "huber"
@@ -78,19 +69,20 @@ evalu:
     sample: False
 ema_value: 0.9993
 batch_size: 512
-num_epochs: 3000
-learning_rate: 0.0004
-# learning_rate: 0.0001
+num_epochs: 4000
+# learning_rate: 0.0004
+learning_rate: 0.0001
 lr_schedule: const
 weight_decay: 0.0
-optimizer: radam # CT, TODO: radam / adamw?
+# optimizer: radam # CT, TODO: radam / adamw?
+optimizer: adamw
 adam_b2: 0.999
 grad_clip: 0.0
 warmup_epochs: 0 # CT
 log_per_step: 100
 visualize_per_epoch: 50
 eval_per_epoch: 50
-checkpoint_per_epoch: 500
+checkpoint_per_epoch: 1000
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241202_214940_zd8s4j_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_48500
 
 # # Here is for IMAGENET32x32:

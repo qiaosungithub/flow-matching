@@ -555,9 +555,7 @@ class SimDDPM(nn.Module):
     cond_t = jnp.zeros_like(t) if self.no_condition_t else 0.25 * jnp.log(t)  # noise cond of edm
 
     # forward network
-    # TODO: 我好像没看到 Song 的代码里面有 c_in
-    # in_x = batch_mul(x, c_in)  # input scaling of edm
-    in_x = x
+    in_x = batch_mul(x, c_in)
     
     assert not ema, "我写了"
     # net = self.net if not ema else self.net_ema
