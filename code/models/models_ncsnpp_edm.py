@@ -76,7 +76,6 @@ class NCSNpp(nn.Module):
         self.aug_label_dim = aug_label_dim
 
         self.act = act = nn.swish
-        self.conditional = conditional = True  # noise-conditional
         self.init_scale = init_scale = 0.0
         self.skip_rescale = skip_rescale = True
         self.resamp_with_conv = resamp_with_conv = True
@@ -99,7 +98,7 @@ class NCSNpp(nn.Module):
         if embedding_type == "fourier":
             # Gaussian Fourier features embeddings.
             self.temb_layer = layerspp.GaussianFourierProjection(
-                embedding_size=nf, scale=fourier_scale, name='map_noise', rngs=rngs
+                embedding_size=nf, scale=fourier_scale, rngs=rngs
             )
         elif embedding_type == "positional":
             # Sinusoidal positional embeddings.
@@ -107,18 +106,17 @@ class NCSNpp(nn.Module):
         else:
             raise NotImplementedError
             raise ValueError(f"embedding type {embedding_type} unknown.")
+        self.input_temb_dim = input_temb_dim = nf if embedding_type == "positional" else 2 * nf # NOTE: here, if use fourier embedding, the output dim is 2 * nf; for positional embedding, the output dim is nf. This is tang
         #################### aug label ############################
         if use_aug_label:
             assert aug_label_dim is not None
-            self.augemb_layer = nn.Linear(aug_label_dim, nf * 2, kernel_init=default_initializer(), use_bias=False)
+            self.augemb_layer = nn.Linear(aug_label_dim, input_temb_dim, kernel_init=default_initializer(), use_bias=False)
         #################### noise condition ############################
-        if conditional:
-            input_temb_dim = nf * 2 if use_aug_label else nf
-            self.cond_MLP = nn.Sequential(
-                nn.Linear(input_temb_dim, nf * 4, kernel_init=default_initializer(), rngs=rngs),
-                act,
-                nn.Linear(nf * 4, nf * 4, kernel_init=default_initializer(), rngs=rngs),
-            )
+        self.cond_MLP = nn.Sequential(
+            nn.Linear(input_temb_dim, nf * 4, kernel_init=default_initializer(), rngs=rngs),
+            act,
+            nn.Linear(nf * 4, nf * 4, kernel_init=default_initializer(), rngs=rngs),
+        )
         #################### Blocks ############################
         
         AttnBlock = partial(
@@ -334,12 +332,7 @@ class NCSNpp(nn.Module):
             aemb = self.augemb_layer(augment_label)
             temb += aemb 
 
-        if self.conditional:
-            temb = self.cond_MLP(temb)
-        else:
-            raise NotImplementedError
-            temb = None
-
+        temb = self.cond_MLP(temb)
 
         # utility function to count number of parameters
         def pms(self, name):

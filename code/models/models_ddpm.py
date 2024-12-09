@@ -243,7 +243,7 @@ class SimDDPM(nn.Module):
     num_classes = 10,
     out_channels = 1,
     P_std = 1.2,
-    P_mean = -1.2,
+    P_mean = -1.2, # P_mean and P_std are for EDM use
     n_T = 18,  # inference steps
     net_type = 'ncsnpp',
     dropout = 0.0,
@@ -314,6 +314,8 @@ class SimDDPM(nn.Module):
         image_size=self.image_size,
         out_channels=self.out_channels,
         dropout=self.dropout,
+        # use_aug_label=self.use_aug_label,
+        # aug_label_dim=9,
         rngs=self.rngs)
     else:
       raise ValueError(f'Unknown net type: {self.net_type}')
@@ -369,8 +371,6 @@ class SimDDPM(nn.Module):
       x_next = self.sample_one_step_euler(x_i, i) 
     elif self.sampler == 'heun':
       x_next = self.sample_one_step_heun(x_i, i) 
-    elif self.sampler == 'edm':
-      raise LookupError("找对地方了")
     else:
       raise NotImplementedError
 
@@ -400,7 +400,6 @@ class SimDDPM(nn.Module):
     t_next = (i + 1) / self.n_T  # t start from 0 (t = 0 is noise here)
     t_next = t_next * (1 - self.eps) + self.eps
 
-    # TODO{kaiming}: revisit S_churn
     t_hat = t_cur
     x_hat = x_cur  # x_hat is always x_cur when gamma=0
 
@@ -444,7 +443,6 @@ class SimDDPM(nn.Module):
     t_cur = t_steps[i]
     t_next = t_steps[i + 1]
 
-    # TODO{kaiming}: revisit S_churn
     t_hat = t_cur
     x_hat = x_cur  # x_hat is always x_cur when gamma=0
 
@@ -567,11 +565,13 @@ class SimDDPM(nn.Module):
   def forward_edm_denoising_function(self, x, sigma, augment_label=None, train: bool = True):  # EDM
     """
     code from edm
+    for FM API use
     ---
     input: x (noisy image, =x+sigma*noise), sigma (condition)
     We hope this function operates D(x+sigma*noise) = x
     our network has F((1-t)x + t*noise) = x - noise
     """
+    raise NotImplementedError
 
     # forward network
     c_in = 1 / (sigma + 1)
@@ -607,16 +607,16 @@ class SimDDPM(nn.Module):
     t = t_batch # in DDIM, t may be discrete
     # eps = 1e-3
     # t = t * (1 - eps) + eps
+    ## DDIM
     betas = get_beta_schedule(self.beta_schedule, beta_start=self.beta_start, beta_end=self.beta_end, num_diffusion_timesteps=self.num_diffusion_timesteps)
     alpha = jnp.cumprod(1 - betas, axis=0)
-    alphas = jnp.take(alpha, t) # TODO: implement alpha in the model
+    alphas = jnp.take(alpha, t) 
 
     # create v target
     # v_target = x_data - x_prior
     # v_target = jnp.ones_like(x_data)  # dummy
 
     # create z (as the network input)
-    # z = batch_mul(1 - t, x_data) + batch_mul(t, x_prior)
     z = batch_mul(jnp.sqrt(alphas), x_data) + batch_mul(jnp.sqrt(1-alphas), x_prior)
 
     # forward network
@@ -639,9 +639,8 @@ class SimDDPM(nn.Module):
 
     # prepare some visualization
     # if we can pred u, then we can reconstruct x_data from x_prior
-    # x_data_pred = z + batch_mul(t, u_pred)
     x_data_pred = batch_mul(z - batch_mul(jnp.sqrt(1-alphas), eps_pred), 1./jnp.sqrt(alphas))
-    
+
 
     images = self.get_visualization(
       [gt,

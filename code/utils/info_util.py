@@ -9,7 +9,8 @@ def nnx_to_dict(p, d: dict):
         v = p[k]
         # print(type(v))
         if isinstance(v, nn.variablelib.VariableState):
-            d[str(k)] = v.value
+            if v.value is not None:
+                d[str(k)] = v.value
         else:
             newd={}
             d[str(k)]=newd

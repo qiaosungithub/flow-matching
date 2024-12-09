@@ -105,7 +105,7 @@ def get_config():
   config.weight_decay = 0.0001  
   config.adam_b1 = 0.9
   config.adam_b2 = 0.95
-  config.grad_clip = 0.0
+  # config.grad_clip = 0.0
 
   config.warmup_epochs = 5.
   config.momentum = 0.9
