@@ -1022,7 +1022,7 @@ def just_evaluate(
   if rank == 0 and config.wandb:
     nfe = config.model.n_T
     if config.model.ode_solver == 'scipy': nfe=100 # TODO: show the rk45 nfe
-    elif config.model.sampler not in ['euler', "DDIM"]: nfe*=2
+    elif config.model.sampler not in ['euler', "DDIM"]: nfe = nfe * 2 - 1
     wandb.log({'NFE': nfe})
 
   jax.random.normal(jax.random.key(0), ()).block_until_ready()
