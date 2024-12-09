@@ -249,13 +249,18 @@ def diffusion_schedule_fn_some(config, t_batch):
   o = create_zhh_diffusion_schedule(config)
   return o['alphas_cumprod'][t_batch], o['betas'][t_batch], o['alphas_cumprod_prev'][t_batch], o['posterior_log_variance_clipped'][t_batch]
 
-def get_t_process_fn(t_condition_method):
+def get_t_process_fn(t_condition_method,**kwargs):
   if t_condition_method == 'log999':
-    return lambda t: jnp.log(t * 999)
+    return lambda t, 高兴=None,train = True: jnp.log(t * 999)
   elif t_condition_method == 'direct':
-    return lambda t: t
+    return lambda t, 高兴=None,train = True: t
   elif t_condition_method == 'not': # no t: 没有t
-    return lambda t: jnp.zeros_like(t)
+    return lambda t, 高兴=None,train = True: jnp.zeros_like(t)
+  elif t_condition_method == 'ptb': # perturb
+    assert 'total_timesteps' in kwargs
+    total_timesteps = kwargs['total_timesteps']
+    logging.info('Use ptb!')
+    return lambda t, 高兴=None,train = True: jnp.clip(t + jax.random.randint(高兴, t.shape, minval=-3, maxval=4), min=0, max=total_timesteps) if train else t # 唐: maxval is exclusive
   else:
     raise NotImplementedError('Unknown t_condition_method: {m}'.format(m=t_condition_method))
 
@@ -464,6 +469,7 @@ class SimDDPM(nn.Module):
     rngs=None,
     learn_var=False,
     class_conditional=False,
+    diffusion_nT = None,
     **kwargs
   ):
     self.image_size = image_size
@@ -485,7 +491,7 @@ class SimDDPM(nn.Module):
     self.learn_var = learn_var
     # self.no_condition_t = no_condition_t
     assert no_condition_t == False, 'This is deprecated'
-    self.t_preprocess_fn = get_t_process_fn(t_condition_method)
+    self.t_preprocess_fn = get_t_process_fn(t_condition_method, total_timesteps = diffusion_nT)
     self.rngs = rngs
     self.sample_clip_denoised = sample_clip_denoised
     self.class_conditional = class_conditional
@@ -574,6 +580,7 @@ class SimDDPM(nn.Module):
     return x_next
   
   def sample_one_step_edm(self, x_i, rng, i, t_steps):
+    raise NotImplementedError
 
     if self.sampler == 'edm':
       x_next = self.sample_one_step_edm_ode(x_i, i, t_steps) 
@@ -588,6 +595,7 @@ class SimDDPM(nn.Module):
     # return x_next, denoised 
 
   def sample_one_step_heun(self, x_i, i):
+    raise NotImplementedError
 
     x_cur = x_i
 
@@ -619,6 +627,7 @@ class SimDDPM(nn.Module):
     return x_next
 
   def sample_one_step_euler(self, x_i, i):
+    raise NotImplementedError
     # i: loop from 0 to self.n_T - 1
     t = i / self.n_T  # t start from 0 (t = 0 is noise here)
     t = t * (1 - self.eps) + self.eps
@@ -636,6 +645,7 @@ class SimDDPM(nn.Module):
     """
     edm's second order ODE solver
     """
+    raise NotImplementedError
 
     x_cur = x_i
     t_cur = t_steps[i]
@@ -667,6 +677,7 @@ class SimDDPM(nn.Module):
     """
     edm's second order SDE solver
     """
+    raise NotImplementedError
 
     gamma = jnp.minimum(30/self.n_T, jnp.sqrt(2)-1)
     # gamma = jnp.minimum(80/self.n_T, jnp.sqrt(2)-1)
@@ -775,13 +786,14 @@ class SimDDPM(nn.Module):
   def forward_flow_pred_function(self, z, t, augment_label=None,y=None, train: bool = True):  # EDM
 
     # t_cond = jnp.zeros_like(t) if self.no_condition_t else jnp.log(t * 999)
-    t_cond = self.t_preprocess_fn(t).astype(self.dtype)
+    t_cond = self.t_preprocess_fn(t,train=train,高兴=self.rngs.xibo_骚操作()).astype(self.dtype)
     u_pred = self.net(z, t_cond, augment_label=augment_label, train=train,y=y)
     if self.learn_var:
       return jnp.split(u_pred, 2, axis=-1)
     return u_pred
   
   def forward_edm_denoising_function(self, x, sigma, augment_label=None, train: bool = True):  # EDM
+    raise NotImplementedError
     """
     code from edm
     ---
@@ -847,9 +859,9 @@ class SimDDPM(nn.Module):
 
     # forward network
     if self.learn_var:
-      u_pred, model_var_output = self.forward_flow_pred_function(x_mixtue, t,y=labels)
+      u_pred, model_var_output = self.forward_flow_pred_function(x_mixtue, t,y=labels, train=True)
     else:
-      u_pred = self.forward_flow_pred_function(x_mixtue, t,y=labels)
+      u_pred = self.forward_flow_pred_function(x_mixtue, t,y=labels, train=True)
 
     # loss
     loss = (v_target - u_pred)**2

@@ -51,9 +51,10 @@ model:
     
     no_condition_t: False
     # class_conditional: False
-    class_conditional: True
+    class_conditional: False
+    t_condition_method: ptb # for Preturb T experiments
     # t_condition_method: not # for No T experiments
-    t_condition_method: direct # default: log999
+    # t_condition_method: direct # default: log999
 dataset:
     name: cifar10
     root: CIFAR # pytorch

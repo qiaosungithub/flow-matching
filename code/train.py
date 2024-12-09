@@ -584,9 +584,9 @@ def train_and_evaluate(
 
   ########### Create Model ###########
   model_cls = models_ddpm.SimDDPM
-  rngs = nn.Rngs(config.seed, params=config.seed + 114, dropout=config.seed + 514, train=config.seed + 1919)
+  rngs = nn.Rngs(config.seed, params=config.seed + 114, dropout=config.seed + 514, train=config.seed + 1919, xibo_骚操作=config.seed + 810)  
   dtype = get_dtype(config.half_precision)
-  model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype)
+  model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype, diffusion_nT=config.diffusion_nT)
   model = model_init_fn(rngs=rngs, **model_config)
   show_dict(f'number of model parameters:{count_params(model)}')
 
