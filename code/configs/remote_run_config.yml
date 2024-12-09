@@ -48,6 +48,7 @@ model:
     # ode_solver: scipy # rk45
     
     no_condition_t: False
+    embedding_type: fourier
 dataset:
     name: cifar10
     root: CIFAR # pytorch
@@ -77,7 +78,7 @@ log_per_step: 100
 visualize_per_epoch: 50
 eval_per_epoch: 50
 checkpoint_per_epoch: 500
-load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241206_202211_8ockg9_kmh-tpuvm-v2-32-7__b_lr_ep_eval/checkpoint_145500
+# load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241206_202211_8ockg9_kmh-tpuvm-v2-32-7__b_lr_ep_eval/checkpoint_145500
 
 # # Here is for IMAGENET32x32:
 

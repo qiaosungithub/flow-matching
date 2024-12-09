@@ -48,6 +48,7 @@ model:
     ode_solver: jax
     # ode_solver: scipy # rk45
     no_condition_t: False
+    embedding_type: fourier # EDM
 dataset:
     name: cifar10
     root: CIFAR # pytorch
@@ -72,14 +73,14 @@ lr_schedule: const
 weight_decay: 0
 optimizer: adamw
 adam_b2: 0.999
-grad_clip: 1.0
+grad_clip: 0.0
 warmup_epochs: 200
 log_per_step: 30
 visualize_per_epoch: 100
 eval_per_epoch: 100
 wandb: False
 checkpoint_per_epoch: 100
-load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241206_202211_8ockg9_kmh-tpuvm-v2-32-7__b_lr_ep_eval/checkpoint_194000
+# load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241206_202211_8ockg9_kmh-tpuvm-v2-32-7__b_lr_ep_eval/checkpoint_194000
 
 
 # # Here is for IMAGENET32x32:

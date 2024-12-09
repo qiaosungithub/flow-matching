@@ -54,6 +54,7 @@ class NCSNpp(nn.Module):
         dropout = 0.0,
         fir_kernel = (1, 3, 3, 1),
         resblock_type = "biggan",
+        embedding_type = "fourier",
         fourier_scale = 16.0,
         rngs = None,
         use_aug_label = False,
@@ -70,13 +71,13 @@ class NCSNpp(nn.Module):
         self.dropout = dropout
         self.fir_kernel = fir_kernel
         self.resblock_type = resblock_type
+        self.embedding_type = embedding_type
         self.fourier_scale = fourier_scale
         self.rngs = rngs
         self.use_aug_label = use_aug_label
         self.aug_label_dim = aug_label_dim
 
         self.act = act = nn.swish
-        self.conditional = conditional = True  # noise-conditional
         self.init_scale = init_scale = 0.0
         self.skip_rescale = skip_rescale = True
         self.resamp_with_conv = resamp_with_conv = True
@@ -88,8 +89,6 @@ class NCSNpp(nn.Module):
 
         progressive = self.progressive = "none"
         progressive_input = self.progressive_input = "residual"
-        # embedding_type = "fourier"
-        embedding_type = self.embedding_type = "positional"
         
         assert progressive in ["none", "output_skip", "residual"]
         assert self.progressive_input in ["none", "input_skip", "residual"]
@@ -99,7 +98,7 @@ class NCSNpp(nn.Module):
         if embedding_type == "fourier":
             # Gaussian Fourier features embeddings.
             self.temb_layer = layerspp.GaussianFourierProjection(
-                embedding_size=nf, scale=fourier_scale, name='map_noise', rngs=rngs
+                embedding_size=nf, scale=fourier_scale, rngs=rngs
             )
         elif embedding_type == "positional":
             # Sinusoidal positional embeddings.
@@ -111,9 +110,10 @@ class NCSNpp(nn.Module):
         #################### aug label ############################
         if use_aug_label:
             assert aug_label_dim is not None
-            assert embedding_type == "positional" # in edm_jax, Kaiming only supports positional embedding
+            assert embedding_type == "fourier" # in edm_jax, Kaiming only supports fourier embedding
             self.augemb_layer = nn.Linear(aug_label_dim, input_temb_dim, kernel_init=default_initializer(), use_bias=False, rngs=rngs)
         #################### noise condition ############################
+        input_temb_dim = self.input_temb_dim
         self.cond_MLP = nn.Sequential(
             nn.Linear(input_temb_dim, nf * 4, kernel_init=default_initializer(), rngs=rngs),
             act,
@@ -334,12 +334,7 @@ class NCSNpp(nn.Module):
             aemb = self.augemb_layer(augment_label)
             temb += aemb 
 
-        if self.conditional:
-            temb = self.cond_MLP(temb)
-        else:
-            raise NotImplementedError
-            temb = None
-
+        temb = self.cond_MLP(temb)
 
         # utility function to count number of parameters
         def pms(self, name):

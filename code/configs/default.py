@@ -65,6 +65,8 @@ def get_config():
   model.beta_end = 0.02
   model.num_diffusion_timesteps = 1000
 
+  model.embedding_type = 'fourier'
+
   config.aug = aug = ml_collections.ConfigDict()
   aug.use_edm_aug = False
 
