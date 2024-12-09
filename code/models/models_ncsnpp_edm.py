@@ -112,7 +112,7 @@ class NCSNpp(nn.Module):
         if use_aug_label:
             assert aug_label_dim is not None
             assert embedding_type == "positional" # in edm_jax, Kaiming only supports positional embedding
-            self.augemb_layer = nn.Linear(aug_label_dim, input_temb_dim, kernel_init=default_initializer(), use_bias=False)
+            self.augemb_layer = nn.Linear(aug_label_dim, input_temb_dim, kernel_init=default_initializer(), use_bias=False, rngs=rngs)
         #################### noise condition ############################
         input_temb_dim = self.input_temb_dim
         self.cond_MLP = nn.Sequential(
