@@ -64,7 +64,7 @@ dataset:
     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
     cache: False
 aug: 
-    use_edm_aug: False # TODO: enable this and test
+    use_edm_aug: False
 fid:
     on_use: False # 不想 initialize InceptionV3
     eval_only: False
