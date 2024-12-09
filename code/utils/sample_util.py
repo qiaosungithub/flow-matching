@@ -34,9 +34,6 @@ def generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_s
     sample_idx = jax.process_index() * jax.local_device_count() + jnp.arange(jax.local_device_count())
     sample_idx = jax.device_count() * step + sample_idx
     log_for_0(f'Sampling step {step} / {num_steps}...')
-    # logging_util.verbose_on()
-    # logging.info(f'sample_idx: {sample_idx}')
-    # logging_util.verbose_off()
 
     samples = run_p_sample_step(p_sample_step, state, sample_idx=sample_idx)
     # print('samples.shape:', samples.shape)
