@@ -25,6 +25,8 @@ FM with no t baseline: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/2024113
 
 DDIM: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241202_214940_zd8s4j_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_48500`
 
+EDM: `/kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241206_202211_8ockg9_kmh-tpuvm-v2-32-7__b_lr_ep_eval/checkpoint_194000`, and `/kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241206_202211_8ockg9_kmh-tpuvm-v2-32-7__b_lr_ep_eval/checkpoint_145500`. TODO: which is better?
+
 ## datasets
 
 We now use pytorch dataset. To use tfds, switch to the `FM-nnx-tfds` branch.
