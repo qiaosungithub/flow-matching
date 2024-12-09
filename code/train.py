@@ -821,7 +821,8 @@ def train_and_evaluate(
       # pass
       # if index == 0:
       state = sync_batch_stats(state)
-      save_checkpoint(state, workdir, model_avg)
+      if not config.get('save_by_fid', False):
+        save_checkpoint(state, workdir, model_avg)
     if epoch == config.num_epochs - 1:
       state = state.replace(params=model_avg)
 
@@ -898,17 +899,18 @@ def train_and_evaluate(
       if config.wandb and index == 0:
         wandb.log({'gen_fid': wandb.Image(canvas)})
     
-      if fid_score_ema < BEST_FID_UNTIL_NOW:
-        BEST_FID_UNTIL_NOW = fid_score_ema
-        import shutil
-        if os.path.exists(os.path.join(workdir, 'best_fid')):
-          shutil.rmtree(os.path.join(workdir, 'best_fid'))
-        os.makedirs(os.path.join(workdir, 'best_fid'))
-        if index == 0:
-          with open(os.path.join(workdir,'best_fid', 'FID.txt'), 'w') as f:
-            f.write(str(BEST_FID_UNTIL_NOW))
-        save_checkpoint(state, os.path.join(workdir, 'best_fid'), model_avg)
-        log_for_0(f'[BEST FID HAS CHANGED]: {BEST_FID_UNTIL_NOW}')
+      if config.get('save_by_fid', False):
+        if fid_score_ema < BEST_FID_UNTIL_NOW:
+          BEST_FID_UNTIL_NOW = fid_score_ema
+          import shutil
+          if os.path.exists(os.path.join(workdir, 'best_fid')):
+            shutil.rmtree(os.path.join(workdir, 'best_fid'))
+          os.makedirs(os.path.join(workdir, 'best_fid'))
+          if index == 0:
+            with open(os.path.join(workdir,'best_fid', 'FID.txt'), 'w') as f:
+              f.write(str(BEST_FID_UNTIL_NOW))
+          save_checkpoint(state, os.path.join(workdir, 'best_fid'), model_avg)
+          log_for_0(f'[BEST FID HAS CHANGED]: {BEST_FID_UNTIL_NOW}')
 
   # Wait until computations are done before exiting
   jax.random.normal(jax.random.key(0), ()).block_until_ready()
