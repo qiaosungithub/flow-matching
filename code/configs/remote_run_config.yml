@@ -42,8 +42,8 @@ model:
 
     # sampler: euler
     # sampler: heun
-    sampler: edm
-    # sampler: edm-sde
+    # sampler: edm
+    sampler: edm-sde
     # sampler: DDIM
     # ode_solver: scipy # rk45
     
