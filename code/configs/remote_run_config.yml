@@ -48,7 +48,7 @@ model:
     ode_solver: jax # rk45
     # ode_solver: scipy # rk45
     
-    no_condition_t: False
+    no_condition_t: True
 dataset:
     name: cifar10
     root: CIFAR # pytorch
