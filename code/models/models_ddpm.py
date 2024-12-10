@@ -120,8 +120,8 @@ def solve_diffeq_by_O(init_x,state,see_steps:int=10,t_min:float=0.0):
         merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
         u_pred = merged_model.forward_flow_pred_function(x, creation, train=False)
         return u_pred
-    out = O.odeint(f, init_x, jnp.linspace(t_min,1.0,see_steps), rtol=1e-5, atol=1e-5) 
-    # out = O.odeint(f, init_x, jnp.linspace(t_min,1,see_steps), rtol=1e-5, atol=1e-5) 
+    out = O.odeint(f, init_x, jnp.linspace(t_min,1.0,see_steps), rtol=1e-4, atol=1e-4) 
+    # out = O.odeint(f, init_x, jnp.linspace(t_min,1.0,see_steps), rtol=1e-5, atol=1e-5) 
     return out
     # return out, None
   
