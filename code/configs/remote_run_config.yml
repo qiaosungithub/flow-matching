@@ -81,7 +81,7 @@ adam_b2: 0.999
 grad_clip: 0.0
 warmup_epochs: 0 # CT & ECM
 log_per_step: 100
-visualize_per_epoch: 50
+visualize_per_epoch: 30
 eval_per_epoch: 50
 checkpoint_per_epoch: 200
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241202_214940_zd8s4j_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_48500

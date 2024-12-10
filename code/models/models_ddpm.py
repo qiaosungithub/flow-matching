@@ -651,11 +651,11 @@ class SimDDPM(nn.Module):
     bz = imgs.shape[0]
 
     assert noise_batch.shape == x.shape
-    assert t_batch.shape == (bz,2)
 
     # -----------------------------------------------------------------
     # here t, t2 stands for noise level
     assert self.t_sampling == "ecm"
+    assert t_batch.shape == (bz,2)
     t = t_batch[:, 0]
     t2 = t_batch[:, 1]
 
