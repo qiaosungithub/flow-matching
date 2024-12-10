@@ -110,7 +110,9 @@ def edm_ema_scales_schedules(step, config, steps_per_epoch):
   scales = jnp.ones((1,), dtype=jnp.int32)
   return ema_beta, scales
 
-from jax.experimental import ode as O
+# from jax.experimental import ode as O
+# import models.ode_pkg_repo as O
+import models.ode_pkg as O
 def solve_diffeq_by_O(init_x,state,see_steps:int=10,t_min:float=0.0):
     def f(x, t):
         # assert t.shape == (), ValueError(f't shape: {t.shape}')
@@ -121,6 +123,7 @@ def solve_diffeq_by_O(init_x,state,see_steps:int=10,t_min:float=0.0):
     out = O.odeint(f, init_x, jnp.linspace(t_min,1.0,see_steps), rtol=1e-5, atol=1e-5) 
     # out = O.odeint(f, init_x, jnp.linspace(t_min,1,see_steps), rtol=1e-5, atol=1e-5) 
     return out
+    # return out, None
   
 # NOTE: problem with diffrax is that it is imcompatible with JAX 0.4.27
 # import diffrax as D
@@ -143,10 +146,17 @@ def sample_by_diffeq(state: NNXTrainState, model, rng, n_sample,t_min:float=0.0)
     别传进去 = rng
     只能用一次, 别传进去 = jax.random.split(别传进去)
     init_x = jax.random.normal(只能用一次, (n_sample, model.image_size, model.image_size, model.out_channels))    
+    # samples, nfe = solve_diffeq_by_O(init_x, state, see_steps=2, t_min=t_min) # [2, N, 32, 32, 3] # [1, N]
     samples = solve_diffeq_by_O(init_x, state, see_steps=2, t_min=t_min)
-    # samples = solve_diffeq_by_O(init_x, state, see_steps=2, t_min=t_min)
-    samples = samples[1]
-    return samples
+    # we extract nfe from samples
+    
+    images = samples[1]
+    nfes = samples[2].mean(axis=(1,2,3)).astype(jnp.int32)
+    # print('nfes :', nfes)
+    # print('average nfe:', nfes.mean())
+    # print('samples.shape:', samples_.shape)
+    # print('nfe.shape:', nfe.shape)
+    return images, nfes.mean()
 
 # move this out from model for JAX compilation
 def generate(state: NNXTrainState, model, rng, n_sample):

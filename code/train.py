@@ -224,6 +224,9 @@ def sample_step(state, sample_idx, model, rng_init, device_batch_size, MEAN_RGB=
   """
   rng_sample = random.fold_in(rng_init, sample_idx)  # fold in sample_idx
   images = generate(state, model, rng_sample, n_sample=device_batch_size)
+  nfe = None
+  if model.ode_solver == 'O':
+    images, nfe = images
 
   images_all = lax.all_gather(images, axis_name='batch')  # each device has a copy  
   images_all = images_all.reshape(-1, *images_all.shape[2:])
@@ -232,7 +235,7 @@ def sample_step(state, sample_idx, model, rng_init, device_batch_size, MEAN_RGB=
 
   # images_all = images_all * (jnp.array(STDDEV_RGB)/255.).reshape(1,1,1,3) + (jnp.array(MEAN_RGB)/255.).reshape(1,1,1,3)
   # images_all = (images_all - 0.5) / 0.5
-  return images_all
+  return images_all, jax.device_get(nfe).mean() if nfe is not None else None
 
 def global_seed(seed):
   torch.manual_seed(seed)
@@ -627,11 +630,15 @@ def train_and_evaluate(
       """
       # redefine the interface
       images = p_sample_step(state, sample_idx=sample_idx)
+      nfe = None
+      if config.model.ode_solver == 'O':
+        images, nfe = images
       # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
       jax.random.normal(random.key(0), ()).block_until_ready()
-      return images[0]  # images have been all gathered
+      return images[0], nfe  # images have been all gathered
     
   elif config.model.ode_solver == 'scipy':
+    raise DeprecationWarning('其实用这个')
     from utils.rk45_util import get_rk45_functions
     run_p_sample_step, p_sample_step = get_rk45_functions(model, config, random.PRNGKey(0))
 
@@ -645,7 +652,7 @@ def train_and_evaluate(
 
     if config.fid.eval_only: # debug, this is tang
 
-      samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step)
+      samples_all, _ = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step)
       mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
       fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
       log_for_0(f' w/ ema: FID at {samples_all.shape[0]} samples: {fid_score}')
@@ -801,7 +808,7 @@ def train_and_evaluate(
       # sync batch statistics across replicas
       eval_state = sync_batch_stats(state)
       eval_state = eval_state.replace(params=model_avg)
-      vis = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx)
+      vis, _ = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx)
       vis = make_grid_visualization(vis)
       vis = jax.device_get(vis) # np.ndarray
       vis = vis[0]
@@ -818,7 +825,7 @@ def train_and_evaluate(
       or epoch == config.num_epochs
       # or epoch == 0
     ):
-      samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step)
+      samples_all, _ = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step)
       mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
       fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
       log_for_0(f'w/o ema: FID at {samples_all.shape[0]} samples: {fid_score}')
@@ -826,7 +833,7 @@ def train_and_evaluate(
       # ema results are much better
       eval_state = sync_batch_stats(state)
       eval_state = eval_state.replace(params=model_avg)
-      samples_all = sample_util.generate_samples_for_fid_eval(eval_state, workdir, config, p_sample_step, run_p_sample_step)
+      samples_all, nfe = sample_util.generate_samples_for_fid_eval(eval_state, workdir, config, p_sample_step, run_p_sample_step)
       mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
       fid_score_ema = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
       log_for_0(f'w/ ema: FID at {samples_all.shape[0]} samples: {fid_score_ema}')
@@ -836,6 +843,8 @@ def train_and_evaluate(
           'FID': fid_score,
           'FID_ema': fid_score_ema
         })
+        if nfe is not None:
+          wandb.log({'NFE': nfe})
 
       vis = make_grid_visualization(samples_all, to_uint8=False)
       vis = jax.device_get(vis)
@@ -946,9 +955,12 @@ def just_evaluate(
       """
       # redefine the interface
       images = p_sample_step(state, sample_idx=sample_idx)
+      nfe = None
+      if config.model.ode_solver == 'O':
+        images, nfe = images
       # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
       jax.random.normal(random.key(0), ()).block_until_ready()
-      return images[0]  # images have been all gathered
+      return images[0], nfe.mean()  # images have been all gathered
     
   elif config.model.ode_solver == 'scipy':
     raise DeprecationWarning('其实用这个')
@@ -989,7 +1001,7 @@ def just_evaluate(
     log_for_0(f'Sample...')
     # sync batch statistics across replicas
     # eval_state = eval_state.replace(params=model_avg)
-    vis = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx)
+    vis, nfe = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx)
     vis = make_grid_visualization(vis)
     vis = jax.device_get(vis) # np.ndarray
     vis = vis[0]
@@ -998,11 +1010,13 @@ def just_evaluate(
     canvas = Image.fromarray(vis)
     if config.wandb and index == 0:
       wandb.log({'gen': wandb.Image(canvas)})
+    log_for_0('Sample NFE: {}'.format(nfe))
+    # assert False, 'image saved!: {}'.format(nfe)
     # sample_step(eval_state, image_size, sampling_config, epoch, use_wandb=config.wandb)
   ########### FID ###########
   if config.fid.on_use:
 
-    samples_all = sample_util.generate_samples_for_fid_eval(eval_state, workdir, config, p_sample_step, run_p_sample_step)
+    samples_all, nfe = sample_util.generate_samples_for_fid_eval(eval_state, workdir, config, p_sample_step, run_p_sample_step)
     mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
     fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
     log_for_0(f'FID at {samples_all.shape[0]} samples: {fid_score}')
@@ -1011,6 +1025,8 @@ def just_evaluate(
       wandb.log({
         'FID': fid_score,
       })
+      if nfe is not None:
+        wandb.log({'NFE': nfe})
 
     vis = make_grid_visualization(samples_all, to_uint8=False)
     vis = jax.device_get(vis)
@@ -1023,7 +1039,8 @@ def just_evaluate(
     nfe = config.model.n_T
     if config.model.ode_solver == 'scipy': nfe=100 # TODO: show the rk45 nfe
     elif config.model.sampler not in ['euler', "DDIM"]: nfe*=2
-    wandb.log({'NFE': nfe})
+    if config.model.ode_solver != 'O':
+      wandb.log({'NFE': nfe})
 
   jax.random.normal(jax.random.key(0), ()).block_until_ready()
   if index == 0 and config.wandb:

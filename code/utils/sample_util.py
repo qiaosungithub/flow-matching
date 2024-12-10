@@ -30,6 +30,7 @@ def generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_s
   output_dir = os.path.join(workdir, 'samples')
   os.makedirs(output_dir, exist_ok=True)
   samples_all = []
+  nfes = []
   log_for_0('Note: the first sample may be significant slower')
   for step in range(num_steps):
     sample_idx = jax.process_index() * jax.local_device_count() + jnp.arange(jax.local_device_count())
@@ -39,13 +40,16 @@ def generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_s
     # logging.info(f'sample_idx: {sample_idx}')
     # logging_util.verbose_off()
 
-    samples = run_p_sample_step(p_sample_step, state, sample_idx=sample_idx)
+    samples, nfe = run_p_sample_step(p_sample_step, state, sample_idx=sample_idx)
+    nfes.append(nfe)
     # print('samples.shape:', samples.shape)
     # print(f"samples min and max: {samples.min()}, {samples.max()}")
     # exit("邓东灵")
+    if nfe is not None:
+      log_for_0(f'NFE: {nfe}')
     samples = float_to_uint8(samples)
     samples_all.append(samples)
   samples_all = np.concatenate(samples_all, axis=0)
   samples_all = samples_all[:config.fid.num_samples]
-  return samples_all
+  return samples_all, sum(nfes)/len(nfes) if len(nfes) > 0 else None
 
