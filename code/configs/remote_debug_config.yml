@@ -41,12 +41,13 @@ model:
     average_loss: True # use average or sum for loss
     embedding_type: positional
 
-    sampler: euler
+    # sampler: euler
     # sampler: heun
     # sampler: edm
     # sampler: edm-sde
     # sampler: DDIM
-    ode_solver: jax # rk45
+    # ode_solver: jax # rk45
+    ode_solver: O # rk45
     # ode_solver: scipy # rk45
     
     no_condition_t: False
@@ -63,10 +64,9 @@ fid:
     fid_per_epoch: 50
     num_samples: 50000
     cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
-    t_start: 0.0 # solve from t=1e-3
 evalu:
     ema: True
-    sample: False
+    sample: True
 batch_size: 512
 num_epochs: 2000
 learning_rate: 0.0008 # FM

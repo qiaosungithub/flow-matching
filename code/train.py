@@ -609,7 +609,7 @@ def train_and_evaluate(
   log_for_0(f'fixed_sample_idx: {vis_sample_idx}')
 
   ########### FID ###########
-  if config.model.ode_solver == 'jax':
+  if config.model.ode_solver in ['jax', 'O']:
     p_sample_step = jax.pmap(
       partial(sample_step, 
               model=model, 
@@ -928,7 +928,7 @@ def just_evaluate(
 
   ########### FID ###########
   vis_sample_idx = jax.process_index() * jax.local_device_count() + jnp.arange(jax.local_device_count())  # for visualization
-  if config.model.ode_solver == 'jax':
+  if config.model.ode_solver in ['jax', 'O']:
     p_sample_step = jax.pmap(
       partial(sample_step, 
               model=model, 
@@ -951,6 +951,7 @@ def just_evaluate(
       return images[0]  # images have been all gathered
     
   elif config.model.ode_solver == 'scipy':
+    raise DeprecationWarning('其实用这个')
     from utils.rk45_util import get_rk45_functions
     run_p_sample_step, p_sample_step = get_rk45_functions(model, config, random.PRNGKey(0))
 

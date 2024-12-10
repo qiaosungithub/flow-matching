@@ -30,6 +30,7 @@ def generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_s
   output_dir = os.path.join(workdir, 'samples')
   os.makedirs(output_dir, exist_ok=True)
   samples_all = []
+  log_for_0('Note: the first sample may be significant slower')
   for step in range(num_steps):
     sample_idx = jax.process_index() * jax.local_device_count() + jnp.arange(jax.local_device_count())
     sample_idx = jax.device_count() * step + sample_idx

@@ -110,6 +110,43 @@ def edm_ema_scales_schedules(step, config, steps_per_epoch):
   scales = jnp.ones((1,), dtype=jnp.int32)
   return ema_beta, scales
 
+from jax.experimental import ode as O
+def solve_diffeq_by_O(init_x,state,see_steps:int=10,t_min:float=0.0):
+    def f(x, t):
+        # assert t.shape == (), ValueError(f't shape: {t.shape}')
+        creation = t.reshape(1,).repeat(x.shape[0],axis=0)
+        merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
+        u_pred = merged_model.forward_flow_pred_function(x, creation, train=False)
+        return u_pred
+    out = O.odeint(f, init_x, jnp.linspace(t_min,1.0,see_steps), rtol=1e-5, atol=1e-5) 
+    # out = O.odeint(f, init_x, jnp.linspace(t_min,1,see_steps), rtol=1e-5, atol=1e-5) 
+    return out
+  
+# NOTE: problem with diffrax is that it is imcompatible with JAX 0.4.27
+# import diffrax as D
+# def solve_diffeq_by_diffrax(init_x,state,see_steps:int=10,t_min:float=0.0):
+#     def f(t, x):
+#     # def f(x, t):
+#         # assert t.shape == (), ValueError(f't shape: {t.shape}')
+#         creation = t.reshape(1,).repeat(x.shape[0],axis=0)
+#         merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
+#         u_pred = merged_model.forward_flow_pred_function(x, creation, train=False)
+#         return u_pred
+#     term = D.ODETerm(f)
+#     solver = D.Dopri5()
+#     controller = D.PIDController(rtol=1e-5, atol=1e-5)
+#     out = D.diffeqsolve(term, solver, y0=init_x, t0=t_min,t1=1.0, stepsize_controller=controller) 
+#     # out = O.odeint(f, init_x, jnp.linspace(t_min,1,see_steps), rtol=1e-5, atol=1e-5) 
+#     return out
+
+def sample_by_diffeq(state: NNXTrainState, model, rng, n_sample,t_min:float=0.0):
+    别传进去 = rng
+    只能用一次, 别传进去 = jax.random.split(别传进去)
+    init_x = jax.random.normal(只能用一次, (n_sample, model.image_size, model.image_size, model.out_channels))    
+    samples = solve_diffeq_by_O(init_x, state, see_steps=2, t_min=t_min)
+    # samples = solve_diffeq_by_O(init_x, state, see_steps=2, t_min=t_min)
+    samples = samples[1]
+    return samples
 
 # move this out from model for JAX compilation
 def generate(state: NNXTrainState, model, rng, n_sample):
@@ -121,6 +158,8 @@ def generate(state: NNXTrainState, model, rng, n_sample):
   ---
   return shape: (n_sample, 32, 32, 3)
   """
+  if model.ode_solver == 'O':
+    return sample_by_diffeq(state,model,rng,n_sample, t_min=model.eps)
 
   # prepare schedule
   num_steps = model.n_T
@@ -609,8 +648,8 @@ class SimDDPM(nn.Module):
 
     # sample t step
     t = t_batch
-    eps = 1e-3
-    t = t * (1 - eps) + eps
+    t = t * (1 - self.eps) + self.eps
+    # TODO: 这个太唐了，必须移到外面去
 
     # create v target
     v_target = x_data - x_prior
