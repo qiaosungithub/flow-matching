@@ -50,7 +50,8 @@ command
 for i in {1..3}; do
     if grep -q 'Additional GRPC error information' $LOGDIR/output.log; then
         echo 'Get GRPC error, retrying...'
-        echo > $LOGDIR/output.log
+        # echo > $LOGDIR/output.log
+        mv $LOGDIR/output.log $LOGDIR/output.log.$i
         bash re_apply.sh
         command
     else

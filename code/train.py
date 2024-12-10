@@ -902,10 +902,10 @@ def train_and_evaluate(
       if config.get('save_by_fid', False):
         if fid_score_ema < BEST_FID_UNTIL_NOW:
           BEST_FID_UNTIL_NOW = fid_score_ema
-          import shutil
-          if os.path.exists(os.path.join(workdir, 'best_fid')):
-            shutil.rmtree(os.path.join(workdir, 'best_fid'))
-          os.makedirs(os.path.join(workdir, 'best_fid'))
+          # import shutil
+          # if os.path.exists(os.path.join(workdir, 'best_fid')):
+          #   shutil.rmtree(os.path.join(workdir, 'best_fid'))
+          os.makedirs(os.path.join(workdir, 'best_fid'), exist_ok=True)
           if index == 0:
             with open(os.path.join(workdir,'best_fid', 'FID.txt'), 'w') as f:
               f.write(str(BEST_FID_UNTIL_NOW))
