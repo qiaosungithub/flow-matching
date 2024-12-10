@@ -19,7 +19,7 @@ source ka.sh
 
 echo Running at $VM_NAME $ZONE
 
-STAGEDIR=/$DATA_ROOT/staging/$(whoami)/debug
+STAGEDIR=/$DATA_ROOT/staging/$(whoami)/debug-$VM_NAME
 sudo mkdir -p $STAGEDIR
 sudo chmod 777 -R $STAGEDIR
 echo 'Staging files...'

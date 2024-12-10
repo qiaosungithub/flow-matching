@@ -259,6 +259,7 @@ class SimDDPM(nn.Module):
     ode_solver='jax',
     no_condition_t=False,
     rngs=None,
+    embedding_type='fourier',
     # beta_schedule='linear',
     # beta_start=1e-4,
     # beta_end=0.02,
@@ -317,6 +318,7 @@ class SimDDPM(nn.Module):
         image_size=self.image_size,
         out_channels=self.out_channels,
         dropout=self.dropout,
+        embedding_type=embedding_type,
         use_aug_label=self.use_aug_label,
         aug_label_dim=9,
         rngs=self.rngs)
