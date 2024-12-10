@@ -70,8 +70,8 @@ num_epochs: 2000
 learning_rate: 0.0004 # DDIM
 lr_schedule: const
 weight_decay: 0.0
-# optimizer: adamw
-optimizer: adam
+optimizer: adamw
+# optimizer: adam
 adam_b2: 0.95
 grad_clip: 0.0 # TODO: try 1.0
 warmup_epochs: 200

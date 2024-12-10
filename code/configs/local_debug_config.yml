@@ -34,8 +34,8 @@
 model:
     image_size: 32
     out_channels: 3
-    base_width: 4
-    n_T: 50
+    base_width: 128
+    n_T: 1000
     use_aug_label: False
     dropout: 0.20
     net_type: ncsnppedm
@@ -78,7 +78,7 @@ visualize_per_epoch: 100
 eval_per_epoch: 100
 wandb: False
 checkpoint_per_epoch: 100
-# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241202_214940_zd8s4j_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_48500
+load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241209_004559_gihhxu_kmh-tpuvm-v2-32-1__b_lr_ep_eval/checkpoint_194000
 
 
 # # Here is for IMAGENET32x32:
