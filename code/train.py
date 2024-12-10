@@ -44,7 +44,7 @@ import utils.fid_util as fid_util
 import utils.sample_util as sample_util
 
 import models.models_ddpm as models_ddpm
-from models.models_ddpm import generate, ct_ema_scales_schedules, sample_icm_t
+from models.models_ddpm import generate, ct_ema_scales_schedules, sample_ecm_t, sample_icm_t
 import input_pipeline
 from input_pipeline import prepare_batch_data
 
@@ -150,6 +150,9 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
     aux, grads = grad_fn(state.params)
     grads = lax.pmean(grads, axis_name='batch')
 
+  if config.nan_to_num:
+    grads = jax.tree_map(lambda x: jnp.nan_to_num(x, copy=True, nan=0., posinf=1e5, neginf=-1e5), grads)
+
   # # clip grad with config.grad_clip
   # if config.grad_clip > 0.0:
   #   grads = optax.clip_by_global_norm(grads, config.grad_clip)[1]
@@ -174,7 +177,7 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
 
 def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, ema_scales_fn, model): # TODO: change the API
   """
-  CT version
+  ECM version
   ---
   Perform a single training step.
   We will pmap this function
@@ -183,6 +186,8 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, ema_sca
   rngs: nnx.Rngs
   train_step_compute_fn: the pmaped version of train_step_compute
   ema_scales_fn: to get the scales
+  ---
+  t_batch: shape (b1, b2, 2), with t & t2
   """
 
   # # ResNet has no dropout; but maintain rng_dropout for future usage
@@ -206,6 +211,9 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, ema_sca
     #   t_batch = sample_icm_t((b1, b2), model, s, rngs.train())
     # exit("6.7900")
     t_batch = sample_icm_t((b1, b2), model, scales[0], rngs.train()) # this is index, instead of sigma
+  elif model.t_sampling == 'ecm':
+    t, r = sample_ecm_t((b1, b2), model, scales[0], rngs.train()) # this is index, instead of sigma
+    t_batch = jnp.stack([t, r], axis=-1)
   else:
     raise NotImplementedError
 

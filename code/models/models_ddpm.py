@@ -38,40 +38,41 @@ from models.jcm.sde_lib import batch_mul
 
 from jax.scipy.special import erf
 
-# def get_beta_schedule(beta_schedule, *, beta_start, beta_end, num_diffusion_timesteps):
-#     """
-#     DDIM util function
-#     """
-#     def sigmoid(x):
-#         return 1 / (jnp.exp(-x) + 1)
+def get_beta_schedule(beta_schedule, *, beta_start, beta_end, num_diffusion_timesteps):
+    """
+    DDIM util function
+    """
+    raise NotImplementedError
+    def sigmoid(x):
+        return 1 / (jnp.exp(-x) + 1)
 
-#     if beta_schedule == "quad":
-#         betas = (
-#             jnp.linspace(
-#                 beta_start ** 0.5,
-#                 beta_end ** 0.5,
-#                 num_diffusion_timesteps,
-#                 dtype=np.float64,
-#             )
-#             ** 2
-#         )
-#     elif beta_schedule == "linear":
-#         betas = jnp.linspace(
-#             beta_start, beta_end, num_diffusion_timesteps, dtype=np.float64
-#         )
-#     elif beta_schedule == "const":
-#         betas = beta_end * jnp.ones(num_diffusion_timesteps, dtype=np.float64)
-#     elif beta_schedule == "jsd":  # 1/T, 1/(T-1), 1/(T-2), ..., 1
-#         betas = 1.0 / jnp.linspace(
-#             num_diffusion_timesteps, 1, num_diffusion_timesteps, dtype=np.float64
-#         )
-#     elif beta_schedule == "sigmoid":
-#         betas = jnp.linspace(-6, 6, num_diffusion_timesteps)
-#         betas = sigmoid(betas) * (beta_end - beta_start) + beta_start
-#     else:
-#         raise NotImplementedError(beta_schedule)
-#     assert betas.shape == (num_diffusion_timesteps,)
-#     return betas
+    if beta_schedule == "quad":
+        betas = (
+            jnp.linspace(
+                beta_start ** 0.5,
+                beta_end ** 0.5,
+                num_diffusion_timesteps,
+                dtype=np.float64,
+            )
+            ** 2
+        )
+    elif beta_schedule == "linear":
+        betas = jnp.linspace(
+            beta_start, beta_end, num_diffusion_timesteps, dtype=np.float64
+        )
+    elif beta_schedule == "const":
+        betas = beta_end * jnp.ones(num_diffusion_timesteps, dtype=np.float64)
+    elif beta_schedule == "jsd":  # 1/T, 1/(T-1), 1/(T-2), ..., 1
+        betas = 1.0 / jnp.linspace(
+            num_diffusion_timesteps, 1, num_diffusion_timesteps, dtype=np.float64
+        )
+    elif beta_schedule == "sigmoid":
+        betas = jnp.linspace(-6, 6, num_diffusion_timesteps)
+        betas = sigmoid(betas) * (beta_end - beta_start) + beta_start
+    else:
+        raise NotImplementedError(beta_schedule)
+    assert betas.shape == (num_diffusion_timesteps,)
+    return betas
 
 
 class NNXTrainState(FlaxTrainState):
@@ -103,9 +104,9 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
     # original discrete scales
     num_stages = 8
 
-    if config.ct.continuous_scale: # default is True
+    if config.ct.continuous_scale: # default is True, just whether to floor or not
       # continuous scales
-      scales = step / total_steps * num_stages # TODO: in ECM, what is scale?
+      scales = step / total_steps * num_stages # this is just a, and total_steps * num_stages is d, which should be a tunable constant?
     else:
       scales = jnp.floor(step / total_steps * num_stages)
       scales = jnp.minimum(scales, num_stages - 1)
@@ -212,8 +213,8 @@ def sample_icm_t(
   indices = jnp.arange(scale) + 1 # [1, scale]
   sigmas = model.compute_t(indices, scale)
 
-  mean = model.P_mean
-  std = model.P_std
+  mean = -1.1
+  std = 2.0
 
   # pdf = erf((jnp.log(sigmas[:-1]) - mean) / (std * jnp.sqrt(2))) - erf(
   #       (jnp.log(sigmas[1:]) - mean) / (std * jnp.sqrt(2))
@@ -236,6 +237,46 @@ def sample_icm_t(
 
   return timesteps
 
+def sample_ecm_t(
+  samples_shape,
+  model,
+  scale: int,
+  rng,
+) -> jnp.array:
+  """
+  这个应该返回 [1, scales-1] 之内的数
+  
+  from improved CM. util function
+  ----------
+  Draws timesteps from a lognormal distribution.
+
+  Parameters
+  ----------
+  samples_shape: the shape of the samples to draw
+  model
+  scale: a scalar
+  rng: a key
+
+  """
+  # here, scales are like "stages" in ecm: 0, 1, 2, ..., 7
+  P_mean = -1.1
+  P_std = 2.0
+  rnd_normal = jax.random.normal(rng, samples_shape)
+
+  t = jnp.exp(rnd_normal * P_std + P_mean)  # sample t
+
+  # next, sample r
+  k = 8.0
+  b = 1.0
+  adj = 1 + k * nn.sigmoid(-b * t)
+
+  decay = 1 / 2 ** scale # q=2
+  ratio = 1 - decay * adj
+  r = t * ratio
+  r = jnp.maximum(r, 0.0)  # lower bound
+
+  return t, r
+
 class SimDDPM(nn.Module):
   """Simple DDPM."""
 
@@ -244,22 +285,15 @@ class SimDDPM(nn.Module):
     base_width,
     num_classes = 10,
     out_channels = 1,
-    n_T = 18,  # inference steps
+    n_T = 1,  # inference steps
     net_type = 'ncsnpp',
     dropout = 0.0,
     dtype = jnp.float32,
     use_aug_label = False,
     average_loss = False,
-    eps=1e-3, # for FM use
-    h_init=0.035, # TODO: what is this? not in CT
-    sampler='euler',
-    ode_solver='jax',
     no_condition_t=False,
     rngs=None,
-    beta_schedule='linear', # DDIM
-    beta_start=1e-4, # DDIM
-    beta_end=0.02, # DDIM
-    num_diffusion_timesteps=1000, # DDIM
+    r_lower=0.0, # ECM
     ema_target=False, # CT
     weighting='uniform', # CT
     loss_type='l2', # CT
@@ -280,16 +314,9 @@ class SimDDPM(nn.Module):
     self.dtype = dtype
     self.use_aug_label = use_aug_label
     self.average_loss = average_loss
-    self.eps = eps
-    self.h_init = h_init
-    self.sampler = sampler
-    self.ode_solver = ode_solver
     self.no_condition_t = no_condition_t
     self.rngs = rngs
-    self.beta_schedule = beta_schedule
-    self.beta_start = beta_start
-    self.beta_end = beta_end
-    self.num_diffusion_timesteps = num_diffusion_timesteps
+    self.r_lower = r_lower
     self.ema_target = ema_target
     self.weighting = weighting
     self.loss_type = loss_type
@@ -309,8 +336,6 @@ class SimDDPM(nn.Module):
     # )
     # self.sde = sde
     # This is not used in flow matching
-    self.P_mean = -1.1
-    self.P_std = 2 # These must be fixed for CM
     self.data_std = 0.5
     self.t_min = 0.002
     self.t_max = 80.0
@@ -344,7 +369,6 @@ class SimDDPM(nn.Module):
     # # declare two networks
     # self.net = net_fn(name='net')
     # self.net_ema = net_fn(name='net_ema')
-    self.num_timesteps = num_diffusion_timesteps
     self.net = net_fn()
 
 
@@ -372,26 +396,13 @@ class SimDDPM(nn.Module):
     """
     DDIM util function
     """
+    raise NotImplementedError
     betas = get_beta_schedule(self.beta_schedule, beta_start=self.beta_start, beta_end=self.beta_end, num_diffusion_timesteps=self.num_diffusion_timesteps)
     alpha = jnp.cumprod(1 - betas, axis=0)
     alpha = jnp.concatenate([jnp.ones((1,)), alpha], axis=0)
     a = jnp.take(alpha, t + 1).reshape(-1, 1, 1, 1)
     return a
     
-  def compute_losses(self, pred, gt):
-    assert pred.shape == gt.shape
-
-    # simple l2 loss
-    loss_rec = jnp.mean((pred - gt)**2)
-    
-    loss_train = loss_rec
-
-    dict_losses = {
-      'loss_rec': loss_rec,
-      'loss_train': loss_train
-    }
-    return loss_train, dict_losses
-
   def sample_one_step(self, x_i, rng, i):
     raise NotImplementedError
     if self.sampler == 'euler':
@@ -568,8 +579,15 @@ class SimDDPM(nn.Module):
     # return x_next, x0_t # debug
 
   def forward_consistency_function(self, x, t, ema=False, rng=None, train: bool = True):
-    c_skip = self.data_std ** 2 / ((t - self.t_min) ** 2 + self.data_std ** 2)
-    c_out = (t - self.t_min) * self.data_std / jnp.sqrt(t ** 2 + self.data_std ** 2)
+    """
+    ECM & ICM
+    """
+    if self.t_sampling == 'ecm':  # this follows EDM
+      c_skip = self.data_std ** 2 / (t ** 2 + self.data_std ** 2)
+      c_out = t * self.data_std / jnp.sqrt(t ** 2 + self.data_std ** 2)
+    else:
+      c_skip = self.data_std ** 2 / ((t - self.t_min) ** 2 + self.data_std ** 2)
+      c_out = (t - self.t_min) * self.data_std / jnp.sqrt(t ** 2 + self.data_std ** 2)
 
     c_in = 1 / jnp.sqrt(t ** 2 + self.data_std ** 2)
     cond_t = jnp.zeros_like(t) if self.no_condition_t else 0.25 * jnp.log(t)  # noise cond of edm
@@ -621,7 +639,8 @@ class SimDDPM(nn.Module):
   def forward(self, imgs, labels, augment_label, noise_batch, t_batch, scales, train: bool = True):
     """
     You should first sample the noise and t and input them
-    ---CT---
+    ---ECM---
+    t_batch: contain t & t2, shape (b, 2)
     scales: the number of scales
     here the input t_batch is the indices batch, 0 ~ scales-2
     """
@@ -632,12 +651,13 @@ class SimDDPM(nn.Module):
     bz = imgs.shape[0]
 
     assert noise_batch.shape == x.shape
-    assert t_batch.shape == (bz,)
+    assert t_batch.shape == (bz,2)
 
     # -----------------------------------------------------------------
     # here t, t2 stands for noise level
-    t = self.compute_t(t_batch, scales)
-    t2 = self.compute_t(t_batch + 1, scales)
+    assert self.t_sampling == "ecm"
+    t = t_batch[:, 0]
+    t2 = t_batch[:, 1]
 
     # sample from prior (noise)
     z = noise_batch
@@ -651,12 +671,17 @@ class SimDDPM(nn.Module):
     nn.reseed(self, dropout=rng_dropout_this_step)
     Ft2 = self.forward_consistency_function(x_t2, t2) # Here we do not support ema target
 
-    # Ft2 = jax.lax.stop_gradient(Ft2)  # stop gradient here, legacy
-    Ft = jax.lax.stop_gradient(Ft) # stop gradient here
+    Ft2 = jnp.where(t2.reshape(-1, 1, 1, 1) > self.r_lower, Ft2, x)
+
+    Ft2 = jax.lax.stop_gradient(Ft2)  # stop gradient here, legacy
+    # Ft = jax.lax.stop_gradient(Ft) # stop gradient here
 
     diffs = Ft - Ft2
 
-    if self.weighting == 'uniform':
+    if self.t_sampling == 'ecm':
+      weight = 1 / t
+      weight *= 2 ** (scales + 1)
+    elif self.weighting == 'uniform':
       weight = jnp.ones_like(t)
     elif self.weighting == 'icm':
       weight = 1. / (t2 - t)

@@ -645,20 +645,21 @@ def get_timestep_embedding(timesteps, embedding_dim, max_positions=10000):
     return emb
 
 
-# class NIN(nn.Module):
-#     num_units: int
-#     init_scale: float = 0.1
+def get_timestep_embedding_v2(timesteps, embedding_dim, endpoint=False, max_positions=10000):
+    """
+    Kaiming: following EDM's implementation
+    """
+    assert len(timesteps.shape) == 1
 
-#     @nn.compact
-#     def __call__(self, x):
-#         in_dim = int(x.shape[-1])
-#         W = self.param(
-#             "W", default_init(scale=self.init_scale), (in_dim, self.num_units)
-#         )
-#         b = self.param("b", jnn.initializers.zeros, (self.num_units,))
-#         y = contract_inner(x, W) + b
-#         assert y.shape == x.shape[:-1] + (self.num_units,)
-#         return y
+    freqs = jnp.arange(start=0, stop=embedding_dim // 2)
+    freqs = freqs / (embedding_dim // 2 - (1 if endpoint else 0))
+    freqs = (1 / max_positions) ** freqs
+
+    x = jnp.einsum("c,d->cd", timesteps, freqs)
+    x = jnp.concatenate([jnp.cos(x), jnp.sin(x)], axis=-1)
+
+    assert x.shape == (timesteps.shape[0], embedding_dim)
+    return x
     
 class NIN(nn.Module):
     """

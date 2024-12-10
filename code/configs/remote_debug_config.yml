@@ -53,7 +53,7 @@ model:
     fourier_scale: 0.02 # CT
     # embedding_type: positional
     embedding_type: fourier # try
-    t_sampling: icm # or original
+    t_sampling: ecm
     # loss_type: "l2"
     loss_type: "huber"
 ct:
