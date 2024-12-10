@@ -85,6 +85,7 @@ def get_config():
   ct.start_scales = 2
   ct.end_scales = 150
   ct.n_schedule = 'exp'
+  ct.continuous_scale = True
 
   # Dataset
   config.dataset = dataset = ml_collections.ConfigDict()

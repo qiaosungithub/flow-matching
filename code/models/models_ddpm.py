@@ -38,40 +38,40 @@ from models.jcm.sde_lib import batch_mul
 
 from jax.scipy.special import erf
 
-def get_beta_schedule(beta_schedule, *, beta_start, beta_end, num_diffusion_timesteps):
-    """
-    DDIM util function
-    """
-    def sigmoid(x):
-        return 1 / (jnp.exp(-x) + 1)
+# def get_beta_schedule(beta_schedule, *, beta_start, beta_end, num_diffusion_timesteps):
+#     """
+#     DDIM util function
+#     """
+#     def sigmoid(x):
+#         return 1 / (jnp.exp(-x) + 1)
 
-    if beta_schedule == "quad":
-        betas = (
-            jnp.linspace(
-                beta_start ** 0.5,
-                beta_end ** 0.5,
-                num_diffusion_timesteps,
-                dtype=np.float64,
-            )
-            ** 2
-        )
-    elif beta_schedule == "linear":
-        betas = jnp.linspace(
-            beta_start, beta_end, num_diffusion_timesteps, dtype=np.float64
-        )
-    elif beta_schedule == "const":
-        betas = beta_end * jnp.ones(num_diffusion_timesteps, dtype=np.float64)
-    elif beta_schedule == "jsd":  # 1/T, 1/(T-1), 1/(T-2), ..., 1
-        betas = 1.0 / jnp.linspace(
-            num_diffusion_timesteps, 1, num_diffusion_timesteps, dtype=np.float64
-        )
-    elif beta_schedule == "sigmoid":
-        betas = jnp.linspace(-6, 6, num_diffusion_timesteps)
-        betas = sigmoid(betas) * (beta_end - beta_start) + beta_start
-    else:
-        raise NotImplementedError(beta_schedule)
-    assert betas.shape == (num_diffusion_timesteps,)
-    return betas
+#     if beta_schedule == "quad":
+#         betas = (
+#             jnp.linspace(
+#                 beta_start ** 0.5,
+#                 beta_end ** 0.5,
+#                 num_diffusion_timesteps,
+#                 dtype=np.float64,
+#             )
+#             ** 2
+#         )
+#     elif beta_schedule == "linear":
+#         betas = jnp.linspace(
+#             beta_start, beta_end, num_diffusion_timesteps, dtype=np.float64
+#         )
+#     elif beta_schedule == "const":
+#         betas = beta_end * jnp.ones(num_diffusion_timesteps, dtype=np.float64)
+#     elif beta_schedule == "jsd":  # 1/T, 1/(T-1), 1/(T-2), ..., 1
+#         betas = 1.0 / jnp.linspace(
+#             num_diffusion_timesteps, 1, num_diffusion_timesteps, dtype=np.float64
+#         )
+#     elif beta_schedule == "sigmoid":
+#         betas = jnp.linspace(-6, 6, num_diffusion_timesteps)
+#         betas = sigmoid(betas) * (beta_end - beta_start) + beta_start
+#     else:
+#         raise NotImplementedError(beta_schedule)
+#     assert betas.shape == (num_diffusion_timesteps,)
+#     return betas
 
 
 class NNXTrainState(FlaxTrainState):
@@ -84,7 +84,7 @@ class NNXTrainState(FlaxTrainState):
 
 def ct_ema_scales_schedules(step, config, steps_per_epoch):
   """
-  ICM improved version
+  ICM improved version & ECM version
   modified by zhh
   """
   # start_ema = float(config.ct.start_ema)
@@ -92,6 +92,25 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
   start_scales = int(config.ct.start_scales)
   end_scales = int(config.ct.end_scales)
   total_steps = config.num_epochs * steps_per_epoch
+
+  # hack: special handling for ecm
+  if config.model.t_sampling == 'ecm':
+    assert config.model.ema_target == False
+    ema_halflife_kimg = 2000  # edm was 500 (2000 * 1000 / 50000 = 40ep)
+    ema_halflife_nimg = ema_halflife_kimg * 1000
+    target_ema = 0.5 ** (config.batch_size / jnp.maximum(ema_halflife_nimg, 1e-8))  # 0.9998 for batch 512
+
+    # original discrete scales
+    num_stages = 8
+
+    if config.ct.continuous_scale: # default is True
+      # continuous scales
+      scales = step / total_steps * num_stages # TODO: in ECM, what is scale?
+    else:
+      scales = jnp.floor(step / total_steps * num_stages)
+      scales = jnp.minimum(scales, num_stages - 1)
+
+    return target_ema, scales
 
   if config.ct.n_schedule == 'original':
     raise LookupError('看上去就不对')
@@ -138,6 +157,7 @@ def edm_ema_scales_schedules(step, config, steps_per_epoch):
 def generate(state: NNXTrainState, model, rng, n_sample):
   """
   Generate samples from the model
+  TODO: do 2-step generation
 
   Here we tend to not use nnx.Rngs
   state: maybe a train state
