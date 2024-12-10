@@ -129,110 +129,53 @@ def generate(state: NNXTrainState, model, rng, n_sample):
   x_prior = jax.random.normal(rng_used, x_shape, dtype=model.dtype)
 
   assert model.sampler == "DDIM"
-  if model.sampler in ['euler', 'heun']:
-      
-    x_i = x_prior
 
-    def step_fn(i, inputs):
-      x_i, rng = inputs
-      rng_this_step = jax.random.fold_in(rng, i)
-      rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
+  skip = model.num_diffusion_timesteps // num_steps
+  seq = range(0, model.num_timesteps, skip)
+  T = len(seq)
+  seq_next = [-1] + list(seq[:-1])
+  seq_reversed = jnp.array(list(reversed(seq)))
+  seq_next_reversed = jnp.array(list(reversed(seq_next)))
+  eta = 0.0 # control the noise level added every step, 0 -> ODE sampler TODO: implement eta > 0.0
+  n = x_prior.shape[0]
+  x0_preds = []
+  xs = [x_prior]
 
-      merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-      x_i = merged_model.sample_one_step(x_i, rng_z, i)
-      outputs = (x_i, rng)
-      return outputs
+  x_i = x_prior
 
-    outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
-    images = outputs[0]
-    return images
-  
-  elif model.sampler in ['edm', 'edm-sde']:
-    t_steps = model.compute_t(jnp.arange(num_steps), num_steps)
-    t_steps = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
-    x_i = x_prior * t_steps[0]
+  def step_fn(i, inputs):
+    x_i, rng = inputs
 
-    # import jax.random as random
-    # x = random.normal(rng, x_shape, dtype=model.dtype)
+    _i = seq_reversed[i]
+    _j = seq_next_reversed[i]
 
-    def step_fn(i, inputs):
-      x_i, rng = inputs
-      rng_this_step = jax.random.fold_in(rng, i)
-      rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
+    t = jnp.ones(n) * _i
+    next_t = jnp.ones(n) * _j
 
-      merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-      x_i = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps)
-      # x_i, denoised = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps) # for debug
+    rng_this_step = jax.random.fold_in(rng, i)
+    rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
 
-      outputs = (x_i, rng)
-      return outputs
-      # return outputs, denoised # for debug
+    merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
+    x_i = merged_model.sample_one_step_DDIM(x_i, rng_z, t, next_t)
+    # x_i, denoised = merged_model.sample_one_step_DDIM(x_i, rng_z, t, next_t) # for debug
 
-    outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
-    images = outputs[0]
-    return images
-    # # for debug
-    # all_x = []
-    # denoised = []
-    # for i in range(num_steps):
-    #   D = step_fn(i, (x_i, rng))
-    #   x_i, rng = D[0]
-    #   denoised.append(D[1])
-    #   all_x.append(x_i)
-    # images = jnp.stack(all_x, axis=0)
-    # denoised = jnp.stack(denoised, axis=0)
-    # return images, denoised
-  elif model.sampler == 'DDIM':
-    skip = model.num_diffusion_timesteps // num_steps
-    # skip = 1
-    seq = range(0, model.num_timesteps, skip)
-    T = len(seq)
-    seq_next = [-1] + list(seq[:-1])
-    seq_reversed = jnp.array(list(reversed(seq)))
-    seq_next_reversed = jnp.array(list(reversed(seq_next)))
-    eta = 0.0 # control the noise level added every step, 0 -> ODE sampler TODO: implement eta > 0.0
-    n = x_prior.shape[0]
-    x0_preds = []
-    xs = [x_prior]
+    outputs = (x_i, rng)
+    return outputs
+    # return outputs, denoised # for debug
 
-    x_i = x_prior
-
-    def step_fn(i, inputs):
-      x_i, rng = inputs
-
-      _i = seq_reversed[i]
-      _j = seq_next_reversed[i]
-
-      t = jnp.ones(n) * _i
-      next_t = jnp.ones(n) * _j
-
-      rng_this_step = jax.random.fold_in(rng, i)
-      rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
-
-      merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-      x_i = merged_model.sample_one_step_DDIM(x_i, rng_z, t, next_t)
-      # x_i, denoised = merged_model.sample_one_step_DDIM(x_i, rng_z, t, next_t) # for debug
-
-      outputs = (x_i, rng)
-      return outputs
-      # return outputs, denoised # for debug
-
-    outputs = jax.lax.fori_loop(0, T, step_fn, (x_i, rng))
-    images = outputs[0]
-    return images
-    # all_x = []
-    # denoised = []
-    # for i in range(T):
-    #   D = step_fn(i, (x_i, rng))
-    #   x_i, rng = D[0]
-    #   denoised.append(D[1])
-    #   all_x.append(x_i)
-    # images = jnp.stack(all_x, axis=0)
-    # denoised = jnp.stack(denoised, axis=0)
-    # return images, denoised # for debug
-
-  else:
-    raise NotImplementedError
+  outputs = jax.lax.fori_loop(0, T, step_fn, (x_i, rng))
+  images = outputs[0]
+  return images
+  # all_x = []
+  # denoised = []
+  # for i in range(T):
+  #   D = step_fn(i, (x_i, rng))
+  #   x_i, rng = D[0]
+  #   denoised.append(D[1])
+  #   all_x.append(x_i)
+  # images = jnp.stack(all_x, axis=0)
+  # denoised = jnp.stack(denoised, axis=0)
+  # return images, denoised # for debug
 
 class SimDDPM(nn.Module):
   """Simple DDPM."""
