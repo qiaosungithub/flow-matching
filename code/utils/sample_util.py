@@ -41,7 +41,9 @@ def generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_s
     # logging_util.verbose_off()
 
     samples, nfe = run_p_sample_step(p_sample_step, state, sample_idx=sample_idx)
-    nfes.append(nfe)
+    # print('run p sample step return shape:', samples.shape)
+    if nfe is not None:
+      nfes.append(nfe)
     # print('samples.shape:', samples.shape)
     # print(f"samples min and max: {samples.min()}, {samples.max()}")
     # exit("邓东灵")

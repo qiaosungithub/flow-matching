@@ -630,9 +630,7 @@ def train_and_evaluate(
       """
       # redefine the interface
       images = p_sample_step(state, sample_idx=sample_idx)
-      nfe = None
-      if config.model.ode_solver == 'O':
-        images, nfe = images
+      images, nfe = images
       # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
       jax.random.normal(random.key(0), ()).block_until_ready()
       return images[0], nfe  # images have been all gathered
@@ -871,7 +869,7 @@ def just_evaluate(
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='LMCI-eval', dir=workdir, tags=['ZHH_lgkt'])
+    wandb.init(project='LMCI-eval', dir=workdir, tags=['FM'])
     # wandb.init(project='sqa_edm_debug', dir=workdir)
     wandb.config.update(config.to_dict())
   # dtype = jnp.bfloat16 if model_config.half_precision else jnp.float32
@@ -954,13 +952,13 @@ def just_evaluate(
       state: train state
       """
       # redefine the interface
-      images = p_sample_step(state, sample_idx=sample_idx)
+      images, nfe = p_sample_step(state, sample_idx=sample_idx)
       nfe = None
-      if config.model.ode_solver == 'O':
-        images, nfe = images
       # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
       jax.random.normal(random.key(0), ()).block_until_ready()
-      return images[0], nfe.mean()  # images have been all gathered
+      # print('images.shape:',jax.device_get(images).shape)
+      nfe = nfe.mean() if nfe is not None else None
+      return images[0], nfe  # images have been all gathered
     
   elif config.model.ode_solver == 'scipy':
     raise DeprecationWarning('其实用这个')
@@ -1017,6 +1015,8 @@ def just_evaluate(
   if config.fid.on_use:
 
     samples_all, nfe = sample_util.generate_samples_for_fid_eval(eval_state, workdir, config, p_sample_step, run_p_sample_step)
+    # assert samples_all.ndim == 10086, 'Get wrong shape: {}'.format(samples_all.shape)
+    # print("samples_all.shape: ", samples_all.shape)
     mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
     fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
     log_for_0(f'FID at {samples_all.shape[0]} samples: {fid_score}')
