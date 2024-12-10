@@ -19,7 +19,7 @@ After testing, `sqa_t_ver1` reaches the best performance with the least number o
 
 ## checkpoints
 
-Vanilla FM baseline: `/kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241127_010129_q9ifcu_kmh-tpuvm-v2-32-6__b_lr_ep_eval/checkpoint_194000`
+Vanilla FM baseline: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241206_001843_i2wyhh_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_48000`
 
 t_network: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241128_031750_8xab8k_kmh-tpuvm-v2-32-preemptible-2__b_lr_ep_eval/checkpoint_4850`
 
