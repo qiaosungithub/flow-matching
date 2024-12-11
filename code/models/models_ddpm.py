@@ -44,6 +44,7 @@ def get_beta_schedule(beta_schedule, *, beta_start, beta_end, num_diffusion_time
     """
     DDIM util function
     """
+    raise NotImplementedError
     def sigmoid(x):
         return 1 / (jnp.exp(-x) + 1)
 
@@ -99,8 +100,7 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
 
 
 def edm_ema_scales_schedules(step, config, steps_per_epoch):
-  # ema_halflife_kimg = 500  # from edm
-  ema_halflife_kimg = 50000  # log(0.5) / log(0.999999) * 128 / 1000 = 88722 kimg, from flow
+  ema_halflife_kimg = 500  # from edm
   ema_halflife_nimg = ema_halflife_kimg * 1000
 
   ema_rampup_ratio = 0.05
@@ -254,15 +254,14 @@ class SimDDPM(nn.Module):
     use_aug_label = False,
     average_loss = False,
     eps=1e-3,
-    h_init=0.035,
     sampler='euler',
     ode_solver='jax',
     no_condition_t=False,
     rngs=None,
-    beta_schedule='linear',
-    beta_start=1e-4,
-    beta_end=0.02,
-    num_diffusion_timesteps=1000,
+    # beta_schedule='linear',
+    # beta_start=1e-4,
+    # beta_end=0.02,
+    # num_diffusion_timesteps=1000,
     **kwargs
   ):
     self.image_size = image_size
@@ -278,25 +277,14 @@ class SimDDPM(nn.Module):
     self.use_aug_label = use_aug_label
     self.average_loss = average_loss
     self.eps = eps
-    self.h_init = h_init
     self.sampler = sampler
     self.ode_solver = ode_solver
     self.no_condition_t = no_condition_t
     self.rngs = rngs
-    self.beta_schedule = beta_schedule
-    self.beta_start = beta_start
-    self.beta_end = beta_end
-    self.num_diffusion_timesteps = num_diffusion_timesteps
-
-    # sde = sde_lib.KVESDE(
-    #   t_min=0.002,
-    #   t_max=80.0,
-    #   N=18,  # config.model.num_scales
-    #   rho=7.0,
-    #   data_std=0.5,
-    # )
-    # self.sde = sde
-    # This is not used in flow matching
+    # self.beta_schedule = beta_schedule
+    # self.beta_start = beta_start
+    # self.beta_end = beta_end
+    # self.num_diffusion_timesteps = num_diffusion_timesteps
 
     if self.net_type == 'context':
       raise NotImplementedError
@@ -323,10 +311,7 @@ class SimDDPM(nn.Module):
     else:
       raise ValueError(f'Unknown net type: {self.net_type}')
 
-    # # declare two networks
-    # self.net = net_fn(name='net')
-    # self.net_ema = net_fn(name='net_ema')
-    self.num_timesteps = num_diffusion_timesteps
+    # self.num_timesteps = num_diffusion_timesteps
     self.net = net_fn()
 
     self.data_std = 0.5
@@ -340,38 +325,22 @@ class SimDDPM(nn.Module):
     return vis
 
   def compute_t(self, indices, scales):
-    t_max = 80
-    t_min = 0.002
-    rho = 7.0
-    t = t_max ** (1 / rho) + indices / (scales - 1) * (
-        t_min ** (1 / rho) - t_max ** (1 / rho)
+    t = self.t_max ** (1 / self.rho) + indices / (scales - 1) * (
+        self.t_min ** (1 / self.rho) - self.t_max ** (1 / self.rho)
     )
-    t = t**rho
+    t = t**self.rho
     return t
 
   def compute_alpha(self, t):
     """
     DDIM util function
     """
+    raise NotImplementedError
     betas = get_beta_schedule(self.beta_schedule, beta_start=self.beta_start, beta_end=self.beta_end, num_diffusion_timesteps=self.num_diffusion_timesteps)
     alpha = jnp.cumprod(1 - betas, axis=0)
     alpha = jnp.concatenate([jnp.ones((1,)), alpha], axis=0)
     a = jnp.take(alpha, t + 1).reshape(-1, 1, 1, 1)
     return a
-    
-  def compute_losses(self, pred, gt):
-    assert pred.shape == gt.shape
-
-    # simple l2 loss
-    loss_rec = jnp.mean((pred - gt)**2)
-    
-    loss_train = loss_rec
-
-    dict_losses = {
-      'loss_rec': loss_rec,
-      'loss_train': loss_train
-    }
-    return loss_train, dict_losses
 
   def sample_one_step(self, x_i, rng, i):
 
