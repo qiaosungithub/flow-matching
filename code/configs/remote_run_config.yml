@@ -36,6 +36,7 @@ model:
     base_width: 128
     n_T: 100
     use_aug_label: False
+    # dropout: 0.0 # CT
     dropout: 0.3 # CT
     net_type: ncsnppedm
     average_loss: True # use average or sum for loss
@@ -49,17 +50,26 @@ model:
     # ode_solver: scipy # rk45
     
     no_condition_t: False
+    # t_condition_method: not # default: one_fourth_log
+    t_condition_method: one_fourth_log # default: one_fourth_log
+
     # CT
-    fourier_scale: 0.02 # CT
-    # embedding_type: positional
-    embedding_type: fourier # try
-    t_sampling: icm # or original
+    # embedding_type: fourier # try
+    # fourier_scale: 0.02 # CT
+
+    embedding_type: positional
+    t_sampling: original
+    # t_sampling: icm # or original
     # loss_type: "l2"
+    # loss_type: "huber_bug"
     loss_type: "huber"
 ct:
     start_scales: 10
+    # end_scales: 640
     end_scales: 1280
+    # end_scales: 2560
     n_schedule: exp
+    # n_schedule: square
 dataset:
     name: cifar10
     root: CIFAR # pytorch
@@ -84,7 +94,7 @@ learning_rate: 0.0004
 lr_schedule: const
 weight_decay: 0.0
 optimizer: radam # CT, TODO: radam / adamw?
-adam_b2: 0.999
+adam_b2: 0.95
 grad_clip: 0.0
 warmup_epochs: 0 # CT
 log_per_step: 20

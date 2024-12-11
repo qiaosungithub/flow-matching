@@ -198,7 +198,7 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, ema_sca
   b1, b2 = images.shape[0], images.shape[1]
   noise_batch = jax.random.normal(rngs.train(), images.shape)
   if model.t_sampling == 'original':
-    t_batch = jax.random.randint(rngs.train(), (b1, b2), minval=0, maxval=scales[0]-1)
+    t_batch = jax.random.randint(rngs.train(), (b1, b2), minval=1, maxval=scales[0])
   elif model.t_sampling == 'icm':
     # #### test
     # for i in range(8):

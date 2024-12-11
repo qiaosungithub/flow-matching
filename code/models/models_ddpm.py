@@ -103,6 +103,12 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
     K = total_steps
     K_ = jnp.floor(K / (jnp.log2(jnp.floor(s1 / s0)) + 1))
     scales = jnp.minimum(s0 * (2 ** jnp.floor(step / K_)), s1) + 1
+  elif config.ct.n_schedule == 'square':
+    s0 = start_scales
+    s1 = end_scales
+    K = total_steps
+    r = step / K
+    scales = jnp.array(s0 + (s1 - s0) * (r**2) + 1, dtype=jnp.float32)
   else:
     raise ValueError(f'Unknown schedule: {config.ct.n_schedule}')
   
@@ -218,6 +224,18 @@ def sample_icm_t(
 
   return timesteps
 
+def get_t_process_fn(t_condition_method):
+  if t_condition_method == 'log999':
+    return lambda t: jnp.log(t * 999)
+  elif t_condition_method == 'one_fourth_log':
+    return lambda t: 0.25 * jnp.log(t)
+  elif t_condition_method == 'direct':
+    return lambda t: t
+  elif t_condition_method == 'not': # no t: 没有t
+    return lambda t: jnp.zeros_like(t)
+  else:
+    raise NotImplementedError('Unknown t_condition_method: {m}'.format(m=t_condition_method))
+
 class SimDDPM(nn.Module):
   """Simple DDPM."""
 
@@ -243,12 +261,13 @@ class SimDDPM(nn.Module):
     beta_end=0.02, # DDIM
     num_diffusion_timesteps=1000, # DDIM
     ema_target=False, # CT
-    weighting='uniform', # CT
+    weighting='icm', # CT
     loss_type='l2', # CT
     huber_c = 0.03, # CT
     embedding_type = 'fourier', # CT
     fourier_scale = 16, # CT
     t_sampling='original', # CT
+    t_condition_method = 'one_fourth_log', # CT
     **kwargs
   ):
     self.image_size = image_size
@@ -279,6 +298,8 @@ class SimDDPM(nn.Module):
     self.embedding_type = embedding_type
     self.fourier_scale = fourier_scale
     self.t_sampling = t_sampling
+    self.t_preprocess_fn = get_t_process_fn(t_condition_method)
+    assert not self.no_condition_t, DeprecationWarning('Use t_condition_method instead')
 
     assert not ema_target, "我写了"
 
@@ -558,11 +579,12 @@ class SimDDPM(nn.Module):
 
     c_in = 1 / jnp.sqrt(t ** 2 + self.data_std ** 2)
     # cond_t = jnp.zeros_like(t) if self.no_condition_t else 0.25 * jnp.log(t)  # noise cond of edm
-    cond_t = 0.25 * jnp.log(t) # 这个才是对的
+    # cond_t = 0.25 * jnp.log(t) # 这个才是对的
+    cond_t = self.t_preprocess_fn(t).astype(self.dtype)
     # cond_t = 1000 * 0.25 * jnp.log(t + 1e-44) # 仓库里嫖的
 
     # forward network
-    # TODO: 我好像没看到 Song 的代码里面有 c_in
+    # TODO: 我好像没看到 Song 的代码里面有 c_incode
     # in_x = batch_mul(x, c_in)  # input scaling of edm
     in_x = x
     
