@@ -268,7 +268,7 @@ def sample_ecm_t(
   # next, sample r
   k = 8.0
   b = 1.0
-  adj = 1 + k * nn.sigmoid(-b * t)
+  adj = 1 + k * nn.sigmoid(-b * t) # n(t)
 
   decay = 1 / 2 ** scale # q=2
   ratio = 1 - decay * adj
@@ -654,7 +654,7 @@ class SimDDPM(nn.Module):
 
     # -----------------------------------------------------------------
     # here t, t2 stands for noise level
-    assert self.t_sampling == "ecm"
+    assert self.t_sampling == "ecm", "we have not implement icm"
     assert t_batch.shape == (bz,2)
     t = t_batch[:, 0]
     t2 = t_batch[:, 1]
@@ -676,25 +676,32 @@ class SimDDPM(nn.Module):
     Ft2 = jax.lax.stop_gradient(Ft2)  # stop gradient here, legacy
     # Ft = jax.lax.stop_gradient(Ft) # stop gradient here
 
+    # t > t2
+
     diffs = Ft - Ft2
 
     if self.t_sampling == 'ecm':
-      weight = 1 / t
-      weight *= 2 ** (scales + 1)
+      # weight = 1 / t
+      # weight *= 2 ** (scales + 1)
+      ## the above is Kaiming's version, which is different with ECM repo
+      weight = 1 / (t - t2)
     elif self.weighting == 'uniform':
       weight = jnp.ones_like(t)
     elif self.weighting == 'icm':
-      weight = 1. / (t2 - t)
+      weight = 1. / (t - t2)
     else:
       raise ValueError(f'Unknown weighting: {self.weighting}')
 
     if self.loss_type == 'l2':
       loss = diffs ** 2
-      loss = jnp.mean(loss, axis=(1, 2, 3))  # mean over pixels following jcm's code
+      if self.average_loss:
+        loss = jnp.mean(loss, axis=(1, 2, 3))
+      else: 
+        loss = jnp.sum(loss, axis=(1, 2, 3)) # in ECM repo, they use sum
     elif self.loss_type == 'huber_bug':  # bugged? TODO: try both, this is the same as Song's code
       loss = (diffs ** 2 + self.huber_c ** 2) ** .5 - self.huber_c
       loss = jnp.mean(loss, axis=(1, 2, 3))  # mean over pixels in jcm
-    elif self.loss_type == 'huber':
+    elif self.loss_type == 'huber': # in ecm, they use this actually
       l2 = diffs ** 2
       l2 = jnp.sum(l2, axis=(1, 2, 3))  # sum over pixels following l2's definition
       loss = (l2 + self.huber_c ** 2) ** .5 - self.huber_c

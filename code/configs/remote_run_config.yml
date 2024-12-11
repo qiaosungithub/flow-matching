@@ -34,10 +34,11 @@ model:
     image_size: 32
     out_channels: 3
     base_width: 128
-    n_T: 100
+    n_T: 1
     use_aug_label: False
-    dropout: 0.3 # CT
+    dropout: 0.2 # ECM
     net_type: ncsnppedm
+    average_loss: False
 
     no_condition_t: False
     # CT
@@ -45,8 +46,8 @@ model:
     embedding_type: positional2
     # embedding_type: fourier
     t_sampling: ecm # TODO: try icm
-    loss_type: "l2" 
-    # loss_type: "huber"
+    # loss_type: "l2" 
+    loss_type: "huber"
 ct:
     start_scales: 10
     end_scales: 1280
