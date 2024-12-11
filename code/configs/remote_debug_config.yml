@@ -54,7 +54,7 @@ model:
     t_condition_method: direct # default: log999
 
     # classifier-specific configs
-    classifier_model_depth: 2
+    # classifier_model_depth: 2
 classifier_model:
     image_size: 32
     out_channels: 3
@@ -81,6 +81,7 @@ classifier_model:
     # t_condition_method: not # for No T experiments
     t_condition_method: direct # default: log999
     classifier_model_depth: 3
+    # classifier_model_depth: 1
 dataset:
     name: cifar10
     root: CIFAR # pytorch
@@ -90,20 +91,20 @@ dataset:
 aug: 
     use_edm_aug: False
 # 我们应该用不到fid
-# fid:
-#     on_use: False
-#     eval_only: False
-#     fid_per_epoch: 200
-#     num_samples: 50000
-#     device_batch_size: 64
-#     cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
+fid:
+    on_use: True
+    eval_only: False
+    fid_per_epoch: 200
+    num_samples: 50000
+    # device_batch_size: 64
+    cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
 evalu:
     ema: True
     sample: True
 
 train_classifier: False # default: False
-
-wandb: False # no 💩
+continue_training: False
+wandb: True # no 💩
 batch_size: 2048
 num_epochs: 2
 learning_rate: 0.0008
@@ -116,13 +117,12 @@ log_per_step: 20
 visualize_per_epoch: 1
 eval_per_epoch: 1
 checkpoint_per_epoch: 10086
-load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241206_003350_u92vg3_kmh-tpuvm-v2-32-4__b_lr_ep_eval # this is an unconditional model
-# load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241205_221059_kqzx8e_kmh-tpuvm-v2-32-preemptible-1__b_lr_ep_eval # this is an conditional model
+load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241210_003420_srefmk_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/best_fid/checkpoint_24000 # this is an unconditional model
+# load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241210_003719_b663n5_kmh-tpuvm-v2-32-7__b_lr_ep_eval/best_fid/checkpoint_19200 # this is an conditional model
 run_classifier_guidance: True
-load_classifier_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241206_233913_v8zrw5_kmh-tpuvm-v2-32-preemptible-1__b_lr_ep_eval
-classifier_scale: 10.0
-# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241203_222646_g1nh1t_kmh-tpuvm-v2-32-4__b_lr_ep_eval
-# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241130_140252_c95a47_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/checkpoint_194000
+load_classifier_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241206_233913_v8zrw5_kmh-tpuvm-v2-32-preemptible-1__b_lr_ep_eval # this classifier has highest valid acc
+# load_classifier_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241206_223120_0d4dku_kmh-tpuvm-v2-32-preemptible-1__b_lr_ep_eval # this classifier has lowest valid loss
+classifier_scale: 0.1
 
 # diffusion:
 diffusion_nT: 4000

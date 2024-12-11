@@ -288,7 +288,7 @@ def just_evaluate(
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='LMCI_evaluate', dir=workdir, tags=['ADM', 'classifier'])
+    wandb.init(project='LMCI-eval', dir=workdir, tags=['ADM'] if not model_config.class_conditional else ['ADM', 'Conditional'])
     # wandb.init(project='sqa_edm_debug', dir=workdir)
     wandb.config.update(config.to_dict())
   # dtype = jnp.bfloat16 if model_config.half_precision else jnp.float32
@@ -428,8 +428,8 @@ def just_evaluate(
     # print(vis.shape)
     # exit("王广廷")
     canvas = Image.fromarray(vis)
-    canvas.save(f"{workdir}/sample.png")
-    assert False, 'Image saved'
+    # canvas.save(f"{workdir}/sample.png")
+    # assert False, 'Image saved'
     
     # vis, denoise_vis = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx)
     # print('saving images...')
@@ -476,7 +476,7 @@ def just_evaluate(
   if rank == 0 and config.wandb:
     nfe = config.model.n_T
     if config.model.ode_solver == 'scipy': nfe=100
-    elif config.model.sampler != 'euler': nfe*=2
+    elif config.model.sampler not in ['euler', 'ddpm']: nfe*=2
     wandb.log({'NFE': nfe})
 
   jax.random.normal(jax.random.key(0), ()).block_until_ready()

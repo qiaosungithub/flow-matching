@@ -764,7 +764,7 @@ class SimDDPM(nn.Module):
       #### Classifier Guidance ####
       if classifier_grad_fn is not None:
         # assert False, 'classifier scale is: {s}'.format(s=classifier_scale)
-        model_mean = model_mean + classifier_scale * jax.lax.stop_gradient(classifier_grad_fn(x_start, y, t))
+        model_mean = model_mean + classifier_scale * jax.lax.stop_gradient(classifier_grad_fn(x_start, y, t)) * jnp.exp(log_model_variance)
         # assert False, '不高兴的'
       
       #### END ####
