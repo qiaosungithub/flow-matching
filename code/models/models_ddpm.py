@@ -236,7 +236,8 @@ def generate(state: NNXTrainState, model, rng, n_sample):
       rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
 
       merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-      x_i = merged_model.sample_one_step_euler(x_i, i)
+      # x_i = merged_model.sample_one_step_euler(x_i, i)
+      x_i = merged_model.sample_one_step_euler(x_i, i+num_steps//2)
       # x_i, denoised = merged_model.sample_one_step_euler(x_i, i) # for debug
       outputs = (x_i, rng)
       return outputs
@@ -248,14 +249,20 @@ def generate(state: NNXTrainState, model, rng, n_sample):
       rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
 
       merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-      x_i = merged_model.sample_one_step_heun(x_i, 2*i+num_steps//2)
+      # x_i = merged_model.sample_one_step_heun(x_i, 2*i+num_steps//2)
+      x_i = merged_model.sample_one_step_heun(x_i, 2*i)
       # x_i, denoised = merged_model.sample_one_step_heun(x_i, 2*i+num_steps//2)
       outputs = (x_i, rng)
       return outputs
       # return outputs, denoised # for debug
 
-    outputs = jax.lax.fori_loop(0, num_steps//2, step_fn_euler, (x_i, rng))
-    outputs = jax.lax.fori_loop(0, num_steps//4, step_fn_heun, outputs)
+    # # first euler then heun
+    # outputs = jax.lax.fori_loop(0, num_steps//2, step_fn_euler, (x_i, rng))
+    # outputs = jax.lax.fori_loop(0, num_steps//4, step_fn_heun, outputs)
+
+    # first heun then euler
+    outputs = jax.lax.fori_loop(0, num_steps//4, step_fn_heun, (x_i, rng))
+    outputs = jax.lax.fori_loop(0, num_steps//2, step_fn_euler, outputs)
     images = outputs[0]
     return images
 
