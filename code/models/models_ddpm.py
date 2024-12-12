@@ -526,8 +526,8 @@ class SimDDPM(nn.Module):
 
     x_next = jnp.where(i < self.n_T - 1, x_next_, x_next)
 
-    # return x_next
-    return x_next, x_cur + u_pred * (1 - t_cur)
+    return x_next
+    # return x_next, x_cur + u_pred * (1 - t_cur)
 
   def sample_one_step_euler(self, x_i, i):
     # i: loop from 0 to self.n_T - 1
@@ -541,8 +541,8 @@ class SimDDPM(nn.Module):
     dt = 1. / self.n_T
     x_next = x_i + u_pred * dt
 
-    # return x_next
-    return x_next, x_i + u_pred * (1 - t)
+    return x_next
+    # return x_next, x_i + u_pred * (1 - t)
   
   def sample_one_step_edm_ode(self, x_i, i, t_steps):
     """
