@@ -240,9 +240,7 @@ def sample_ecm_t(
   rng,
 ) -> jnp.array:
   """
-  这个应该返回 [1, scales-1] 之内的数
-  
-  from improved CM. util function
+  ECM util function
   ----------
   Draws timesteps from a lognormal distribution.
 
