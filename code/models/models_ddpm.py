@@ -223,6 +223,38 @@ def generate(state: NNXTrainState, model, rng, n_sample):
     outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
     images = outputs[0]
     return images
+  
+  elif model.sampler == "ban":
+
+    # here num_steps mean we solve for "0, i, 2i, ..., 1/2, 1/2+2i, 1/2+4i, ..., 1-2/i"
+    assert num_steps % 4 == 0
+    x_i = x_prior
+
+    def step_fn_euler(i, inputs):
+      x_i, rng = inputs
+      rng_this_step = jax.random.fold_in(rng, i)
+      rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
+
+      merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
+      x_i = merged_model.sample_one_step_euler(x_i, i)
+      outputs = (x_i, rng)
+      return outputs
+    
+    def step_fn_heun(i, inputs):
+      x_i, rng = inputs
+      rng_this_step = jax.random.fold_in(rng, i)
+      rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
+
+      merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
+      x_i = merged_model.sample_one_step_heun(x_i, 2*i+num_steps//2)
+      outputs = (x_i, rng)
+      return outputs
+
+    outputs = jax.lax.fori_loop(0, num_steps//2, step_fn_euler, (x_i, rng))
+    outputs = jax.lax.fori_loop(0, num_steps//4, step_fn_heun, outputs)
+    images = outputs[0]
+    return images
+
     # # for debug
     # all_x = []
     # denoised = []
@@ -425,7 +457,7 @@ class SimDDPM(nn.Module):
       x_next = self.sample_one_step_euler(x_i, i) 
     elif self.sampler == 'heun':
       x_next = self.sample_one_step_heun(x_i, i) 
-    else:
+    elif self.sampler == "ban":
       raise NotImplementedError
 
     return x_next
