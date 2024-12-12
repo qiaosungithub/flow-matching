@@ -43,9 +43,13 @@ model:
     no_condition_t: False
     # CT
     fourier_scale: 0.02 # CT
+
     embedding_type: positional2
     # embedding_type: fourier
-    t_sampling: ecm # TODO: try icm
+
+    # t_sampling: ecm
+    t_sampling: icm
+
     # loss_type: "l2" 
     loss_type: "huber"
 ct:
@@ -68,9 +72,9 @@ fid:
 evalu:
     ema: True
     sample: False
-# ema_value: 0.9993 # ICM
-batch_size: 128
-num_epochs: 512
+ema_value: 0.9993 # ICM
+batch_size: 1024
+num_epochs: 1000
 # learning_rate: 0.0004
 learning_rate: 0.0001
 lr_schedule: const
@@ -82,9 +86,9 @@ adam_b2: 0.999
 grad_clip: 0.0
 warmup_epochs: 0 # CT & ECM
 log_per_step: 100
-visualize_per_epoch: 30
+visualize_per_epoch: 50
 eval_per_epoch: 50
-checkpoint_per_epoch: 200
+checkpoint_per_epoch: 500
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241202_214940_zd8s4j_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_48500
 
 # # Here is for IMAGENET32x32:

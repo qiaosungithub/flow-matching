@@ -223,10 +223,6 @@ def sample_icm_t(
         (jnp.log(sigmas[:-1]) - mean) / (std * jnp.sqrt(2))
     ) # this one is consistent with ICM paper
   assert pdf.ndim == 1, 'pdf should be 1D'
-  # pdf = pdf / jnp.sum(pdf) # 多余的，没准反而高兴
-
-  # print(f"mean: {mean}")
-  # print(f"std: {std}")
 
   # print(f"sigmas: {sigmas}")
   # print(f"pdf: {pdf}")
@@ -654,10 +650,16 @@ class SimDDPM(nn.Module):
 
     # -----------------------------------------------------------------
     # here t, t2 stands for noise level
-    assert self.t_sampling == "ecm", "we have not implement icm"
-    assert t_batch.shape == (bz,2)
-    t = t_batch[:, 0]
-    t2 = t_batch[:, 1]
+    if self.t_sampling == "ecm":
+      assert t_batch.shape == (bz,2)
+      t2 = t_batch[:, 0]
+      t = t_batch[:, 1]
+    elif self.t_sampling == "icm":
+      assert t_batch.shape == (bz,)
+      t = self.compute_t(t_batch, scales)
+      t2 = self.compute_t(t_batch + 1, scales)
+    else:
+      raise ValueError(f'Unknown t_sampling: {self.t_sampling}')
 
     # sample from prior (noise)
     z = noise_batch
@@ -671,12 +673,13 @@ class SimDDPM(nn.Module):
     nn.reseed(self, dropout=rng_dropout_this_step)
     Ft2 = self.forward_consistency_function(x_t2, t2) # Here we do not support ema target
 
-    Ft2 = jnp.where(t2.reshape(-1, 1, 1, 1) > self.r_lower, Ft2, x)
+    if self.t_sampling == 'ecm':
+      Ft = jnp.where(t.reshape(-1, 1, 1, 1) > self.r_lower, Ft, x)
 
-    Ft2 = jax.lax.stop_gradient(Ft2)  # stop gradient here, legacy
-    # Ft = jax.lax.stop_gradient(Ft) # stop gradient here
+    # Ft2 = jax.lax.stop_gradient(Ft2)  # stop gradient here, legacy
+    Ft = jax.lax.stop_gradient(Ft) # stop gradient here
 
-    # t > t2
+    # t < t2
 
     diffs = Ft - Ft2
 
@@ -684,11 +687,11 @@ class SimDDPM(nn.Module):
       # weight = 1 / t
       # weight *= 2 ** (scales + 1)
       ## the above is Kaiming's version, which is different with ECM repo
-      weight = 1 / (t - t2)
+      weight = 1 / (t2 - t)
     elif self.weighting == 'uniform':
       weight = jnp.ones_like(t)
     elif self.weighting == 'icm':
-      weight = 1. / (t - t2)
+      weight = 1. / (t2 - t)
     else:
       raise ValueError(f'Unknown weighting: {self.weighting}')
 
