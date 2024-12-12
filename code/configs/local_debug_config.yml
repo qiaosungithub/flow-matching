@@ -1,35 +1,3 @@
-# Put your `debug.sh` configs in this YAML file
-
-# # Here is for MNIST:
-# training:
-#     learning_rate: 0.0001
-#     scheduler: poly # constant
-#     warmup_steps: 20000
-#     num_epochs: 2
-#     batch_size: 1024
-#     log_per_step: 20
-#     sigma_min: 0.0
-#     wandb: False
-#     checkpoint_per_epoch: 1000
-#     eval_per_epoch: 1
-#     # load_from: /kmh-nfs-us-mount/logs/sqa/sqa_NCSNv2/20241101_030317_2ml2nf_kmh-tpuvm-v2-32-1__b_lr_ep_torchvision_r50_eval/checkpoint_5684
-# model:
-#     name: UNet_for_mnist
-# dataset:
-#     name: MNIST
-#     root: /kmh-nfs-ssd-eu-mount/code/qiao/data/MNIST/
-#     image_size: 28
-#     prefetch_factor: 2
-#     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
-# sampling:
-#     ema: True
-#     ema_decay: 0.999
-#     save_dir: /kmh-nfs-ssd-eu-mount/code/qiao/flow-matching/sqa-flow-matching/images/
-# fid:
-#     eval_only: True
-#     fid_per_epoch: 1
-#     num_samples: 1000
-
 # Here is for CIFAR10:
 model:
     image_size: 32
@@ -37,9 +5,10 @@ model:
     base_width: 128
     n_T: 100
     use_aug_label: False
-    dropout: 0.20 # FM
+    dropout: 0.15 # FM
     net_type: ncsnppedm
     average_loss: True # use average or sum for loss
+
     # sampler: euler
     # sampler: heun
     # sampler: edm
@@ -48,70 +17,36 @@ model:
     sampler: ban
     ode_solver: jax
     # ode_solver: scipy # rk45
+    
     no_condition_t: False
-    embedding_type: positional
+    embedding_type: positional # FM
 dataset:
     name: cifar10
     root: CIFAR # pytorch
     prefetch_factor: 2
     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
-    cache: False
+    cache: True
 aug: 
     use_edm_aug: False # NOTE: if you want to turn on this, also turn on model.use_aug_label
 fid:
     eval_only: False
-    fid_per_epoch: 100
-    num_samples: 1000
+    fid_per_epoch: 50
+    num_samples: 50000
     cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
 evalu:
     ema: True
-    sample: True
-batch_size: 512
-num_epochs: 400
+    sample: False
+batch_size: 2048
+num_epochs: 2000
 learning_rate: 0.0008 # FM
 lr_schedule: const
-weight_decay: 0
+weight_decay: 0.0
 optimizer: adamw
-adam_b2: 0.999
-grad_clip: 0.0 # TODO: enable this
+adam_b2: 0.95
+grad_clip: 0.0
 warmup_epochs: 200
-log_per_step: 30
-visualize_per_epoch: 100
-eval_per_epoch: 100
-wandb: False
-checkpoint_per_epoch: 100
+log_per_step: 100
+visualize_per_epoch: 50
+eval_per_epoch: 80
+checkpoint_per_epoch: 500
 load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241206_001843_i2wyhh_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_48000
-
-
-# # Here is for IMAGENET32x32:
-# training:
-#     learning_rate: 0.0001
-#     scheduler: poly # constant
-#     warmup_steps: 20000
-#     num_epochs: 2
-#     batch_size: 1024
-#     log_per_step: 20
-#     sigma_min: 0.0
-#     wandb: False
-#     checkpoint_per_epoch: 1000
-#     eval_per_epoch: 1
-#     # load_from: /kmh-nfs-us-mount/logs/sqa/sqa_NCSNv2/20241101_030317_2ml2nf_kmh-tpuvm-v2-32-1__b_lr_ep_torchvision_r50_eval/checkpoint_5684
-# model:
-#     name: UNet_for_32
-# dataset:
-#     name: imagenet2012:5.*.*
-#     # root: /kmh-nfs-ssd-eu-mount/code/qiao/data/MNIST/
-#     image_size: 32
-#     prefetch_factor: 2
-#     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
-# sampling:
-#     ema: True
-#     ema_decay: 0.999
-#     save_dir: /kmh-nfs-ssd-eu-mount/code/qiao/flow-matching/sqa-flow-matching/images/
-# fid:
-#     on_use: False
-#     eval_only: True
-#     fid_per_epoch: 1
-#     num_samples: 1000
-
-# NOTE: you cannot add more hierarchy structure without modifying default.py and load_config.py

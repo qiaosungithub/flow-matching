@@ -237,8 +237,10 @@ def generate(state: NNXTrainState, model, rng, n_sample):
 
       merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
       x_i = merged_model.sample_one_step_euler(x_i, i)
+      # x_i, denoised = merged_model.sample_one_step_euler(x_i, i) # for debug
       outputs = (x_i, rng)
       return outputs
+      # return outputs, denoised # for debug
     
     def step_fn_heun(i, inputs):
       x_i, rng = inputs
@@ -247,13 +249,32 @@ def generate(state: NNXTrainState, model, rng, n_sample):
 
       merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
       x_i = merged_model.sample_one_step_heun(x_i, 2*i+num_steps//2)
+      # x_i, denoised = merged_model.sample_one_step_heun(x_i, 2*i+num_steps//2)
       outputs = (x_i, rng)
       return outputs
+      # return outputs, denoised # for debug
 
     outputs = jax.lax.fori_loop(0, num_steps//2, step_fn_euler, (x_i, rng))
     outputs = jax.lax.fori_loop(0, num_steps//4, step_fn_heun, outputs)
     images = outputs[0]
     return images
+
+    # # for debug
+    # all_x = []
+    # denoised = []
+    # for i in range(num_steps//2):
+    #   D = step_fn_euler(i, (x_i, rng))
+    #   x_i, rng = D[0]
+    #   denoised.append(D[1])
+    #   all_x.append(x_i)
+    # for i in range(num_steps//4):
+    #   D = step_fn_heun(i, (x_i, rng))
+    #   x_i, rng = D[0]
+    #   denoised.append(D[1])
+    #   all_x.append(x_i)
+    # images = jnp.stack(all_x, axis=0)
+    # denoised = jnp.stack(denoised, axis=0)
+    # return images, denoised
 
     # # for debug
     # all_x = []
@@ -483,7 +504,8 @@ class SimDDPM(nn.Module):
     t_cur = i / self.n_T  # t start from 0 (t = 0 is noise here)
     t_cur = t_cur * (1 - self.eps) + self.eps
 
-    t_next = (i + 1) / self.n_T  # t start from 0 (t = 0 is noise here)
+    # t_next = (i + 1) / self.n_T  # t start from 0 (t = 0 is noise here)
+    t_next = (i + 2) / self.n_T # for ban
     t_next = t_next * (1 - self.eps) + self.eps
 
     t_hat = t_cur
@@ -504,7 +526,8 @@ class SimDDPM(nn.Module):
 
     x_next = jnp.where(i < self.n_T - 1, x_next_, x_next)
 
-    return x_next
+    # return x_next
+    return x_next, x_cur + u_pred * (1 - t_cur)
 
   def sample_one_step_euler(self, x_i, i):
     # i: loop from 0 to self.n_T - 1
@@ -518,7 +541,8 @@ class SimDDPM(nn.Module):
     dt = 1. / self.n_T
     x_next = x_i + u_pred * dt
 
-    return x_next
+    # return x_next
+    return x_next, x_i + u_pred * (1 - t)
   
   def sample_one_step_edm_ode(self, x_i, i, t_steps):
     """

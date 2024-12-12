@@ -869,7 +869,7 @@ def just_evaluate(
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='LMCI-eval', dir=workdir, tags=['FM'])
+    wandb.init(project='LMCI-eval', dir=workdir, tags=['SQA-debug'])
     # wandb.init(project='sqa_edm_debug', dir=workdir)
     wandb.config.update(config.to_dict())
   # dtype = jnp.bfloat16 if model_config.half_precision else jnp.float32
@@ -901,9 +901,9 @@ def just_evaluate(
 
   
   # ### debug sampler here, please delete the above line
-  # num_steps = 1000
+  # num_steps = 75
   # # state = state[0]
-  # t = model.compute_t(jnp.arange(num_steps), num_steps)
+  # # t = model.compute_t(jnp.arange(num_steps), num_steps)
   # vis, denoised = generate(state, model, random.PRNGKey(0), 1) # (num_steps, 32, 32, 3)
   # print("vis.shape: ", vis.shape)
   # vis = vis.reshape(num_steps, 32, 32, 3)
@@ -927,7 +927,7 @@ def just_evaluate(
   #       'mean': mean,
   #       'img': wandb.Image(img),
   #       'denoised': wandb.Image(denoised_img),
-  #       'noise_level': t[ep]
+  #       # 'noise_level': t[ep]
   #       })
     
 
