@@ -109,7 +109,7 @@ def edm_ema_scales_schedules(step, config, steps_per_epoch):
 
 
 # move this out from model for JAX compilation
-def generate(state: NNXTrainState, model, rng, n_sample):
+def generate(state: NNXTrainState, model, rng, n_sample, t_state=None):
   """
   Generate samples from the model
 
@@ -128,7 +128,10 @@ def generate(state: NNXTrainState, model, rng, n_sample):
   # sample from prior
   x_prior = jax.random.normal(rng_used, x_shape, dtype=model.dtype)
 
-  assert model.sampler == "DDIM"
+  assert model.sampler in ["DDIM", "DDIM_t"]
+  if model.sampler == "DDIM_t":
+    assert model.no_condition_t
+    assert t_state is not None
 
   skip = model.num_diffusion_timesteps // num_steps
   seq = range(0, model.num_timesteps, skip)
@@ -156,7 +159,7 @@ def generate(state: NNXTrainState, model, rng, n_sample):
     rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
 
     merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-    x_i = merged_model.sample_one_step_DDIM(x_i, rng_z, t, next_t)
+    x_i = merged_model.sample_one_step_DDIM(x_i, rng_z, t, next_t, t_state=t_state)
     # x_i, denoised = merged_model.sample_one_step_DDIM(x_i, rng_z, t, next_t) # for debug
 
     outputs = (x_i, rng)
@@ -451,14 +454,18 @@ class SimDDPM(nn.Module):
     # return x_next, denoised # for debug
     return x_next
 
-  def sample_one_step_DDIM(self, x_i, rng, t, next_t):
+  def sample_one_step_DDIM(self, x_i, rng, t, next_t, t_state=None):
     """
     rng here is useless, if we set eta = 0
     """
     # we only implement 'generalized' here
     # we only implement 'skip_type=uniform' here
-    at = self.compute_alpha(t.astype(jnp.int32))
-    at_next = self.compute_alpha(next_t.astype(jnp.int32))
+    if self.sampler == "DDIM":
+      at = self.compute_alpha(t.astype(jnp.int32))
+      at_next = self.compute_alpha(next_t.astype(jnp.int32))
+    else:
+      # implement adaptive sampler for DDIM
+      pass
 
     eps = self.forward_DDIM_pred_function(x_i, t, train=False)
     # x0_t = (x_i - eps * jnp.sqrt(1 - at)) / jnp.sqrt(at)
