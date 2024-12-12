@@ -41,8 +41,8 @@ model:
     average_loss: True # use average or sum for loss
 
     # sampler: euler
-    # sampler: heun
-    sampler: edm
+    sampler: heun
+    # sampler: edm
     # sampler: edm-sde
     # sampler: DDIM
     ode_solver: jax
