@@ -5,7 +5,7 @@ model:
     base_width: 128
     n_T: 1
     use_aug_label: False
-    dropout: 0.2 # ECM
+    dropout: 0.3 # ECM
     net_type: ncsnppedm
     average_loss: False
 
@@ -35,7 +35,7 @@ aug:
     use_edm_aug: False
 fid:
     eval_only: False
-    fid_per_epoch: 50
+    fid_per_epoch: 100
     num_samples: 50000
     cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
 evalu:
@@ -57,7 +57,7 @@ warmup_epochs: 0 # CT & ECM
 log_per_step: 100
 visualize_per_epoch: 50
 eval_per_epoch: 50
-checkpoint_per_epoch: 500
+checkpoint_per_epoch: 1000
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241202_214940_zd8s4j_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_48500
 
 # # Here is for IMAGENET32x32:

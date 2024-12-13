@@ -212,7 +212,7 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, ema_sca
     # exit("6.7900")
     t_batch = sample_icm_t((b1, b2), model, scales[0], rngs.train()) # this is index, instead of sigma
   elif model.t_sampling == 'ecm':
-    t, r = sample_ecm_t((b1, b2), model, scales[0], rngs.train()) # this is index, instead of sigma
+    t, r = sample_ecm_t((b1, b2), model, scales[0], rngs.train())
     t_batch = jnp.stack([t, r], axis=-1)
   else:
     raise NotImplementedError

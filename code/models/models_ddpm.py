@@ -636,7 +636,7 @@ class SimDDPM(nn.Module):
     ---ECM---
     t_batch: contain t & t2, shape (b, 2)
     scales: the number of scales
-    here the input t_batch is the indices batch, 0 ~ scales-2
+    For icm: here the input t_batch is the indices batch, 0 ~ scales-2
     """
     assert augment_label is None, "不支持"
     imgs = imgs.astype(self.dtype)
