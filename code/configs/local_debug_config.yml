@@ -14,11 +14,12 @@ model:
     # sampler: edm
     # sampler: edm-sde
     # sampler: DDIM
-    sampler: ban
+    # sampler: ban
+    sampler: adaptive
     ode_solver: jax
     # ode_solver: scipy # rk45
     
-    no_condition_t: False
+    no_condition_t: True
     embedding_type: positional # FM
 dataset:
     name: cifar10
@@ -49,4 +50,5 @@ log_per_step: 100
 visualize_per_epoch: 50
 eval_per_epoch: 80
 checkpoint_per_epoch: 500
-load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241206_001843_i2wyhh_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_48000
+# wandb: False
+load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241211_150928_85yb5q_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/checkpoint_48000
