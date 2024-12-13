@@ -36,7 +36,7 @@ fid:
     cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
 evalu:
     ema: True
-    sample: False
+    sample: True
 batch_size: 2048
 num_epochs: 2000
 learning_rate: 0.0008 # FM

@@ -159,7 +159,7 @@ def sample_by_diffeq(state: NNXTrainState, model, rng, n_sample,t_min:float=0.0)
     return images, nfes.mean()
 
 # move this out from model for JAX compilation
-def generate(state: NNXTrainState, model, rng, n_sample, t_state=None, verbose=False):
+def generate(state: NNXTrainState, model, rng, n_sample, t_state=None):
   """
   Generate samples from the model
 
@@ -186,26 +186,12 @@ def generate(state: NNXTrainState, model, rng, n_sample, t_state=None, verbose=F
       rng_this_step = jax.random.fold_in(rng, i)
       rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
       merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-      x_i = merged_model.sample_one_step(x_i, rng_z, i, t_state=t_state, verbose=verbose)
+      x_i = merged_model.sample_one_step(x_i, rng_z, i, t_state=t_state)
       outputs = (x_i, rng)
       return outputs
-    if not verbose:
-      input = (x_i, rng)
-      outputs = jax.lax.fori_loop(0, num_steps, step_fn, input)
-      return outputs[0]
-    else:
-      all_x = []
-      # denoised = []
-      all_t = []
-      for i in range(num_steps):
-        D = step_fn(i, (x_i, rng))
-        x_i, t = D[0]
-        rng = D[1]
-        all_t.append(t)
-        all_x.append(x_i)
-      images = jnp.stack(all_x, axis=0)
-      all_t = jnp.stack(all_t, axis=0)
-      return images, all_t
+    input = (x_i, rng)
+    outputs = jax.lax.fori_loop(0, num_steps, step_fn, input)
+    return outputs[0]
   
   elif model.sampler in ['edm', 'edm-sde']:
     t_steps = model.compute_t(jnp.arange(num_steps), num_steps)
@@ -261,25 +247,112 @@ def generate(state: NNXTrainState, model, rng, n_sample, t_state=None, verbose=F
     outputs = jax.lax.fori_loop(0, num_steps//2, step_fn_euler, outputs)
     images = outputs[0]
     return images
-
-    # # for debug
-    # all_x = []
-    # denoised = []
-    # for i in range(num_steps//2):
-    #   D = step_fn_euler(i, (x_i, rng))
-    #   x_i, rng = D[0]
-    #   denoised.append(D[1])
-    #   all_x.append(x_i)
-    # for i in range(num_steps//4):
-    #   D = step_fn_heun(i, (x_i, rng))
-    #   x_i, rng = D[0]
-    #   denoised.append(D[1])
-    #   all_x.append(x_i)
-    # images = jnp.stack(all_x, axis=0)
-    # denoised = jnp.stack(denoised, axis=0)
-    # return images, denoised
-
     
+  else:
+    raise NotImplementedError
+
+def generate_verbose(state: NNXTrainState, model, rng, n_sample, t_state=None):
+  """
+  Generate samples from the model
+
+  Here we tend to not use nnx.Rngs
+  state: maybe a train state
+  ---
+  verbose version, return all t
+  return shape: (n_sample, 32, 32, 3)
+  """
+  if model.ode_solver == 'O':
+    raise NotImplementedError
+    return sample_by_diffeq(state,model,rng,n_sample, t_min=model.eps)
+
+  # prepare schedule
+  num_steps = model.n_T
+  # initialize noise
+  x_shape = (n_sample, model.image_size, model.image_size, model.out_channels)
+  rng_used, rng = jax.random.split(rng, 2)
+  # sample from prior
+  x_prior = jax.random.normal(rng_used, x_shape, dtype=model.dtype)
+
+  if model.sampler in ['euler', 'heun', "adaptive"]:
+    x_i = x_prior
+    def step_fn(i, inputs):
+      x_i, rng = inputs
+      rng_this_step = jax.random.fold_in(rng, i)
+      rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
+      merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
+      x_i = merged_model.sample_one_step(x_i, rng_z, i, t_state=t_state, verbose=True)
+      outputs = (x_i, rng)
+      return outputs
+    all_x = []
+    # denoised = []
+    all_t = []
+    for i in range(num_steps):
+      D = step_fn(i, (x_i, rng))
+      x_i, t = D[0]
+      rng = D[1]
+      all_t.append(t)
+      all_x.append(x_i)
+    images = jnp.stack(all_x, axis=1)
+    all_t = jnp.stack(all_t, axis=1)
+    return images, all_t
+  
+  elif model.sampler in ['edm', 'edm-sde']:
+    raise NotImplementedError
+    t_steps = model.compute_t(jnp.arange(num_steps), num_steps)
+    t_steps = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
+    x_i = x_prior * t_steps[0]
+    def step_fn(i, inputs):
+      x_i, rng = inputs
+      rng_this_step = jax.random.fold_in(rng, i)
+      rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
+      merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
+      x_i = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps)
+      # x_i, denoised = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps) # for debug
+      outputs = (x_i, rng)
+      return outputs
+      # return outputs, denoised # for debug
+    outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
+    images = outputs[0]
+    return images
+  
+  elif model.sampler == "ban": # sqa experiment
+    raise NotImplementedError
+    # here num_steps mean we solve for "0, i, 2i, ..., 1/2, 1/2+2i, 1/2+4i, ..., 1-2/i"
+    assert num_steps % 4 == 0
+    x_i = x_prior
+    def step_fn_euler(i, inputs):
+      x_i, rng = inputs
+      rng_this_step = jax.random.fold_in(rng, i)
+      rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
+      merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
+      # x_i = merged_model.sample_one_step_euler(x_i, i)
+      x_i = merged_model.sample_one_step_euler(x_i, i+num_steps//2)
+      # x_i, denoised = merged_model.sample_one_step_euler(x_i, i) # for debug
+      outputs = (x_i, rng)
+      return outputs
+      # return outputs, denoised # for debug
+    def step_fn_heun(i, inputs):
+      x_i, rng = inputs
+      rng_this_step = jax.random.fold_in(rng, i)
+      rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
+      merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
+      # x_i = merged_model.sample_one_step_heun(x_i, 2*i+num_steps//2)
+      x_i = merged_model.sample_one_step_heun(x_i, 2*i)
+      # x_i, denoised = merged_model.sample_one_step_heun(x_i, 2*i+num_steps//2)
+      outputs = (x_i, rng)
+      return outputs
+      # return outputs, denoised # for debug
+
+    # # first euler then heun
+    # outputs = jax.lax.fori_loop(0, num_steps//2, step_fn_euler, (x_i, rng))
+    # outputs = jax.lax.fori_loop(0, num_steps//4, step_fn_heun, outputs)
+
+    # first heun then euler
+    outputs = jax.lax.fori_loop(0, num_steps//4, step_fn_heun, (x_i, rng))
+    outputs = jax.lax.fori_loop(0, num_steps//2, step_fn_euler, outputs)
+    images = outputs[0]
+    return images
+
   else:
     raise NotImplementedError
 
@@ -495,9 +568,10 @@ class SimDDPM(nn.Module):
     # i: loop from 0 to self.n_T - 1
     merged_model = nn.merge(t_state.graphdef, t_state.params, t_state.rng_states, t_state.batch_stats, t_state.useless_variable_state)
     t = merged_model.forward(x_i)
-    t_shape = jnp.repeat(t, x_i.shape[0]) # to ensure the shape is correct
+    t = jnp.squeeze(t, axis=-1)  # remove the last dim
+    # t_shape = jnp.repeat(t, x_i.shape[0]) # to ensure the shape is correct
 
-    u_pred = self.forward_flow_pred_function(x_i, t_shape, train=False)
+    u_pred = self.forward_flow_pred_function(x_i, t, train=False)
 
     # move one step
     dt = jnp.minimum(jnp.ones_like(t) * 0.02, t) # adaptive step size, max=0.02

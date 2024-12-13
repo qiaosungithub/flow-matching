@@ -44,7 +44,7 @@ import utils.fid_util as fid_util
 import utils.sample_util as sample_util
 
 import models.models_ddpm as models_ddpm
-from models.models_ddpm import generate, edm_ema_scales_schedules
+from models.models_ddpm import generate, edm_ema_scales_schedules, generate_verbose
 import input_pipeline
 from input_pipeline import prepare_batch_data
 
@@ -219,34 +219,45 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, model_c
   return new_state, metrics, images
 
 
-def sample_step(state, sample_idx, model, rng_init, device_batch_size, MEAN_RGB=None, STDDEV_RGB=None, verbose=False):
+def sample_step(state, sample_idx, model, rng_init, device_batch_size, MEAN_RGB=None, STDDEV_RGB=None, t_state=None):
   """
   sample_idx: each random sampled image corrresponds to a seed
   rng_init: here we do not want nnx.Rngs
   """
   rng_sample = random.fold_in(rng_init, sample_idx)  # fold in sample_idx
-  images = generate(state, model, rng_sample, n_sample=device_batch_size, verbose=verbose)
-  if verbose:
-    images, all_t = images
+  images = generate(state, model, rng_sample, n_sample=device_batch_size, t_state=t_state)
   nfe = None
   if model.ode_solver == 'O':
     images, nfe = images
 
   images_all = lax.all_gather(images, axis_name='batch')  # each device has a copy
   images_all = images_all.reshape(-1, *images_all.shape[2:])
-  if verbose:
-    all_t = lax.all_gather(all_t, axis_name='batch')
-    all_t = all_t.reshape(-1, all_t.shape[2:])
 
   # The images should be [-1, 1], which is correct
 
   # images_all = images_all * (jnp.array(STDDEV_RGB)/255.).reshape(1,1,1,3) + (jnp.array(MEAN_RGB)/255.).reshape(1,1,1,3)
   # images_all = (images_all - 0.5) / 0.5
   nfe = jax.device_get(nfe).mean() if nfe is not None else None
-  if verbose:
-    return images_all, nfe, all_t
-  else: 
-    return images_all, nfe
+  return images_all, nfe
+
+def sample_step_verbose(state, sample_idx, model, rng_init, device_batch_size, MEAN_RGB=None, STDDEV_RGB=None, t_state=None):
+  """
+  sample_idx: each random sampled image corrresponds to a seed
+  rng_init: here we do not want nnx.Rngs
+  """
+  rng_sample = random.fold_in(rng_init, sample_idx)  # fold in sample_idx
+  images = generate_verbose(state, model, rng_sample, n_sample=device_batch_size, t_state=t_state)
+  images, all_t = images
+  nfe = None
+  if model.ode_solver == 'O':
+    images, nfe = images
+
+  images_all = lax.all_gather(images, axis_name='batch')  # each device has a copy
+  images_all = images_all.reshape(-1, *images_all.shape[2:])
+  all_t = lax.all_gather(all_t, axis_name='batch')
+  all_t = all_t.reshape(-1, *all_t.shape[2:])
+  nfe = jax.device_get(nfe).mean() if nfe is not None else None
+  return images_all, nfe, all_t
 
 def global_seed(seed):
   torch.manual_seed(seed)
@@ -966,7 +977,7 @@ def just_evaluate(
   ########### FID ###########
   vis_sample_idx = jax.process_index() * jax.local_device_count() + jnp.arange(jax.local_device_count())  # for visualization
   if config.model.ode_solver in ['jax', 'O']:
-    t_state = init_t_network() if config.model.sampler == "adaptive" else None
+    t_state = init_t_network(debug=True) if config.model.sampler == "adaptive" else None
     p_sample_step = jax.pmap(
       partial(sample_step, 
               model=model, 
@@ -978,22 +989,36 @@ def just_evaluate(
       ),
       axis_name='batch'
     )
+    p_sample_step_verbose = jax.pmap(
+      partial(sample_step_verbose, 
+              model=model, 
+              rng_init=random.PRNGKey(0), 
+              device_batch_size=config.fid.device_batch_size, 
+              t_state=t_state,
+      ),
+      axis_name='batch'
+    )
 
     def run_p_sample_step(p_sample_step, state, sample_idx, verbose=False):
       """
       state: train state
       """
       # redefine the interface
-      verbose = [verbose] * sample_idx.shape[0]
-      verbose = jnp.array(verbose)
-      print("verbose: ", verbose)
-      images, nfe = p_sample_step(state, sample_idx=sample_idx, verbose=verbose)
+      if verbose:
+        images, nfe, all_t = p_sample_step(state, sample_idx=sample_idx)
+        print("all_t.shape: ", all_t.shape)
+        # all_t = jnp.mean(all_t, axis=0)
+      else:
+        images, nfe = p_sample_step(state, sample_idx=sample_idx)
       nfe = None
-      # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
+      print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
       jax.random.normal(random.key(0), ()).block_until_ready()
       # print('images.shape:',jax.device_get(images).shape)
       nfe = nfe.mean() if nfe is not None else None
-      return images[0], nfe  # images have been all gathered
+      if verbose:
+        return images[0], nfe, all_t[0]
+      else:
+        return images[0], nfe  # images have been all gathered
     
   elif config.model.ode_solver == 'scipy':
     raise DeprecationWarning('其实用这个')
@@ -1032,8 +1057,8 @@ def just_evaluate(
   eval_state = sync_batch_stats(state)
   if config.evalu.sample: # if we want to sample
     log_for_0(f'Sample...')
-    vis, _, all_t = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx, verbose=True)
-    print("all_t.shape: ", all_t.shape)
+    vis, _, all_t = run_p_sample_step(p_sample_step_verbose, eval_state, vis_sample_idx, verbose=True)
+    # print("all_t.shape: ", all_t.shape)
     all_t = jnp.mean(all_t, axis=0)
     if config.wandb and index == 0:
       for ep in range(1, all_t.shape[0]):
@@ -1041,6 +1066,8 @@ def just_evaluate(
           't': all_t[ep],
           # 'iter': ep
           })
+    # print("vis shape: ", vis.shape)
+    vis = vis[:,-1] # only take the last one
     vis = make_grid_visualization(vis)
     vis = jax.device_get(vis) # np.ndarray
     vis = vis[0]
