@@ -1,3 +1,4 @@
+raise NotImplementedError('NFE for classifier guidance is not implemented')
 # Copyright 2024 The Flax Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -80,7 +81,7 @@ def sample_step(state, sample_idx, model, rng_init, device_batch_size, config,zh
   """
   rng_sample = random.fold_in(rng_init, sample_idx)  # fold in sample_idx
   # images, denoised = generate(state, model, rng_sample, n_sample=device_batch_size, config=config,zhh_o=zhh_o) # for debug
-  images = generate(state, model, rng_sample, n_sample=device_batch_size, config=config,zhh_o=zhh_o,label_type=('order' if option=='vis' else 'random'),classifier=classifier,classifier_state=classifier_state,classifier_scale=config.classifier_scale) # we force conditional generation here
+  images, nfe = generate(state, model, rng_sample, n_sample=device_batch_size, config=config,zhh_o=zhh_o,label_type=('order' if option=='vis' else 'random'),classifier=classifier,classifier_state=classifier_state,classifier_scale=config.classifier_scale) # we force conditional generation here
 
   images_all = lax.all_gather(images, axis_name='batch')  # each device has a copy  
   images_all = images_all.reshape(-1, *images_all.shape[2:])
@@ -95,7 +96,7 @@ def sample_step(state, sample_idx, model, rng_init, device_batch_size, config,zh
   # images_all = images_all * (jnp.array(STDDEV_RGB)/255.).reshape(1,1,1,3) + (jnp.array(MEAN_RGB)/255.).reshape(1,1,1,3)
   # images_all = (images_all - 0.5) / 0.5
   # return images_all, denoised_all # debug
-  return images_all
+  return images_all, nfe
 
 def global_seed(seed):
   torch.manual_seed(seed)
@@ -275,7 +276,7 @@ def create_train_state(
 def train_and_evaluate(
   config: ml_collections.ConfigDict, workdir: str
 ) -> NNXTrainState:
-  raise NotImplementedError
+  raise NotImplementedError('classifier guidance only do inference')
 
 def just_evaluate(
     config: ml_collections.ConfigDict, workdir: str
@@ -388,7 +389,7 @@ def just_evaluate(
     run_p_sample_step, p_sample_step = get_rk45_functions(model, config, random.PRNGKey(0))
 
   else:
-    raise NotImplementedError
+    raise NotImplementedError('Unsupported ode_solver: {}'.format(config.model.ode_solver))
   # ------------------------------------------------------------------------------------
   if config.fid.on_use:  # we will evaluate fid    
     inception_net = fid_util.build_jax_inception()

@@ -144,7 +144,7 @@ def create_split(
         ]),
       )
     else:
-      raise NotImplementedError
+      raise NotImplementedError(f"Dataset {dataset_cfg.root} not supported.")
       ds = datasets.ImageFolder(
         os.path.join(dataset_cfg.root, split),
         transform=transforms.Compose([

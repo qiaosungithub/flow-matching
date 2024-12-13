@@ -43,13 +43,11 @@ def generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_s
     samples, nfe = run_p_sample_step(p_sample_step, state, sample_idx=sample_idx)
     # print('run p sample step return shape:', samples.shape)
     assert nfe is not None # we force nfe to be return here!
-    if nfe is not None:
-      nfes.append(nfe)
+    nfes.append(nfe)
     # print('samples.shape:', samples.shape)
     # print(f"samples min and max: {samples.min()}, {samples.max()}")
     # exit("邓东灵")
-    if nfe is not None:
-      log_for_0(f'NFE: {nfe}')
+    log_for_0(f'NFE: {nfe}')
     samples = float_to_uint8(samples)
     samples_all.append(samples)
   samples_all = np.concatenate(samples_all, axis=0)

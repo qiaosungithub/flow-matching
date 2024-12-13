@@ -130,7 +130,7 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
   lr = learning_rate_fn(step)
 
   if dynamic_scale:
-    raise NotImplementedError
+    raise NotImplementedError('dynamic_scale is not implemented')
   else:
     grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
     # aux, grads = grad_fn(state.params)
@@ -203,7 +203,7 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, config)
   elif config.model.task == 'Diffusion':
     t_batch = jax.random.randint(rngs.train(), (b1, b2), minval=0, maxval=config.diffusion_nT) # [0, num_time_steps)
   else:
-    raise NotImplementedError
+    raise NotImplementedError('Unknown task: {}'.format(config.model.task))
 
   new_state, metrics, images = train_step_compute_fn(state, batch, noise_batch, t_batch)
 
@@ -216,10 +216,9 @@ def sample_step(state, sample_idx, model, rng_init, device_batch_size, config,ME
   rng_init: here we do not want nnx.Rngs
   """
   rng_sample = random.fold_in(rng_init, sample_idx)  # fold in sample_idx
-  images = generate(state, model, rng_sample, n_sample=device_batch_size,config=config,label_type=('order' if option=='vis' else 'random') if config.model.class_conditional else 'none')
-  nfe = None
-  if model.ode_solver == 'O':
-    images, nfe = images
+  images, nfe = generate(state, model, rng_sample, n_sample=device_batch_size,config=config,label_type=('order' if option=='vis' else 'random') if config.model.class_conditional else 'none')
+  assert nfe is not None, 'Returning None as NFE is deprecated'
+  nfe = jnp.array(nfe)
 
   images_all = lax.all_gather(images, axis_name='batch')  # each device has a copy  
   images_all = images_all.reshape(-1, *images_all.shape[2:])
@@ -228,7 +227,7 @@ def sample_step(state, sample_idx, model, rng_init, device_batch_size, config,ME
 
   # images_all = images_all * (jnp.array(STDDEV_RGB)/255.).reshape(1,1,1,3) + (jnp.array(MEAN_RGB)/255.).reshape(1,1,1,3)
   # images_all = (images_all - 0.5) / 0.5
-  return images_all, jax.device_get(nfe).mean() if nfe is not None else None
+  return images_all, jax.device_get(nfe).mean()
 
 def global_seed(seed):
   torch.manual_seed(seed)
@@ -636,19 +635,13 @@ def train_and_evaluate(
       state: train state
       """
       # redefine the interface
-      images = p_sample_step_(state, sample_idx=sample_idx)
-      images, nfe = images
+      images, nfe = p_sample_step_(state, sample_idx=sample_idx)
       # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
       jax.random.normal(random.key(0), ()).block_until_ready()
+      nfe = nfe.mean()
       return images[0], nfe  # images have been all gathered
-    
-  elif config.model.ode_solver == 'scipy':
-    raise DeprecationWarning('其实用这个')
-    from utils.rk45_util import get_rk45_functions
-    run_p_sample_step, p_sample_step = get_rk45_functions(model, config, random.PRNGKey(0))
-
   else:
-    raise NotImplementedError
+    raise NotImplementedError('Unknown ode_solver: {}'.format(config.model.ode_solver))
   
   # ------------------------------------------------------------------------------------
   if config.fid.on_use:  # we will evaluate fid    
@@ -852,10 +845,9 @@ def train_and_evaluate(
       if config.wandb and rank == 0:
         wandb.log({
           'FID': fid_score,
-          'FID_ema': fid_score_ema
+          'FID_ema': fid_score_ema,
+          'NFE': nfe
         })
-        if nfe is not None:
-          wandb.log({'NFE': nfe})
 
       vis = make_grid_visualization(samples_all, to_uint8=False)
       vis = jax.device_get(vis)
@@ -992,20 +984,14 @@ def just_evaluate(
       """
       # redefine the interface
       images, nfe = p_sample_step_(state, sample_idx=sample_idx)
-      nfe = None
       # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
       jax.random.normal(random.key(0), ()).block_until_ready()
       # print('images.shape:',jax.device_get(images).shape)
-      nfe = nfe.mean() if nfe is not None else None
+      nfe = nfe.mean()
       return images[0], nfe  # images have been all gathered
-    
-  elif config.model.ode_solver == 'scipy':
-    raise DeprecationWarning('其实用这个')
-    from utils.rk45_util import get_rk45_functions
-    run_p_sample_step, p_sample_step = get_rk45_functions(model, config, random.PRNGKey(0))
-
+  
   else:
-    raise NotImplementedError
+    raise NotImplementedError('Unknown ode_solver: {}'.format(config.model.ode_solver))
   # ------------------------------------------------------------------------------------
   if config.fid.on_use:  # we will evaluate fid    
     inception_net = fid_util.build_jax_inception()
@@ -1063,9 +1049,8 @@ def just_evaluate(
     if config.wandb and rank == 0:
       wandb.log({
         'FID': fid_score,
+        'NFE': nfe
       })
-      if nfe is not None:
-        wandb.log({'NFE': nfe})
 
     vis = make_grid_visualization(samples_all, to_uint8=False)
     vis = jax.device_get(vis)
@@ -1074,13 +1059,6 @@ def just_evaluate(
     if config.wandb and index == 0:
       wandb.log({'gen_fid': wandb.Image(canvas)})
 
-  if rank == 0 and config.wandb:
-    nfe = config.model.n_T
-    raise NotImplementedError('Fix me!')
-    if config.model.ode_solver == 'scipy': nfe=100 # TODO: show the rk45 nfe
-    elif config.model.sampler not in ['euler', "DDIM"]: nfe*=2
-    if config.model.ode_solver != 'O':
-      wandb.log({'NFE': nfe})
 
   jax.random.normal(jax.random.key(0), ()).block_until_ready()
   if index == 0 and config.wandb:

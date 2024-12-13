@@ -13,6 +13,7 @@ import time
 from scipy import integrate
 
 def get_rk45_functions(model, config, rng):
+  raise DeprecationWarning('This function is deprecated.')
 
   def flow_step(state, x, t):
     merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)

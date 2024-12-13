@@ -143,7 +143,7 @@ def create_split(
         ]),
       )
     else:
-      raise NotImplementedError
+      raise NotImplementedError('Invalid dataset root: {}'.format(dataset_cfg.root))
       ds = datasets.ImageFolder(
         os.path.join(dataset_cfg.root, split),
         transform=transforms.Compose([
@@ -172,6 +172,6 @@ def create_split(
     )
     steps_per_epoch = len(it)
   else:
-    raise NotImplementedError
+    raise NotImplementedError('Invalid split: {}'.format(split))
 
   return it, steps_per_epoch

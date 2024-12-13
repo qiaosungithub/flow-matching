@@ -376,7 +376,10 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
 
     outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
     images = outputs[0]
-    return images
+    return images, num_steps * {
+      'euler': 1,
+      'heun': 2,
+    }[model.sampler] # heun has two steps per iteration
   
   elif model.sampler in ['edm', 'edm-sde']:
     assert y is None, NotImplementedError()
@@ -403,7 +406,10 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
 
     outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
     images = outputs[0]
-    return images
+    return images, num_steps * num_steps * {
+      'edm': 2,
+      'edm-sde': 2,
+    }[model.sampler]
     # # for debug
     # all_x = []
     # denoised = []
@@ -471,7 +477,7 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
     # denoised = jnp.stack(denoised, axis=0)
     # return images, denoised
   
-    return images
+    return images, num_steps
   # elif model.sampler == 'DDIM':
   #   skip = model.num_diffusion_timesteps // num_steps
   #   # skip = 1
@@ -522,7 +528,7 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
   #   # return images, denoised # for debug
 
   else:
-    raise NotImplementedError
+    raise NotImplementedError(f'Unknown sampler: {model.sampler}')
 
 # loss utilities
 def approx_standard_normal_cdf(x):
@@ -731,7 +737,7 @@ class SimDDPM(nn.Module):
     elif self.sampler == 'heun':
       x_next = self.sample_one_step_heun(x_i, i) 
     else:
-      raise NotImplementedError
+      raise NotImplementedError(f'Unknown sampler: {self.sampler}')
 
     return x_next
   
@@ -744,7 +750,7 @@ class SimDDPM(nn.Module):
       x_next = self.sample_one_step_edm_sde(x_i, rng, i, t_steps)
       # x_next, denoised = self.sample_one_step_edm_sde(x_i, rng, i, t_steps) # for debug
     else:
-      raise NotImplementedError
+      raise NotImplementedError(f'Unknown sampler: {self.sampler}')
 
     return x_next
     # return x_next, denoised 
@@ -1212,7 +1218,7 @@ class SimDDPM(nn.Module):
       elif self.task == 'Diffusion':
         return self.forward_Diffusion(*args, **kwargs)
       else:
-        raise NotImplementedError
+        raise NotImplementedError(f'Unknown task: {self.task}')
   
   def __call__(self, imgs, labels, train: bool = False):
     # initialization only

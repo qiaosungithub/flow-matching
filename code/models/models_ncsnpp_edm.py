@@ -109,7 +109,6 @@ class NCSNpp(nn.Module):
             # Sinusoidal positional embeddings.
             self.temb_layer = partial(layers.get_timestep_embedding, embedding_dim=nf)
         else:
-            raise NotImplementedError
             raise ValueError(f"embedding type {embedding_type} unknown.")
         self.input_temb_dim = input_temb_dim = nf if embedding_type == "positional" else 2 * nf # NOTE: here, if use fourier embedding, the output dim is 2 * nf; for positional embedding, the output dim is nf. This is tang
         #################### aug label ############################

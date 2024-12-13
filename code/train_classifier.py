@@ -725,4 +725,4 @@ def train_and_evaluate(
 def just_evaluate(
     config: ml_collections.ConfigDict, workdir: str
   ):
-  raise NotImplementedError
+  raise NotImplementedError('Train classifier doesn\'t support just_evaluate for now')
