@@ -82,6 +82,18 @@ class NNXTrainState(FlaxTrainState):
   useless_variable_state: Any
   # NOTE: is_training can't be a attr, since it can't be replicated
 
+def edm_ema_scales_schedules(step, config, steps_per_epoch):
+    # ema_halflife_kimg = 500  # from edm
+    ema_halflife_kimg = config.ema_king 
+    # ema_halflife_kimg = 50000  # log(0.5) / log(0.999999) * 128 / 1000 = 88722 kimg, from flow
+    ema_halflife_nimg = ema_halflife_kimg * 1000
+
+    ema_rampup_ratio = config.ema_ramp 
+    ema_halflife_nimg = jnp.minimum(ema_halflife_nimg, step * config.batch_size * ema_rampup_ratio)
+
+    ema_beta = 0.5 ** (config.batch_size / jnp.maximum(ema_halflife_nimg, 1e-8))
+    scales = jnp.ones((1,), dtype=jnp.int32)
+    return ema_beta, scales
 
 def ct_ema_scales_schedules(step, config, steps_per_epoch):
   """
@@ -109,36 +121,34 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
     K = total_steps
     r = step / K
     scales = jnp.array(s0 + (s1 - s0) * (r**2) + 1, dtype=jnp.float32)
+  elif config.ct.n_schedule == 'baseline':
+    s0 = start_scales
+    s1 = end_scales
+    K = total_steps
+    r = step / K
+    scales = jnp.array(jnp.ceil(jnp.sqrt(s0**2 + ((s1 + 1)**2 - s0**2) * r) - 1) + 1, dtype=jnp.float32)
   else:
     raise ValueError(f'Unknown schedule: {config.ct.n_schedule}')
   
   # 不知道这一段在干什么
-  if config.model.ema_target == True:
-    raise NotImplementedError("我写了")
-    c = -jnp.log(start_ema) * start_scales
-    target_ema = jnp.exp(-c / scales)
-  elif False:
-    ema_halflife_kimg = 2000  # edm was 500 (2000 * 1000 / 50000 = 40ep)
-    ema_halflife_nimg = ema_halflife_kimg * 1000
-    target_ema = 0.5 ** (config.batch_size / jnp.maximum(ema_halflife_nimg, 1e-8))  # 0.9998 for batch 512'
-  else:
-    pass
+  # if config.model.ema_target == True:
+  #   raise NotImplementedError("我写了")
+  #   c = -jnp.log(start_ema) * start_scales
+  #   target_ema = jnp.exp(-c / scales)
+  # elif False:
+  #   ema_halflife_kimg = 2000  # edm was 500 (2000 * 1000 / 50000 = 40ep)
+  #   ema_halflife_nimg = ema_halflife_kimg * 1000
+  #   target_ema = 0.5 ** (config.batch_size / jnp.maximum(ema_halflife_nimg, 1e-8))  # 0.9998 for batch 512'
+  # else:
+  #   pass
+  ema = None
+  if config.ema_schedule == 'const':
+    ema = config.ema_value
+  elif config.ema_schedule == 'edm':
+    ema = edm_ema_scales_schedules(step, config, steps_per_epoch)[0]
   
-  return jnp.array([config.ema_value],dtype=jnp.float32), scales.astype(jnp.int32)
+  return jnp.array([ema],dtype=jnp.float32), scales.astype(jnp.int32)
 
-
-def edm_ema_scales_schedules(step, config, steps_per_epoch):
-  raise NotImplementedError
-  # ema_halflife_kimg = 500  # from edm
-  ema_halflife_kimg = 50000  # log(0.5) / log(0.999999) * 128 / 1000 = 88722 kimg, from flow
-  ema_halflife_nimg = ema_halflife_kimg * 1000
-
-  ema_rampup_ratio = 0.05
-  ema_halflife_nimg = jnp.minimum(ema_halflife_nimg, step * config.batch_size * ema_rampup_ratio)
-
-  ema_beta = 0.5 ** (config.batch_size / jnp.maximum(ema_halflife_nimg, 1e-8))
-  scales = jnp.ones((1,), dtype=jnp.int32)
-  return ema_beta, scales
 
 
 # move this out from model for JAX compilation
@@ -574,7 +584,7 @@ class SimDDPM(nn.Module):
     # return x_next, x0_t # debug
 
   def forward_consistency_function(self, x, t, ema=False, rng=None, train: bool = True):
-    c_skip = self.data_std ** 2 / ((t - self.t_min) ** 2 + self.data_std ** 2) #
+    c_skip = self.data_std ** 2 / ((t - self.t_min) ** 2 + self.data_std ** 2)
     c_out = (t - self.t_min) * self.data_std / jnp.sqrt(t ** 2 + self.data_std ** 2)
 
     c_in = 1 / jnp.sqrt(t ** 2 + self.data_std ** 2)
@@ -688,6 +698,21 @@ class SimDDPM(nn.Module):
       loss = jnp.sqrt(l2 + C ** 2) - C
       # we then devide back
       loss = loss / (32 * 32 * 3)
+    elif self.loss_type == 'huber0_01':
+      l2 = diffs ** 2
+      l2 = jnp.sum(l2, axis=(1, 2, 3))  # sum over pixels following l2's definition
+      # C = 0.00054 * math.sqrt(32*32*3)
+      C = 0.01
+      loss = jnp.sqrt(l2 + C ** 2) - C
+      # we then devide back
+      loss = loss / (32 * 32 * 3)
+    elif self.loss_type == 'huber_wo_mean':
+      l2 = diffs ** 2
+      l2 = jnp.sum(l2, axis=(1, 2, 3))  # sum over pixels following l2's definition
+      # C = 0.00054 * math.sqrt(32*32*3)
+      C = 0.03
+      loss = jnp.sqrt(l2 + C ** 2) - C
+      # we then devide back
     else:
       raise ValueError(f'Unknown loss type: {self.loss_type}')
 

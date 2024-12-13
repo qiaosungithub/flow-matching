@@ -80,7 +80,8 @@ def sample_icm_t(
   # print(f"sigmas: {sigmas}")
   # print(f"pdf: {pdf}")
 
-  timesteps = jax.random.choice(rng, a=jnp.arange(1,scale), shape=samples_shape, p=pdf) # i is chosen from [1, scale-1]
+  timesteps = jax.random.choice(rng, a=jnp.arange(1,scale), shape=samples_shape) # i is chosen from [1, scale-1]
+  # timesteps = jax.random.choice(rng, a=jnp.arange(1,scale), shape=samples_shape, p=pdf) # i is chosen from [1, scale-1]
 
   # print(f"timesteps: {timesteps}")
 
@@ -89,6 +90,8 @@ def sample_icm_t(
 rng = jax.random.PRNGKey(0)
 timesteps = sample_icm_t((10000,), 1280, rng)
 sigmas = compute_t(timesteps, 1280)
+
+sequential_sigmas = compute_t(jnp.arange(1, 10), 10)
 
 
 x = jax.device_get(sigmas)
@@ -99,5 +102,12 @@ import numpy as np
 # plot frequency, instead of counts
 # plt.hist(np.log10(x), bins=100, density=True)
 plt.hist(np.log(x), bins=100, density=True)
+
+# plot straight lines at x=log(0.002) and x=log(80)
+# plt.axvline(np.log(t_min), color='r', linestyle='dashed', linewidth=2)
+# plt.axvline(np.log(t_max), color='r', linestyle='dashed', linewidth=2)
+
+# plot the sequential sigmas
+plt.plot(np.log(sequential_sigmas), np.zeros_like(sequential_sigmas), 'ro')
 
 plt.savefig("timesteps.png")
