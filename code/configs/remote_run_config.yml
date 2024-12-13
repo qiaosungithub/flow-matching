@@ -5,7 +5,7 @@ model:
     base_width: 128
     n_T: 1
     use_aug_label: False
-    dropout: 0.3 # ECM
+    dropout: 0.2 # ECM
     net_type: ncsnppedm
     average_loss: False
 
@@ -13,8 +13,8 @@ model:
     # CT
     fourier_scale: 0.02 # CT
 
-    embedding_type: positional2
-    # embedding_type: fourier
+    # embedding_type: positional2
+    embedding_type: fourier
 
     t_sampling: ecm
     # t_sampling: icm
