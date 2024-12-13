@@ -1105,8 +1105,8 @@ def just_evaluate(
 
   if rank == 0 and config.wandb:
     nfe = config.model.n_T
-    if config.model.ode_solver == 'scipy': nfe=100 # TODO: show the rk45 nfe
-    elif config.model.sampler not in ['euler', "DDIM"]: nfe*=2
+    if config.model.ode_solver == 'scipy': raise LookupError('Not implemented')
+    elif config.model.sampler not in ['euler', "DDIM", "adaptive"]: nfe*=2
     if config.model.ode_solver != 'O':
       wandb.log({'NFE': nfe})
 

@@ -574,12 +574,13 @@ class SimDDPM(nn.Module):
     u_pred = self.forward_flow_pred_function(x_i, t, train=False)
 
     # move one step
-    dt = jnp.minimum(jnp.ones_like(t) * 0.02, t) # adaptive step size, max=0.02
+    dt = jnp.minimum(jnp.ones_like(t) * 0.01, t) # adaptive step size, max=0.02
     # dt = jnp.where(dt < 0.01, 0, dt) # for small t, we don't move
     x_next = x_i + batch_mul(u_pred, dt)
 
     t_next = merged_model.forward(x_next)
-    x_next = jnp.where(t_next < t, x_next, x_i) # if t_next is smaller than t, we don't move
+    t_next = jnp.squeeze(t_next, axis=-1)  # remove the last dim
+    x_next = jnp.where(t_next.reshape(-1, 1, 1, 1) < t.reshape(-1, 1, 1, 1), x_next, x_i) # if t_next is smaller than t, we don't move
 
     if verbose:
       return x_next, t
