@@ -1,3 +1,22 @@
+# All Merged Branch
+
+To merge list:
+
+- [X] We start from `FM`
+- [ ] Merge `DDPM` + `DDIM`
+- [ ] Merge `ADM`
+- [ ] Merge `CM`
+
+## Sanity checks
+
+TODO
+
+## Experiments to do (this should be done finally once)
+
+This part is at [this table](https://docs.google.com/spreadsheets/d/1MFtgLx7uzBFdiPxrIqck00ilrSslZU2w2jRwriVpKMw/edit?gid=1274311467#gid=1274311467)
+
+# The following is the old README
+
 # Flow Matching
 
 This code is copied from Kaiming's rectified flow, but we want to change it into nnx for further use.
