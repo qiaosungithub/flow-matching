@@ -1011,7 +1011,7 @@ def just_evaluate(
       else:
         images, nfe = p_sample_step(state, sample_idx=sample_idx)
       nfe = None
-      print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
+      # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
       jax.random.normal(random.key(0), ()).block_until_ready()
       # print('images.shape:',jax.device_get(images).shape)
       nfe = nfe.mean() if nfe is not None else None
@@ -1076,7 +1076,7 @@ def just_evaluate(
     canvas = Image.fromarray(vis)
     if config.wandb and index == 0:
       wandb.log({'gen': wandb.Image(canvas)})
-    log_for_0('Sample NFE: {}'.format(nfe))
+    # log_for_0('Sample NFE: {}'.format(nfe))
     # assert False, 'image saved!: {}'.format(nfe)
     # sample_step(eval_state, image_size, sampling_config, epoch, use_wandb=config.wandb)
   ########### FID ###########

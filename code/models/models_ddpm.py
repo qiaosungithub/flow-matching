@@ -575,8 +575,11 @@ class SimDDPM(nn.Module):
 
     # move one step
     dt = jnp.minimum(jnp.ones_like(t) * 0.02, t) # adaptive step size, max=0.02
-    dt = jnp.where(dt < 0.005, 0, dt) # for small t, we don't move
+    # dt = jnp.where(dt < 0.01, 0, dt) # for small t, we don't move
     x_next = x_i + batch_mul(u_pred, dt)
+
+    t_next = merged_model.forward(x_next)
+    x_next = jnp.where(t_next < t, x_next, x_i) # if t_next is smaller than t, we don't move
 
     if verbose:
       return x_next, t
