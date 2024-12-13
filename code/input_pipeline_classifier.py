@@ -118,6 +118,7 @@ def create_split(
   rank = jax.process_index()
   if split == 'train':
     if dataset_cfg.root == "MNIST":
+      raise MemoryError('记对了')
       ds = datasets.MNIST(
         root='~/cache',
         train=True,
@@ -135,7 +136,7 @@ def create_split(
         train=True,
         download=True,
         transform=transforms.Compose([
-          # transforms.RandomResizedCrop(32, scale=(0.8, 1.0), ratio=(3.0 / 4.0, 4.0 / 3.0),),
+          transforms.RandomResizedCrop(32, scale=(0.8, 1.0), ratio=(3.0 / 4.0, 4.0 / 3.0),), # 不知道是啥，先相信你
           transforms.RandomHorizontalFlip(p=0.5),
           # transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
           transforms.ToTensor(),
@@ -155,23 +156,41 @@ def create_split(
         loader=loader,
       )
     logging.info(ds)
-    sampler = DistributedSampler(
+    
+  elif split == 'val':
+    assert dataset_cfg.root == "CIFAR"
+    ds = datasets.CIFAR10(
+      root='~/cache',
+      train=False,
+      download=True,
+      transform=transforms.Compose([
+        # transforms.RandomResizedCrop(32, scale=(0.8, 1.0), ratio=(3.0 / 4.0, 4.0 / 3.0),),
+        # transforms.RandomHorizontalFlip(p=0.5),
+        # transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
+        transforms.ToTensor(),
+        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+      ]),
+    )
+    logging.info(ds)
+    
+  else:
+    raise ValueError(f"Invalid split: {split}")
+
+  sampler = DistributedSampler(
       ds,
       num_replicas=jax.process_count(),
       rank=rank,
       shuffle=True,
     )
-    it = DataLoader(
-      ds, batch_size=batch_size, drop_last=True,
-      worker_init_fn=partial(worker_init_fn, rank=rank),
-      sampler=sampler,
-      num_workers=dataset_cfg.num_workers,
-      prefetch_factor=dataset_cfg.prefetch_factor if dataset_cfg.num_workers > 0 else None,
-      pin_memory=dataset_cfg.pin_memory,
-      persistent_workers=True if dataset_cfg.num_workers > 0 else False,
-    )
-    steps_per_epoch = len(it)
-  else:
-    raise NotImplementedError
+  it = DataLoader(
+    ds, batch_size=batch_size, drop_last=True,
+    worker_init_fn=partial(worker_init_fn, rank=rank),
+    sampler=sampler,
+    num_workers=dataset_cfg.num_workers,
+    prefetch_factor=dataset_cfg.prefetch_factor if dataset_cfg.num_workers > 0 else None,
+    pin_memory=dataset_cfg.pin_memory,
+    persistent_workers=True if dataset_cfg.num_workers > 0 else False,
+  )
+  steps_per_epoch = len(it)
 
   return it, steps_per_epoch

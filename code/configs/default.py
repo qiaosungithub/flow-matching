@@ -57,7 +57,7 @@ def get_config():
   model.ode_solver = 'jax'  # or 'scipy', which use RK45 solver
   model.net_type = 'ncsnpp'
 
-  model.no_condition_t = False
+  # model.no_condition_t = False
 
   # # DDIM
   # model.beta_schedule = 'linear'
@@ -65,7 +65,26 @@ def get_config():
   # model.beta_end = 0.02
   # model.num_diffusion_timesteps = 1000
   model.embedding_type = 'positional'
+  
+  # Classifier model  
+  config.classifier_model = classifier_model = ml_collections.ConfigDict()
+  classifier_model.image_size = 32
+  classifier_model.out_channels = 1
 
+  classifier_model.base_width = 64
+  classifier_model.n_T = 18  # inference stepss
+  classifier_model.dropout = 0.0
+
+  classifier_model.use_aug_label = False
+  classifier_model.average_loss = False
+
+  classifier_model.sampler = 'euler' # or 'heun'
+  classifier_model.ode_solver = 'jax'  # or 'scipy', which use RK45 solver
+  classifier_model.net_type = 'ncsnpp'
+
+  classifier_model.no_condition_t = False
+
+  # Augmentation
   config.aug = aug = ml_collections.ConfigDict()
   aug.use_edm_aug = False
 
@@ -74,6 +93,12 @@ def get_config():
   ct.start_ema = 0.9
   ct.start_scales = 2
   ct.end_scales = 150
+  
+  # Diffusion
+  config.diffusion = diffusion = ml_collections.ConfigDict()
+  diffusion.diffusion_nT = 4000
+  diffusion.diffusion_schedule = 'cosine'
+  # diffusion.time_weighting = 'const'
 
   # Dataset
   config.dataset = dataset = ml_collections.ConfigDict()

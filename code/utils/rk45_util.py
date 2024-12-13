@@ -16,7 +16,7 @@ def get_rk45_functions(model, config, rng):
 
   def flow_step(state, x, t):
     merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-    u_pred = merged_model.forward_flow_pred_function(x, t, train=False)
+    u_pred = merged_model.forward_prediction_function(x, t, train=False)
     return u_pred
 
   p_flow_step = jax.pmap(
@@ -89,7 +89,7 @@ def get_rk45_functions(model, config, rng):
 #         x, t,
 #         rngs={},
 #         train=False,
-#         method=model.forward_flow_pred_function,
+#         method=model.forward_prediction_function,
 #         mutable=['batch_stats'],
 #     )
 #     return u_pred

@@ -42,6 +42,7 @@ def generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_s
 
     samples, nfe = run_p_sample_step(p_sample_step, state, sample_idx=sample_idx)
     # print('run p sample step return shape:', samples.shape)
+    assert nfe is not None # we force nfe to be return here!
     if nfe is not None:
       nfes.append(nfe)
     # print('samples.shape:', samples.shape)

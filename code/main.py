@@ -29,6 +29,8 @@ import jax
 from ml_collections import config_flags
 
 import train
+import train_classifier
+import classifier_guidance
 from utils import logging_util
 from utils.logging_util import log_for_0
 logging_util.supress_checkpt_info()
@@ -41,7 +43,7 @@ FLAGS = flags.FLAGS
 
 flags.DEFINE_string('workdir', None, 'Directory to store model data.')
 flags.DEFINE_bool('debug', False, 'Debugging mode.')
-flags.DEFINE_enum('mode', enum_values=['local_debug','remote_debug','remote_run'], default='remote_run', help='Running mode.') # NOTE: This variable isn't used currently, but maintained for future use. This at least ensures that there is no more variable that must be passed in from the command line.
+flags.DEFINE_enum('mode', enum_values=['local_debug','remote_debug','remote_run', 'remote_eval'], default='remote_run', help='Running mode.') # NOTE: This variable isn't used currently, but maintained for future use. This at least ensures that there is no more variable that must be passed in from the command line.
 
 config_flags.DEFINE_config_file(
     'config',
@@ -72,7 +74,13 @@ def main(argv):
   #   with jax.disable_jit():
   #     train.train_and_evaluate(FLAGS.config, FLAGS.workdir)
   # else:
-  if FLAGS.config.load_from is not None:
+  if FLAGS.config.get('train_classifier', False):
+    train_classifier.train_and_evaluate(FLAGS.config, FLAGS.workdir)
+    exit(0)
+  elif FLAGS.config.get('run_classifier_guidance', False):
+    classifier_guidance.just_evaluate(FLAGS.config, FLAGS.workdir)
+    exit(0)
+  if FLAGS.config.load_from is not None and not (FLAGS.config.continue_training):
     train.just_evaluate(FLAGS.config, FLAGS.workdir)
   elif FLAGS.debug:
     with jax.disable_jit():
