@@ -1,3 +1,4 @@
+raise NotImplementedError
 # Copyright 2024 The Flax Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,6 +37,7 @@ from models.models_ncsnpp_edm import NCSNppClassifier as NCSNppEDMClassifier
 # from models.models_ncsnpp import NCSNpp
 # import models.jcm.sde_lib as sde_lib
 from models.jcm.sde_lib import batch_mul
+
 
 
 ModuleDef = Any
@@ -83,9 +85,18 @@ class SimDDPM(nn.Module):
     sampler='euler',
     sample_clip_denoised=True,
     ode_solver='jax',
-    no_condition_t=False,
+    # no_condition_t=False,
     t_condition_method = 'log999',
     rngs=None,
+    embedding_type='fourier',
+    # task
+    task='FM',
+    
+    # diffusion
+    diffusion_schedule='cosine',
+    diffusion_nT=1000,
+    
+    # adm
     learn_var=False,
     class_conditional=False,
     classifier_model_depth=2,
@@ -111,9 +122,17 @@ class SimDDPM(nn.Module):
     self.ode_solver = ode_solver
     self.learn_var = learn_var
     # self.no_condition_t = no_condition_t
-    assert no_condition_t == False, 'This is deprecated'
+    # assert no_condition_t == False, 'This is deprecated'
     self.t_preprocess_fn = get_t_process_fn(t_condition_method)
+    self.task = task
+    self.diffusion_schedule = diffusion_schedule
+    self.diffusion_nT = diffusion_nT
     self.rngs = rngs
+    logging.info(f'Model initialization Get additional kwargs: {kwargs}')
+    # self.beta_schedule = beta_schedule
+    # self.beta_start = beta_start
+    # self.beta_end = beta_end
+    # self.num_diffusion_timesteps = num_diffusion_timesteps
     self.sample_clip_denoised = sample_clip_denoised
     self.class_conditional = class_conditional
 
@@ -147,6 +166,9 @@ class SimDDPM(nn.Module):
         out_channels=self.out_channels,
         out_channel_multiple = (2 if self.learn_var else 1),
         dropout=self.dropout,
+        embedding_type=embedding_type,
+        use_aug_label=self.use_aug_label,
+        aug_label_dim=9,
         class_conditional=self.class_conditional,
         num_classes=self.num_classes,
         num_res_blocks=classifier_model_depth,

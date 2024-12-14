@@ -29,8 +29,8 @@ import jax
 from ml_collections import config_flags
 
 import train
-# import train_classifier
-# import classifier_guidance
+import train_classifier
+import classifier_guidance
 from utils import logging_util
 from utils.logging_util import log_for_0
 logging_util.supress_checkpt_info()
@@ -75,11 +75,9 @@ def main(argv):
   #     train.train_and_evaluate(FLAGS.config, FLAGS.workdir)
   # else:
   if FLAGS.config.get('train_classifier', False):
-    raise NotImplementedError('train_classifier is not implemented yet.')
     train_classifier.train_and_evaluate(FLAGS.config, FLAGS.workdir)
     exit(0)
   elif FLAGS.config.get('run_classifier_guidance', False):
-    raise NotImplementedError('run_classifier_guidance is not implemented yet.')
     classifier_guidance.just_evaluate(FLAGS.config, FLAGS.workdir)
     exit(0)
   if FLAGS.config.load_from is not None and not (FLAGS.config.continue_training):

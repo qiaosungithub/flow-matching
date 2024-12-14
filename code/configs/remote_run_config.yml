@@ -1,46 +1,106 @@
 ############################################
 #     Normal Training Configuration        #
 ############################################
-model:
-    ##### T-conditioning #####
-    t_condition_method: direct # options: [direct, log999, not (i.e. no t)]
+# model:
+#     ##### T-conditioning #####
+#     t_condition_method: direct # options: [direct, log999, not (i.e. no t)]
     
-    ##### Common Configs (rarely changes) #####
+#     ##### Common Configs (rarely changes) #####
+#     image_size: 32
+#     out_channels: 3
+#     base_width: 128
+#     use_aug_label: False
+#     net_type: ncsnppedm
+#     average_loss: True # use average or sum for loss
+
+#     ##### Common Configs (may changes) #####
+#     dropout: 0.15
+#     embedding_type: positional
+#     task: Diffusion # options: [FM, Diffusion]
+
+#     ##### FM-specific configs #####
+
+#     ##### Diffusion-specific configs #####
+#     learn_var: True # default: False
+
+#     ##### Conditional Generation #####
+#     class_conditional: True
+
+#     ##### Sampling Configs #####
+#     n_T: 250 # num of sample steps, matches "diffusion_nT"
+    
+#     # --- Flow Matching --- #
+#     # sampler: euler
+#     # sampler: heun
+#     # sampler: edm
+#     # sampler: edm-sde
+#     # ode_solver: jax
+#     # ode_solver: scipy # rk45
+
+#     # --- Diffusion --- #
+#     sampler: ddpm
+#     # sampler: DDIM
+#     sample_clip_denoised: True
+
+# diffusion:
+#     diffusion_nT: 4000
+#     diffusion_schedule: cosine
+
+# dataset:
+#     name: cifar10
+#     root: CIFAR # pytorch
+#     prefetch_factor: 2
+#     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
+#     cache: True
+
+# aug: 
+#     use_edm_aug: False # NOTE: if you want to turn on this, also turn on model.use_aug_label
+
+# fid:
+#     eval_only: False
+#     fid_per_epoch: 200
+#     num_samples: 50000
+#     cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
+
+# evalu: # In principle, this should not be used
+#     ema: True
+#     sample: True
+
+# batch_size: 2048
+# num_epochs: 2000
+# learning_rate: 0.0008
+# lr_schedule: const
+# weight_decay: 0.0
+# optimizer: adamw
+# adam_b2: 0.95
+# grad_clip: 0.0
+# warmup_epochs: 200
+# log_per_step: 20
+# visualize_per_epoch: 50
+# eval_per_epoch: 100
+# checkpoint_per_epoch: 500
+# save_by_fid: False # if True, then only save checkpoint with fid better than all previous checkpoints
+
+# # continue_training: True # this is for resuming training
+# # load_from: /path/to/your/checkpoint
+
+############################################
+#    Training Classifier Configuration     #
+############################################
+# Please comment the lines above to train classifier!
+
+train_classifier: True
+lr_schedule: classifier_specific
+model:
+    task: Classifier
+    t_condition_method: direct # options: [direct, log999, not (i.e. no t)]
+    n_T: 250
     image_size: 32
     out_channels: 3
-    base_width: 128
-    use_aug_label: False
-    net_type: ncsnppedm
-    average_loss: True # use average or sum for loss
-
-    ##### Common Configs (may changes) #####
-    dropout: 0.15
-    embedding_type: positional
-    task: Diffusion # options: [FM, Diffusion]
-
-    ##### FM-specific configs #####
-
-    ##### Diffusion-specific configs #####
-    learn_var: True # default: False
-
-    ##### Conditional Generation #####
-    class_conditional: True
-
-    ##### Sampling Configs #####
-    n_T: 250 # num of sample steps, matches "diffusion_nT"
-    
-    # --- Flow Matching --- #
-    # sampler: euler
-    # sampler: heun
-    # sampler: edm
-    # sampler: edm-sde
-    # ode_solver: jax
-    # ode_solver: scipy # rk45
-
-    # --- Diffusion --- #
-    sampler: ddpm
-    # sampler: DDIM
-    sample_clip_denoised: True
+    base_width: 32
+    net_type: ncsnppedm_classifier
+    dropout: 0.3
+    classifier_model_depth: 1
 
 diffusion:
     diffusion_nT: 4000
@@ -53,41 +113,16 @@ dataset:
     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
     cache: True
 
-aug: 
-    use_edm_aug: False # NOTE: if you want to turn on this, also turn on model.use_aug_label
-
-fid:
-    eval_only: False
-    fid_per_epoch: 200
-    num_samples: 50000
-    cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
-
-evalu: # In principle, this should not be used
-    ema: True
-    sample: True
-
 batch_size: 2048
-num_epochs: 2000
+num_epochs: 500
 learning_rate: 0.0008
-lr_schedule: const
 weight_decay: 0.0
 optimizer: adamw
-adam_b2: 0.95
+adam_b2: 0.999
 grad_clip: 0.0
 warmup_epochs: 200
 log_per_step: 20
 visualize_per_epoch: 50
 eval_per_epoch: 100
-checkpoint_per_epoch: 500
+checkpoint_per_epoch: 200
 save_by_fid: False # if True, then only save checkpoint with fid better than all previous checkpoints
-
-# continue_training: True # this is for resuming training
-# load_from: /path/to/your/checkpoint
-
-############################################
-#    Training Classifier Configuration     #
-############################################
-# Not Implememnted!
-
-# train_classifier: True
-# lr_schedule: classifier_specific

@@ -32,7 +32,7 @@ from flax.training.train_state import TrainState as FlaxTrainState
 from functools import partial
 
 # from models.models_unet import ContextUnet
-from models.models_ncsnpp_edm import NCSNpp as NCSNppEDM
+from models.models_ncsnpp_edm import NCSNpp as NCSNppEDM, NCSNppClassifier as NCSNppEDMClassifier
 # from models.models_ncsnpp import NCSNpp
 # import models.jcm.sde_lib as sde_lib
 from models.jcm.sde_lib import batch_mul
@@ -612,6 +612,9 @@ class SimDDPM(nn.Module):
     # adm
     learn_var=False,
     class_conditional=False,
+    
+    # classifier
+    classifier_model_depth=2,
     **kwargs
   ):
     self.image_size = image_size
@@ -680,6 +683,25 @@ class SimDDPM(nn.Module):
         aug_label_dim=9,
         class_conditional=self.class_conditional,
         num_classes=self.num_classes,
+        rngs=self.rngs)
+    elif self.net_type == 'ncsnppedm_classifier':
+      net_fn = partial(NCSNppEDMClassifier,
+        base_width=self.base_width,
+        image_size=self.image_size,
+        out_channels=self.out_channels,
+        out_channel_multiple = (2 if self.learn_var else 1),
+        dropout=self.dropout,
+        embedding_type=embedding_type,
+        use_aug_label=self.use_aug_label,
+        aug_label_dim=9,
+        class_conditional=self.class_conditional,
+        num_classes=self.num_classes,
+        num_res_blocks=classifier_model_depth,
+        ### these settings are from repo
+        use_scale_shift_norm=True,
+        resblock_updown=True,
+        use_attn_pool=True,
+        ### end
         rngs=self.rngs)
     else:
       raise ValueError(f'Unknown net type: {self.net_type}')
@@ -1212,11 +1234,95 @@ class SimDDPM(nn.Module):
 
     return loss_train, dict_losses, images
   
+  def forward_Classifier(self, imgs, labels, augment_label, noise_batch, t_batch, train: bool = True):
+    imgs = imgs.astype(self.dtype)
+    gt = imgs
+    x = imgs
+    bz = imgs.shape[0]
+
+    assert noise_batch.shape == x.shape
+    assert t_batch.shape == (bz,)
+    # assert (labels is None) or labels.shape == (bz,)
+    assert (labels is not None) and labels.shape == (bz,)
+    # t_batch = t_batch.reshape(bz, 1, 1, 1)
+    
+
+    # -----------------------------------------------------------------
+    #  diffusion alpha, betas
+    o = self.training_diffusion_schedule()
+    o = index_dictionary(o, t_batch)
+    alpha_cumprod_batch, alpha_cumprod_prev_batch, posterior_log_variance_clipped_batch, beta_batch = o['alphas_cumprod'], o['alphas_cumprod_prev'], o['posterior_log_variance_clipped'], o['betas']
+    
+    betas = beta_batch
+    assert betas.shape == t_batch.shape, 'betas shape: {s}, t_batch shape: {t}'.format(s=betas.shape, t=t_batch.shape)
+    alphas = 1.0 - betas
+    alphas_cumprod = alpha_cumprod_batch
+    assert alpha_cumprod_batch.shape == t_batch.shape, 'alpha_cumprod_batch shape: {s}, t_batch shape: {t}'.format(s=alpha_cumprod_batch.shape, t=t_batch.shape)
+    sqrt_alphas_cumprod = jnp.sqrt(alphas_cumprod)
+    sqrt_one_minus_alphas_cumprod = jnp.sqrt(1.0 - alphas_cumprod)
+    
+    
+    
+    # -----------------------------------------------------------------
+
+    # sample from data
+    x_data = x
+    # sample from prior (noise)
+    x_prior = noise_batch
+
+    x_mixtue = batch_mul(sqrt_alphas_cumprod, x_data) + batch_mul(sqrt_one_minus_alphas_cumprod, x_prior)
+    
+    t = t_batch
+
+    # create v target
+    # v_target = x_prior
+    display_only_labels = jax.nn.one_hot(labels * 3, 32) # [b, 32]
+    v_target = display_only_labels.reshape(bz, 32, 1, 1).repeat(32,axis=2).repeat(3,axis=3)
+    # v_target = jnp.ones_like(x_data)  # dummy
+
+
+    # forward network
+    u_pred = self.forward_prediction_function(x_mixtue, t)
+
+    # loss
+    # loss = (v_target - u_pred)**2
+    # cross entropy loss
+    one_hot_labels = jax.nn.one_hot(labels, self.num_classes)
+    xentropy = optax.softmax_cross_entropy(u_pred, one_hot_labels)
+    loss = jnp.mean(xentropy)
+
+    loss_train = loss
+    
+    # vis & log
+    best_pred = jnp.argmax(u_pred, axis=-1)
+    sftmx_pred = jax.nn.softmax(u_pred, axis=-1)
+    sftmx_pred = jnp.concatenate([sftmx_pred, jnp.zeros((bz, 20))], axis=-1).reshape(bz, 3, 10).transpose((0, 2, 1)).reshape(bz, 30)
+    sftmx_pred = jnp.concatenate([sftmx_pred, jnp.zeros((bz, 2))], axis=-1)
+    best_pred_img = jax.nn.one_hot(best_pred * 3, 32).reshape(bz, 32, 1, 1).repeat(32,axis=2).repeat(3,axis=3)
+    sftmx_pred_img = sftmx_pred.reshape(bz, 32, 1, 1).repeat(32,axis=2).repeat(3,axis=3)
+
+    dict_losses = {}
+    dict_losses['loss'] = loss  # legacy
+    dict_losses['loss_train'] = loss_train
+    dict_losses['acc_train'] = jnp.mean(best_pred == labels)
+
+    images = self.get_visualization(
+      [gt,        # image (from dataset)
+       x_mixtue,  # mixture of data and noise
+       (v_target*2-1).transpose((0,2,1,3)).astype(jnp.float32),  # target of network (known)
+       (best_pred_img*2-1).transpose((0,2,1,3)).astype(jnp.float32),    # argmax pred of network
+       (sftmx_pred_img*2-1).transpose((0,2,1,3)).astype(jnp.float32),   # softmax pred of network
+      ])
+
+    return loss_train, dict_losses, images
+  
   def forward(self, *args, **kwargs):
       if self.task == 'FM':
         return self.forward_FM(*args, **kwargs)
       elif self.task == 'Diffusion':
         return self.forward_Diffusion(*args, **kwargs)
+      elif self.task == 'Classifier':
+        return self.forward_Classifier(*args, **kwargs)
       else:
         raise NotImplementedError(f'Unknown task: {self.task}')
   

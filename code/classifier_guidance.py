@@ -1,4 +1,3 @@
-raise NotImplementedError('NFE for classifier guidance is not implemented')
 # Copyright 2024 The Flax Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -44,25 +43,11 @@ from utils.display_utils import show_dict, display_model, count_params
 import utils.fid_util as fid_util
 import utils.sample_util as sample_util
 
-# Pater noster, qui es in caelis,
-# sanctificetur nomen tuum.
-# Adveniat regnum tuum.
-# Fiat voluntas tua, sicut in caelo, et in terra.
-# Panem nostrum quotidianum da nobis hodie,
-# et dimitte nobis debita nostra,
-# sicut et nos dimittimus debitoribus nostris.
-# Et ne nos inducas in tentationem,
-# sed libera nos a malo.
-# Amen.
-
-class P:
-  def 不高兴的(self):
-    return False
-你 = P()
-
 import models.models_ddpm as models_ddpm
-import models.models_ddpm_classifier as models_ddpm_classifier
-from models.models_ddpm import generate, edm_ema_scales_schedules, diffusion_schedule_fn_some, create_zhh_SAMPLING_diffusion_schedule
+# import models.models_ddpm_classifier as models_ddpm_classifier
+from models.models_ddpm import generate, edm_ema_scales_schedules
+import input_pipeline
+from input_pipeline import prepare_batch_data
 
 NUM_CLASSES = 10
 
@@ -74,14 +59,17 @@ class NNXTrainState(FlaxTrainState):
   # NOTE: is_training can't be a attr, since it can't be replicated
 
 
-def sample_step(state, sample_idx, model, rng_init, device_batch_size, config,zhh_o,MEAN_RGB=None, STDDEV_RGB=None,option='FID',classifier=None,classifier_state=None):
+def sample_step(state, sample_idx, model, rng_init, device_batch_size, config, MEAN_RGB=None, STDDEV_RGB=None,option='FID',classifier=None,classifier_state=None):
   """
   sample_idx: each random sampled image corrresponds to a seed
   rng_init: here we do not want nnx.Rngs
   """
   rng_sample = random.fold_in(rng_init, sample_idx)  # fold in sample_idx
   # images, denoised = generate(state, model, rng_sample, n_sample=device_batch_size, config=config,zhh_o=zhh_o) # for debug
-  images, nfe = generate(state, model, rng_sample, n_sample=device_batch_size, config=config,zhh_o=zhh_o,label_type=('order' if option=='vis' else 'random'),classifier=classifier,classifier_state=classifier_state,classifier_scale=config.classifier_scale) # we force conditional generation here
+  images, nfe = generate(state, model, rng_sample, n_sample=device_batch_size, config=config,label_type=('order' if option=='vis' else 'random'),classifier=classifier,classifier_state=classifier_state,classifier_scale=config.classifier_scale) # we force conditional generation here
+
+  assert nfe is not None, 'Returning None as NFE is deprecated'
+  nfe = jnp.array(nfe)
 
   images_all = lax.all_gather(images, axis_name='batch')  # each device has a copy  
   images_all = images_all.reshape(-1, *images_all.shape[2:])
@@ -96,7 +84,7 @@ def sample_step(state, sample_idx, model, rng_init, device_batch_size, config,zh
   # images_all = images_all * (jnp.array(STDDEV_RGB)/255.).reshape(1,1,1,3) + (jnp.array(MEAN_RGB)/255.).reshape(1,1,1,3)
   # images_all = (images_all - 0.5) / 0.5
   # return images_all, denoised_all # debug
-  return images_all, nfe
+  return images_all, jax.device_get(nfe).mean()
 
 def global_seed(seed):
   torch.manual_seed(seed)
@@ -208,7 +196,7 @@ def create_train_state(
 
   print_params(params)
 
-  def apply_fn(graphdef2, params2, rng_states2, batch_stats2, useless_, is_training, images, labels, augment_labels, noise_batch, t_batch,alpha_cumprod_batch,beta_batch,alpha_cumprod_prev_batch,posterior_log_variance_clipped_batch):
+  def apply_fn(graphdef2, params2, rng_states2, batch_stats2, useless_, is_training, images, labels, augment_labels, noise_batch, t_batch):
     """
     input:
       images
@@ -228,7 +216,7 @@ def create_train_state(
     else:
       merged_model.eval()
     del params2, rng_states2, batch_stats2, useless_
-    loss_train, dict_losses, images = merged_model.forward(images, labels, augment_labels, noise_batch, t_batch, alpha_cumprod_batch=alpha_cumprod_batch, beta_batch=beta_batch, alpha_cumprod_prev_batch=alpha_cumprod_prev_batch, posterior_log_variance_clipped_batch=posterior_log_variance_clipped_batch)
+    loss_train, dict_losses, images = merged_model.forward(images, labels, augment_labels, noise_batch, t_batch)
     new_batch_stats, new_rng_states, _ = nn.state(merged_model, nn.BatchStat, nn.RngState, ...)
     return loss_train, new_batch_stats, new_rng_states, dict_losses, images
 
@@ -289,7 +277,7 @@ def just_evaluate(
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='LMCI-eval', dir=workdir, tags=['ADM'] if not model_config.class_conditional else ['ADM', 'Conditional'])
+    wandb.init(project='LMCI-eval', dir=workdir, tags=['Sanity_Check'])
     # wandb.init(project='sqa_edm_debug', dir=workdir)
     wandb.config.update(config.to_dict())
   # dtype = jnp.bfloat16 if model_config.half_precision else jnp.float32
@@ -301,13 +289,13 @@ def just_evaluate(
   rngs = nn.Rngs(config.seed, params=config.seed + 114, dropout=config.seed + 514, train=config.seed + 1919)
   dtype = get_dtype(config.half_precision)
   # model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype)
-  model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype,**config.diffusion)
+  model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype, **config.diffusion)
   model = model_init_fn(rngs=rngs, **model_config)
   show_dict(f'number of model parameters:{count_params(model)}')
   # show_dict(display_model(model))
 
   ########### Create LR FN ###########
-  learning_rate_fn = lambda:114514.1919810 # just in order to create the state
+  learning_rate_fn = lambda:1 # just in order to create the state
 
   ########### Create Train State ###########
   state = create_train_state(config, model, image_size, learning_rate_fn)
@@ -323,7 +311,7 @@ def just_evaluate(
   print('Model loaded successfully!')
   
   ########### Create Classifier State ###########
-  classifier_cls = models_ddpm_classifier.SimDDPM  
+  classifier_cls = models_ddpm.SimDDPM  
   classifier_rngs = nn.Rngs(config.seed, params=config.seed + 810, dropout=config.seed + 666, train=config.seed + 888)
   classifier_init_fn = partial(classifier_cls, num_classes=NUM_CLASSES, dtype=dtype)
   classifier = classifier_init_fn(rngs=classifier_rngs, **config.classifier_model)
@@ -340,7 +328,7 @@ def just_evaluate(
   
   ########### FID ###########
   vis_sample_idx = jax.process_index() * jax.local_device_count() + jnp.arange(jax.local_device_count())  # for visualization
-  if config.model.ode_solver == 'jax':
+  if config.model.ode_solver in ['jax', 'O']:
     p_sample_step = jax.pmap(
       partial(sample_step, 
               model=model, 
@@ -349,10 +337,7 @@ def just_evaluate(
               rng_init=random.PRNGKey(0), 
               device_batch_size=config.fid.device_batch_size, 
               config=config,
-              zhh_o = create_zhh_SAMPLING_diffusion_schedule(config),
               option='FID'
-              # MEAN_RGB=input_pipeline.MEAN_RGB, 
-              # STDDEV_RGB=input_pipeline.STDDEV_RGB
       ),
       axis_name='batch'
     )
@@ -364,7 +349,6 @@ def just_evaluate(
               rng_init=random.PRNGKey(0), 
               device_batch_size=100, 
               config=config,
-              zhh_o = create_zhh_SAMPLING_diffusion_schedule(config),
               option='vis',
               # MEAN_RGB=input_pipeline.MEAN_RGB, 
               # STDDEV_RGB=input_pipeline.STDDEV_RGB
@@ -378,18 +362,15 @@ def just_evaluate(
       """
       # redefine the interface
       # images, denoised = p_sample_step(state, sample_idx=sample_idx) # debug
-      images = p_sample_step_(state, sample_idx=sample_idx)
+      images, nfe = p_sample_step_(state, sample_idx=sample_idx)
       # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
       jax.random.normal(random.key(0), ()).block_until_ready()
       # return images[0], denoised[0]  # images have been all /gathered
-      return images[0]  # images have been all gathered
-    
-  elif config.model.ode_solver == 'scipy':
-    from utils.rk45_util import get_rk45_functions
-    run_p_sample_step, p_sample_step = get_rk45_functions(model, config, random.PRNGKey(0))
-
+      nfe = nfe.mean()
+      return images[0], nfe  # images have been all gathered
+  
   else:
-    raise NotImplementedError('Unsupported ode_solver: {}'.format(config.model.ode_solver))
+    raise NotImplementedError('Unknown ode_solver: {}'.format(config.model.ode_solver))
   # ------------------------------------------------------------------------------------
   if config.fid.on_use:  # we will evaluate fid    
     inception_net = fid_util.build_jax_inception()
@@ -422,7 +403,7 @@ def just_evaluate(
     log_for_0(f'Sample...')
     # sync batch statistics across replicas
     # eval_state = eval_state.replace(params=model_avg)
-    vis = run_p_sample_step(p_visualize_sample_step, eval_state, vis_sample_idx)
+    vis, nfe = run_p_sample_step(p_visualize_sample_step, eval_state, vis_sample_idx)
     # assert False, vis.shape
     vis = make_grid_visualization(vis,grid=10,max_bz=10)
     vis = jax.device_get(vis) # np.ndarray
@@ -454,11 +435,12 @@ def just_evaluate(
     
     if config.wandb and index == 0:
       wandb.log({'gen': wandb.Image(canvas)})
+    log_for_0('Sample NFE: {}'.format(nfe))
     # sample_step(eval_state, image_size, sampling_config, epoch, use_wandb=config.wandb)
   ########### FID ###########
   if config.fid.on_use:
 
-    samples_all = sample_util.generate_samples_for_fid_eval(eval_state, workdir, config, p_sample_step, run_p_sample_step)
+    samples_all, nfe = sample_util.generate_samples_for_fid_eval(eval_state, workdir, config, p_sample_step, run_p_sample_step)
     mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
     fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
     log_for_0(f'FID at {samples_all.shape[0]} samples: {fid_score}')
@@ -466,6 +448,7 @@ def just_evaluate(
     if config.wandb and rank == 0:
       wandb.log({
         'FID': fid_score,
+        'NFE': nfe
       })
 
     vis = make_grid_visualization(samples_all, to_uint8=False)
@@ -475,11 +458,6 @@ def just_evaluate(
     if config.wandb and index == 0:
       wandb.log({'gen_fid': wandb.Image(canvas)})
 
-  if rank == 0 and config.wandb:
-    nfe = config.model.n_T
-    if config.model.ode_solver == 'scipy': nfe=100
-    elif config.model.sampler not in ['euler', 'ddpm']: nfe*=2
-    wandb.log({'NFE': nfe})
 
   jax.random.normal(jax.random.key(0), ()).block_until_ready()
   if index == 0 and config.wandb:

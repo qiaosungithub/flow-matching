@@ -78,11 +78,13 @@ def get_config():
   classifier_model.use_aug_label = False
   classifier_model.average_loss = False
 
-  classifier_model.sampler = 'euler' # or 'heun'
+  classifier_model.sampler = 'ddpm' # or 'heun'
   classifier_model.ode_solver = 'jax'  # or 'scipy', which use RK45 solver
   classifier_model.net_type = 'ncsnpp'
 
   classifier_model.no_condition_t = False
+  classifier_model.learn_var = False
+  classifier_model.class_conditional = False
 
   # Augmentation
   config.aug = aug = ml_collections.ConfigDict()

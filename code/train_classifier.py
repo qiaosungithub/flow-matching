@@ -1,4 +1,3 @@
-raise NotImplementedError('train classifier is not implemented')
 # Copyright 2024 The Flax Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -44,21 +43,11 @@ from utils.display_utils import show_dict, display_model, count_params
 import utils.fid_util as fid_util
 import utils.sample_util as sample_util
 
-# Pater noster, qui es in caelis,
-# sanctificetur nomen tuum.
-# Adveniat regnum tuum.
-# Fiat voluntas tua, sicut in caelo, et in terra.
-# Panem nostrum quotidianum da nobis hodie,
-# et dimitte nobis debita nostra,
-# sicut et nos dimittimus debitoribus nostris.
-# Et ne nos inducas in tentationem,
-# sed libera nos a malo.
-# Amen.
-# import models.models_ddpm as models_ddpm
-import models.models_ddpm_classifier as models_ddpm_classifier
-from models.models_ddpm import edm_ema_scales_schedules, diffusion_schedule_fn_some, create_zhh_SAMPLING_diffusion_schedule
-# from models.models_ddpm_classifier import generate, edm_ema_scales_schedules, diffusion_schedule_fn_some, create_zhh_SAMPLING_diffusion_schedule
-from input_pipeline_classifier import prepare_batch_data, create_split
+# import models.models_ddpm_classifier as models_ddpm_classifier
+import models.models_ddpm as models_ddpm
+from models.models_ddpm import edm_ema_scales_schedules
+import input_pipeline_classifier
+from input_pipeline_classifier import prepare_batch_data
 
 NUM_CLASSES = 10
 
@@ -120,7 +109,7 @@ class NNXTrainState(FlaxTrainState):
   # NOTE: is_training can't be a attr, since it can't be replicated
 
 
-def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learning_rate_fn, ema_scales_fn,diffusion_schedule_fn, config,really_is_train=True):
+def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learning_rate_fn, ema_scales_fn, config,really_is_train=True):
   """
   Perform a single training step.
   We will pmap this function
@@ -131,14 +120,11 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
   """
 
   ema_decay, scales = ema_scales_fn(state.step)
-  
-  # use "diffusion_schedule_fn" to process t_batch
-  alpha_cumprod_batch, beta_batch, alpha_cumprod_prev_batch, posterior_log_variance_clipped_batch = diffusion_schedule_fn(t_batch=t_batch)
 
   def loss_fn(params_to_train):
     """loss function used for training."""
     
-    outputs = state.apply_fn(state.graphdef, params_to_train, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'], batch['label'], batch['augment_label'], noise_batch, t_batch, alpha_cumprod_batch=alpha_cumprod_batch, beta_batch=beta_batch,alpha_cumprod_prev_batch=alpha_cumprod_prev_batch,posterior_log_variance_clipped_batch=posterior_log_variance_clipped_batch)
+    outputs = state.apply_fn(state.graphdef, params_to_train, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'], batch['label'], batch['augment_label'], noise_batch, t_batch)
     loss, new_batch_stats, new_rng_states, dict_losses, images = outputs
 
     return loss, (new_batch_stats, new_rng_states, dict_losses, images)
@@ -191,7 +177,6 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, config)
   # print("images.shape: ", images.shape) # (8, 64, 32, 32, 3)
   b1, b2 = images.shape[0], images.shape[1]
   noise_batch = jax.random.normal(rngs.train(), images.shape)
-  # t_batch = jax.random.uniform(rngs.train(), (b1, b2))
   t_batch = jax.random.randint(rngs.train(), (b1, b2), minval=0, maxval=config.diffusion.diffusion_nT) # [0, num_time_steps)
 
   new_state, metrics, images = train_step_compute_fn(state, batch, noise_batch, t_batch)
@@ -215,13 +200,14 @@ def get_dtype(half_precision):
     model_dtype = jnp.float32
   return model_dtype
 
+
 checkpointer = ocp.StandardCheckpointer()
 def _restore(ckpt_path, item, **restore_kwargs):
   return ocp.StandardCheckpointer.restore(checkpointer, ckpt_path, target=item)
 setattr(checkpointer, 'restore', _restore)
 
 def restore_checkpoint(model_init_fn, state, workdir, model_config, ema=False):
-  assert ema == False, 'we donnot use ema for now'
+  assert ema == False, 'we do not use ema for classifier'
   # 杯子
   abstract_model = nn.eval_shape(lambda: model_init_fn(rngs=nn.Rngs(0), **model_config))
   rng_states = state.rng_states
@@ -323,7 +309,7 @@ def create_train_state(
 
   print_params(params)
 
-  def apply_fn(graphdef2, params2, rng_states2, batch_stats2, useless_, is_training, images, labels, augment_labels, noise_batch, t_batch,alpha_cumprod_batch,beta_batch,alpha_cumprod_prev_batch,posterior_log_variance_clipped_batch):
+  def apply_fn(graphdef2, params2, rng_states2, batch_stats2, useless_, is_training, images, labels, augment_labels, noise_batch, t_batch):
     """
     input:
       images
@@ -343,7 +329,7 @@ def create_train_state(
     else:
       merged_model.eval()
     del params2, rng_states2, batch_stats2, useless_
-    loss_train, dict_losses, images = merged_model.forward(images, labels, augment_labels, noise_batch, t_batch, alpha_cumprod_batch=alpha_cumprod_batch, beta_batch=beta_batch, alpha_cumprod_prev_batch=alpha_cumprod_prev_batch, posterior_log_variance_clipped_batch=posterior_log_variance_clipped_batch)
+    loss_train, dict_losses, images = merged_model.forward(images, labels, augment_labels, noise_batch, t_batch)
     new_batch_stats, new_rng_states, _ = nn.state(merged_model, nn.BatchStat, nn.RngState, ...)
     return loss_train, new_batch_stats, new_rng_states, dict_losses, images
 
@@ -386,9 +372,6 @@ def create_train_state(
     rng_states=rng_states,
   )
   return state
-
-## Switch to Pytorch Loader
-
 
 # def prepare_batch_data(batch, config, batch_size=None):
 #   """Reformat a input batch from TF Dataloader.
@@ -452,7 +435,7 @@ def train_and_evaluate(
   Returns:
     Final TrainState.
   """
-  print('train classifier!')
+  log_for_0('train classifier!')
 
   ########### Initialize ###########
   rank = index = jax.process_index()
@@ -461,7 +444,7 @@ def train_and_evaluate(
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='LMCI', dir=workdir, tags=['ADM', 'classifier'])
+    wandb.init(project='LMCI', dir=workdir, tags=['Sanity_Check'])
     # wandb.init(project='sqa_FM_compare', dir=workdir)
     wandb.config.update(config.to_dict())
   global_seed(config.seed)
@@ -483,12 +466,12 @@ def train_and_evaluate(
   log_for_0('local_batch_size: {}'.format(local_batch_size))
   log_for_0('jax.local_device_count: {}'.format(jax.local_device_count()))
   log_for_0('global batch_size: {}'.format(config.batch_size))
-  train_loader, steps_per_epoch = create_split(
+  train_loader, steps_per_epoch = input_pipeline_classifier.create_split(
     config.dataset,
     local_batch_size,
     split='train',
   )
-  val_loader, val_steps_per_epoch = create_split(
+  val_loader, val_steps_per_epoch = input_pipeline_classifier.create_split(
     config.dataset,
     local_batch_size,
     split='val',
@@ -500,7 +483,7 @@ def train_and_evaluate(
   # log_for_0('eval_steps: {}'.format(val_steps))
 
   ########### Create Model ###########
-  model_cls = models_ddpm_classifier.SimDDPM
+  model_cls = models_ddpm.SimDDPM
   rngs = nn.Rngs(config.seed, params=config.seed + 114, dropout=config.seed + 514, train=config.seed + 1919)
   dtype = get_dtype(config.half_precision)
   # model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype)
@@ -517,7 +500,6 @@ def train_and_evaluate(
   )
 
   ema_scales_fn = partial(edm_ema_scales_schedules, steps_per_epoch=steps_per_epoch, config=config)
-  diffusion_schedule_fn = partial(diffusion_schedule_fn_some, config=config)
 
   ########### Create Train State ###########
   state = create_train_state(config, model, image_size, learning_rate_fn)
@@ -536,7 +518,7 @@ def train_and_evaluate(
       raise ValueError('Checkpoint path must be absolute')
     if not os.path.exists(config.load_from):
       raise ValueError('Checkpoint path {} does not exist'.format(config.load_from))
-    state = restore_checkpoint(model_init_fn ,state, config.load_from)
+    state = restore_checkpoint(model_init_fn, state, config.load_from)
     # sanity check, as in Kaiming's code
     assert state.step > 0 and state.step % steps_per_epoch == 0, ValueError('Got an invalid checkpoint with step {}'.format(state.step))
   step_offset = int(state.step)
@@ -549,7 +531,6 @@ def train_and_evaluate(
   p_train_step_compute = jax.pmap(
     partial(train_step_compute, 
             learning_rate_fn=learning_rate_fn, ema_scales_fn=ema_scales_fn, 
-            diffusion_schedule_fn = diffusion_schedule_fn,
             really_is_train=True,
             config=config),
     axis_name='batch'
@@ -557,7 +538,6 @@ def train_and_evaluate(
   p_val_step_compute = jax.pmap(
     partial(train_step_compute, 
             learning_rate_fn=learning_rate_fn, ema_scales_fn=ema_scales_fn, 
-            diffusion_schedule_fn = diffusion_schedule_fn,
             really_is_train=False,
             config=config),
     axis_name='batch'
@@ -573,22 +553,6 @@ def train_and_evaluate(
   train_metrics_last_t = time.time()
   log_for_0('Initial compilation, this might take some minutes...')
 
-  # p_update_model_avg = jax.pmap(_update_model_avg, axis_name='batch')
-  
-  # NOTE: to avoid tracedarray error, we first do some random things here
-  ### GOD BLESS US ###
-  # Pater noster, qui es in caelis,
-  # sanctificetur nomen tuum.
-  # Adveniat regnum tuum.
-  # Fiat voluntas tua, sicut in caelo, et in terra.
-  # Panem nostrum quotidianum da nobis hodie,
-  # et dimitte nobis debita nostra,
-  # sicut et nos dimittimus debitoribus nostris.
-  # Et ne nos inducas in tentationem,
-  # sed libera nos a malo.
-  # Amen.
-  ### GOD BLESS US ###
-  create_zhh_SAMPLING_diffusion_schedule(config=config)
 
   for epoch in range(epoch_offset, config.num_epochs):
 
@@ -603,7 +567,7 @@ def train_and_evaluate(
       batch = prepare_batch_data(batch, config)
       # batch['label'].shape: (b1, b2), each element is 0-9
       # ep = step * config.batch_size / yierbayiyiliuqi
-      ep = step / steps_per_epoch
+      ep = epoch + n_batch / steps_per_epoch # avoid jumping
 
       state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute, config=config)
       
@@ -726,4 +690,4 @@ def train_and_evaluate(
 def just_evaluate(
     config: ml_collections.ConfigDict, workdir: str
   ):
-  raise NotImplementedError('Train classifier doesn\'t support just_evaluate for now')
+  raise NotImplementedError('Train classifier doesn\'t support just_evaluate')
