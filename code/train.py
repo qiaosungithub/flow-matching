@@ -762,7 +762,6 @@ def train_and_evaluate(
       # continue
 
       state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute, model_config)
-      # raise LookupError('看这里！')
       if epoch == epoch_offset and n_batch == 0:
         log_for_0('p_train_step compiled in {}s'.format(time.time() - train_metrics_last_t))
         log_for_0('Initial compilation completed. Reset timer.')
