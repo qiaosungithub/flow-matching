@@ -1,0 +1,53 @@
+# Here is for CIFAR10:
+model:
+    image_size: 32
+    out_channels: 3
+dataset:
+    name: cifar10
+    # root: /kmh-nfs-ssd-eu-mount/code/qiao/data/MNIST/
+    prefetch_factor: 2
+    num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
+    cache: True
+batch_size: 512
+num_epochs: 50
+learning_rate: 0.0001
+lr_schedule: const
+weight_decay: 0.0
+optimizer: adamw
+adam_b2: 0.999
+warmup_epochs: 0
+log_per_step: 50
+checkpoint_per_epoch: 25
+load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241128_031750_8xab8k_kmh-tpuvm-v2-32-preemptible-2__b_lr_ep_eval/checkpoint_4850
+
+# # Here is for IMAGENET32x32:
+
+# training:
+#     learning_rate: 0.0001
+#     scheduler: poly # constant
+#     warmup_steps: 20000
+#     num_epochs: 200
+#     batch_size: 1024
+#     log_per_step: 20
+#     sigma_min: 0.0
+#     wandb: True
+#     checkpoint_per_epoch: 1000
+#     eval_per_epoch: 5
+#     # load_from: /kmh-nfs-us-mount/logs/sqa/sqa_NCSNv2/20241101_030317_2ml2nf_kmh-tpuvm-v2-32-1__b_lr_ep_torchvision_r50_eval/checkpoint_5684
+# model:
+#     name: UNet_for_32
+# dataset:
+#     name: imagenet2012:5.*.*
+#     # root: /kmh-nfs-ssd-eu-mount/code/qiao/data/MNIST/
+#     image_size: 32
+#     prefetch_factor: 2
+#     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
+# sampling:
+#     ema: True
+#     ema_decay: 0.999
+#     save_dir: null
+# fid:
+#     eval_only: True
+#     fid_per_epoch: 10
+
+# NOTE: you cannot add more hierarchy structure without modifying default.py and load_config.py

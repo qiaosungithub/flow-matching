@@ -764,7 +764,7 @@ def just_evaluate(
 
   ########### Evaluation ###########
   eval_metrics_buffer = []
-  eval_scales=[0, 0.01, 0.02]
+  eval_scales=[0, 0.01, 0.02, 0.1, 0.2, 0.3]
   for n_batch, batch in zip(range(val_steps), val_loader):
     batch = prepare_batch_data(batch, config) 
     if eval_scales == []: break
