@@ -326,6 +326,11 @@ def create_train_state(
 
   print_params(params)
 
+  if config.model.objective == "FM":
+    noisy_image_fn = lambda images, noise_b, t: images * (1-t) + noise_b * t
+  elif config.model.objective == "VP":
+    noisy_image_fn = lambda images, noise_b, t: images * jnp.sqrt(1-t) + noise_b * jnp.sqrt(t)
+
   def apply_fn(graphdef2, params2, rng_states2, batch_stats2, useless_, is_training, images, noise_batch, t_batch):
     """
     input:
@@ -347,7 +352,7 @@ def create_train_state(
       merged_model.eval()
     del params2, rng_states2, batch_stats2, useless_
     t = t_batch.reshape(-1, 1, 1, 1)
-    t_pred = merged_model.forward(images * (1-t) + noise_batch * t)
+    t_pred = merged_model.forward(noisy_image_fn(images, noise_batch, t))
     # for debug
     # t_pred = merged_model.forward(jnp.ones_like(noise_batch) * t)
     new_batch_stats, new_rng_states, _ = nn.state(merged_model, nn.BatchStat, nn.RngState, ...)
