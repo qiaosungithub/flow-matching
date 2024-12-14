@@ -252,12 +252,12 @@ def sample_step_verbose(state, sample_idx, model, rng_init, device_batch_size, M
   if model.ode_solver == 'O':
     images, nfe = images
 
-  images_all = lax.all_gather(images, axis_name='batch')  # each device has a copy
-  images_all = images_all.reshape(-1, *images_all.shape[2:])
-  all_t = lax.all_gather(all_t, axis_name='batch')
-  all_t = all_t.reshape(-1, *all_t.shape[2:])
+  # images_all = lax.all_gather(images, axis_name='batch')  # each device has a copy
+  # images_all = images_all.reshape(-1, *images_all.shape[2:])
+  # all_t = lax.all_gather(all_t, axis_name='batch')
+  # all_t = all_t.reshape(-1, *all_t.shape[2:])
   nfe = jax.device_get(nfe).mean() if nfe is not None else None
-  return images_all, nfe, all_t
+  return images, nfe, all_t
 
 def global_seed(seed):
   torch.manual_seed(seed)
@@ -935,7 +935,7 @@ def just_evaluate(
   state = restore_checkpoint(model_init_fn, state, config.load_from, model_config, ema=config.evalu.ema) # NOTE: whether to use the ema model
   state_step = int(state.step)
   # t_state = init_t_network(debug=True) if config.model.sampler == "adaptive" else None
-  state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
+  # state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
 
   
   # ### debug sampler here, please delete the above line
@@ -989,15 +989,15 @@ def just_evaluate(
       ),
       axis_name='batch'
     )
-    p_sample_step_verbose = jax.pmap(
-      partial(sample_step_verbose, 
-              model=model, 
-              rng_init=random.PRNGKey(0), 
-              device_batch_size=config.fid.device_batch_size, 
-              t_state=t_state,
-      ),
-      axis_name='batch'
-    )
+    # p_sample_step_verbose = jax.pmap(
+    #   partial(sample_step_verbose, 
+    #           model=model, 
+    #           rng_init=random.PRNGKey(0), 
+    #           device_batch_size=config.fid.device_batch_size, 
+    #           t_state=t_state,
+    #   ),
+    #   axis_name='batch'
+    # )
 
     def run_p_sample_step(p_sample_step, state, sample_idx, verbose=False):
       """
@@ -1006,7 +1006,7 @@ def just_evaluate(
       # redefine the interface
       if verbose:
         images, nfe, all_t = p_sample_step(state, sample_idx=sample_idx)
-        print("all_t.shape: ", all_t.shape)
+        # print("all_t.shape: ", all_t.shape)
         # all_t = jnp.mean(all_t, axis=0)
       else:
         images, nfe = p_sample_step(state, sample_idx=sample_idx)
@@ -1054,11 +1054,12 @@ def just_evaluate(
   log_for_0(f'fixed_sample_idx: {vis_sample_idx}')
   log_for_0('Eval...')
   ########### Sampling ###########
-  eval_state = sync_batch_stats(state)
+  # eval_state = sync_batch_stats(state)
   if config.evalu.sample: # if we want to sample
     log_for_0(f'Sample...')
-    vis, _, all_t = run_p_sample_step(p_sample_step_verbose, eval_state, vis_sample_idx, verbose=True)
-    # print("all_t.shape: ", all_t.shape)
+    vis, _, all_t = sample_step_verbose(state, 0, model, random.PRNGKey(0), 16, t_state=t_state)
+    print("vis.shape: ", vis.shape)
+    print("all_t.shape: ", all_t.shape)
     all_t = jnp.mean(all_t, axis=0)
     if config.wandb and index == 0:
       for ep in range(1, all_t.shape[0]):
@@ -1068,7 +1069,7 @@ def just_evaluate(
           })
     # print("vis shape: ", vis.shape)
     vis = vis[:,-1] # only take the last one
-    vis = make_grid_visualization(vis)
+    vis = make_grid_visualization(vis, grid=4)
     vis = jax.device_get(vis) # np.ndarray
     vis = vis[0]
     # print(vis.shape)
@@ -1080,6 +1081,7 @@ def just_evaluate(
     # assert False, 'image saved!: {}'.format(nfe)
     # sample_step(eval_state, image_size, sampling_config, epoch, use_wandb=config.wandb)
   ########### FID ###########
+  eval_state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
   if config.fid.on_use:
 
     samples_all, nfe = sample_util.generate_samples_for_fid_eval(eval_state, workdir, config, p_sample_step, run_p_sample_step)
