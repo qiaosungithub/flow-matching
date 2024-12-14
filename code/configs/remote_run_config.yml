@@ -5,7 +5,7 @@ model:
     base_width: 128
     n_T: 1
     use_aug_label: False
-    dropout: 0.2 # ECM
+    dropout: 0.3 # ECM
     net_type: ncsnppedm
     average_loss: False
 
@@ -41,7 +41,7 @@ fid:
 evalu:
     ema: True
     sample: False
-# ema_value: 0.9993 # ICM
+ema_value: 0.9993 # ICM
 batch_size: 1024
 num_epochs: 2000
 # learning_rate: 0.0004

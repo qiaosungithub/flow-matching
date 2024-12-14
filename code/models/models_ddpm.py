@@ -97,9 +97,9 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
   # hack: special handling for ecm
   if config.model.t_sampling == 'ecm':
     assert config.model.ema_target == False
-    ema_halflife_kimg = 1000  # edm was 500 (2000 * 1000 / 50000 = 40ep) # 本来是2000, 对应 ema 0.99996
-    ema_halflife_nimg = ema_halflife_kimg * 1000
-    target_ema = 0.5 ** (config.batch_size / jnp.maximum(ema_halflife_nimg, 1e-8))  # 0.9998 for batch 512
+    # ema_halflife_kimg = 1000  # edm was 500 (2000 * 1000 / 50000 = 40ep) # 本来是2000, 对应 ema 0.99996
+    # ema_halflife_nimg = ema_halflife_kimg * 1000
+    # target_ema = 0.5 ** (config.batch_size / jnp.maximum(ema_halflife_nimg, 1e-8))  # 0.9998 for batch 512
 
     # original discrete scales
     num_stages = 8
@@ -111,7 +111,7 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
       scales = jnp.floor(step / total_steps * num_stages)
       scales = jnp.minimum(scales, num_stages - 1)
 
-    return target_ema, scales
+    return jnp.array([config.ema_value],dtype=jnp.float32), scales
 
   if config.ct.n_schedule == 'original':
     raise LookupError('看上去就不对')
