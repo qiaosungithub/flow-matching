@@ -234,7 +234,7 @@ def diffusion_sampling_schedule(diffusion_schedule, diffusion_nT, sample_nT):
     )
     posterior_mean_coef2 = (
         (1.0 - new_alphas_cumprod_prev)
-        * np.sqrt(1-new_betas)
+        * jnp.sqrt(1-new_betas)
         / (1.0 - new_alpha_cumprods)
     )
     
@@ -891,13 +891,13 @@ class SimDDPM(nn.Module):
       
       
       if self.learn_var:
-        eps_pred, model_var_values = self.forward_flow_pred_function(x_i, t, train=False,y=y)
+        eps_pred, model_var_values = self.forward_prediction_function(x_i, t, train=False,y=y)
         min_log = posterior_log_variance_clipped
         max_log = jnp.log(betas)
         frac = (model_var_values + 1) / 2 # shape as x
         log_model_variance = batch_mul(frac, max_log)+ batch_mul((1 - frac), min_log)
       else:
-        eps_pred = self.forward_flow_pred_function(x_i, t, train=False,y=y)
+        eps_pred = self.forward_prediction_function(x_i, t, train=False,y=y)
         log_model_variance = batch_t(log_model_variance_steps[i],b)
       
       # get x_start from eps
@@ -968,12 +968,12 @@ class SimDDPM(nn.Module):
 
     return denoiser
 
-  def forward_prediction_function(self, z, t, augment_label=None, train: bool = True):  # EDM
+  def forward_prediction_function(self, z, t, augment_label=None,y=None, train: bool = True):  # EDM
 
     if not self.class_conditional:
       y = None
     t_cond = self.t_preprocess_fn(t).astype(self.dtype)
-    u_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
+    u_pred = self.net(z, t_cond, augment_label=augment_label, train=train, y=y)
     if self.learn_var:
       return jnp.split(u_pred, 2, axis=-1)
     return u_pred

@@ -3,13 +3,24 @@
 To merge list:
 
 - [X] We start from `FM`
-- [ ] Merge `DDPM` + `DDIM`
-- [ ] Merge `ADM`
+- [X] Merge `DDPM` + `ADM`
+- [ ] Merge `DDIM`
+- [ ] Merge `EDM`
 - [ ] Merge `CM`
 
 ## Sanity checks
 
-TODO
+### Training
+
+- Naive Flow Matching (status: running)
+- ADM + class conditional (status: running)
+
+### Evaluation
+
+- FM (status: **passed**)
+- DDPM (status: **passed**)
+- ADM (status: **passed**)
+- ADM + class conditional (status: **passed**)
 
 ## Experiments to do (this should be done finally once)
 

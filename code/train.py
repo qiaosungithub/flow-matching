@@ -201,7 +201,7 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, config)
   if config.model.task == 'FM':
     t_batch = jax.random.uniform(rngs.train(), (b1, b2))
   elif config.model.task == 'Diffusion':
-    t_batch = jax.random.randint(rngs.train(), (b1, b2), minval=0, maxval=config.diffusion_nT) # [0, num_time_steps)
+    t_batch = jax.random.randint(rngs.train(), (b1, b2), minval=0, maxval=config.diffusion.diffusion_nT) # [0, num_time_steps)
   else:
     raise NotImplementedError('Unknown task: {}'.format(config.model.task))
 
@@ -552,7 +552,7 @@ def train_and_evaluate(
   model_cls = models_ddpm.SimDDPM
   rngs = nn.Rngs(config.seed, params=config.seed + 114, dropout=config.seed + 514, train=config.seed + 1919)
   dtype = get_dtype(config.half_precision)
-  model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype,**config.diffusion_schedule)
+  model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype,**config.diffusion)
   model = model_init_fn(rngs=rngs, **model_config)
   show_dict(f'number of model parameters:{count_params(model)}')
 
@@ -899,7 +899,7 @@ def just_evaluate(
   rngs = nn.Rngs(config.seed, params=config.seed + 114, dropout=config.seed + 514, train=config.seed + 1919)
   dtype = get_dtype(config.half_precision)
   # model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype)
-  model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype, **config.diffusion_schedule)
+  model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype, **config.diffusion)
   model = model_init_fn(rngs=rngs, **model_config)
   show_dict(f'number of model parameters:{count_params(model)}')
   # show_dict(display_model(model))
@@ -1024,7 +1024,7 @@ def just_evaluate(
     log_for_0(f'Sample...')
     # sync batch statistics across replicas
     # eval_state = eval_state.replace(params=model_avg)
-    vis, nfe = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx)
+    vis, nfe = run_p_sample_step(p_visualize_sample_step, eval_state, vis_sample_idx)
     vis = make_grid_visualization(vis,grid=10,max_bz=10)
     vis = jax.device_get(vis) # np.ndarray
     vis = vis[0]

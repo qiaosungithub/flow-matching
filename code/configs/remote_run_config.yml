@@ -24,17 +24,17 @@ model:
     learn_var: True # default: False
 
     ##### Conditional Generation #####
-    class_conditional: False
+    class_conditional: True
 
     ##### Sampling Configs #####
     n_T: 250 # num of sample steps, matches "diffusion_nT"
     
     # --- Flow Matching --- #
-    sampler: euler
+    # sampler: euler
     # sampler: heun
     # sampler: edm
     # sampler: edm-sde
-    ode_solver: jax
+    # ode_solver: jax
     # ode_solver: scipy # rk45
 
     # --- Diffusion --- #
@@ -79,7 +79,7 @@ log_per_step: 20
 visualize_per_epoch: 50
 eval_per_epoch: 100
 checkpoint_per_epoch: 500
-save_by_fid: True # if True, then only save checkpoint with fid better than all previous checkpoints
+save_by_fid: False # if True, then only save checkpoint with fid better than all previous checkpoints
 
 # continue_training: True # this is for resuming training
 # load_from: /path/to/your/checkpoint

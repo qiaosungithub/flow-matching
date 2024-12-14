@@ -1,3 +1,4 @@
+raise NotImplementedError('train classifier is not implemented')
 # Copyright 2024 The Flax Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -191,7 +192,7 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, config)
   b1, b2 = images.shape[0], images.shape[1]
   noise_batch = jax.random.normal(rngs.train(), images.shape)
   # t_batch = jax.random.uniform(rngs.train(), (b1, b2))
-  t_batch = jax.random.randint(rngs.train(), (b1, b2), minval=0, maxval=config.diffusion_nT) # [0, num_time_steps)
+  t_batch = jax.random.randint(rngs.train(), (b1, b2), minval=0, maxval=config.diffusion.diffusion_nT) # [0, num_time_steps)
 
   new_state, metrics, images = train_step_compute_fn(state, batch, noise_batch, t_batch)
 
@@ -503,7 +504,7 @@ def train_and_evaluate(
   rngs = nn.Rngs(config.seed, params=config.seed + 114, dropout=config.seed + 514, train=config.seed + 1919)
   dtype = get_dtype(config.half_precision)
   # model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype)
-  model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype, **config.diffusion_schedule)
+  model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype, **config.diffusion)
   model = model_init_fn(rngs=rngs, **model_config)
   show_dict(f'number of model parameters:{count_params(model)}')
 

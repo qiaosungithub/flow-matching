@@ -1,166 +1,94 @@
-# TODO: this file is wait to be refactored
-
-
-
-# Put your `run_remote.sh` configs in this YAML file
-
-# # Here is for MNIST:
-# training:
-#     learning_rate: 0.0005
-#     scheduler: poly # constant
-#     warmup_steps: 20000
-#     num_epochs: 500
-#     batch_size: 1024
-#     log_per_step: 20
-#     sigma_min: 0.0
-#     wandb: True
-#     checkpoint_per_epoch: 1000
-#     eval_per_epoch: 5
-#     # load_from: /kmh-nfs-us-mount/logs/sqa/sqa_NCSNv2/20241101_030317_2ml2nf_kmh-tpuvm-v2-32-1__b_lr_ep_torchvision_r50_eval/checkpoint_5684
-# model:
-#     name: UNet_for_mnist
-# dataset:
-#     name: MNIST
-#     root: /kmh-nfs-ssd-eu-mount/code/qiao/data/MNIST/
-#     image_size: 28
-#     prefetch_factor: 2
-#     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
-# sampling:
-#     ema: True
-#     ema_decay: 0.999
-#     save_dir: null
-# fid:
-#     eval_only: True
-#     fid_per_epoch: 10
-
-# Here is for CIFAR10:
+continue_training: False # this is for resuming training
+# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241206_001843_i2wyhh_kmh-tpuvm-v3-32-1__b_lr_ep_eval # FM model (w/ t)
+# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241207_160106_l7h71r_kmh-tpuvm-v3-32-1__b_lr_ep_eval # DDPM model (w/ t)
+# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241210_003420_srefmk_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/best_fid # ADM model (w/ t)
+load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241210_003719_b663n5_kmh-tpuvm-v2-32-7__b_lr_ep_eval/best_fid # ADM class-conditional model (w/ t)
+############################################
+#     Normal Training Configuration        #
+############################################
 model:
+    ##### T-conditioning #####
+    t_condition_method: direct # options: [direct, log999, not (i.e. no t)]
+    
+    ##### Common Configs (rarely changes) #####
     image_size: 32
     out_channels: 3
     base_width: 128
-    learn_var: True # default: False
-    n_T: 250 # num of sample steps, matches "diffusion_nT"
     use_aug_label: False
+    net_type: ncsnppedm
+    average_loss: True # use average or sum for loss
+
+    ##### Common Configs (may changes) #####
     dropout: 0.15
-    net_type: ncsnppedm
-    average_loss: True # use average or sum for loss
+    embedding_type: positional
+    task: Diffusion # options: [FM, Diffusion]
 
-    sampler: ddpm
-    sample_clip_denoised: True # this is only useful for ddpm sampler
-    # sampler: heun
-    # sampler: edm
-    # sampler: edm-sde
-    ode_solver: jax
-    # ode_solver: scipy # rk45
-    
-    no_condition_t: False
-    class_conditional: False
-    t_condition_method: direct # default: log999
+    ##### FM-specific configs #####
 
-    # classifier-specific configs
-    # classifier_model_depth: 2
-classifier_model:
-    image_size: 32
-    out_channels: 3
-    base_width: 32
-    # learn_var: True # default: False
-    learn_var: False # default: False
+    ##### Diffusion-specific configs #####
+    learn_var: True # default: False
+
+    ##### Conditional Generation #####
+    class_conditional: True
+
+    ##### Sampling Configs #####
     n_T: 250 # num of sample steps, matches "diffusion_nT"
-    use_aug_label: False
-    dropout: 0.3
-    net_type: ncsnppedm
-    average_loss: True # use average or sum for loss
-
-    sampler: ddpm
-    sample_clip_denoised: True # this is only useful for ddpm sampler
+    
+    # --- Flow Matching --- #
+    # sampler: euler
     # sampler: heun
     # sampler: edm
     # sampler: edm-sde
-    ode_solver: jax
-    # ode_solver: scipy # rk45
-    
-    no_condition_t: False
-    class_conditional: False
-    # class_conditional: True
-    # t_condition_method: not # for No T experiments
-    t_condition_method: direct # default: log999
-    classifier_model_depth: 3
-    # classifier_model_depth: 1
+    # ode_solver: jax
+
+    # --- Diffusion --- #
+    sampler: ddpm
+    # sampler: DDIM
+    sample_clip_denoised: True
+
+diffusion:
+    diffusion_nT: 4000
+    diffusion_schedule: cosine
+
 dataset:
     name: cifar10
     root: CIFAR # pytorch
     prefetch_factor: 2
     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
     cache: True
+
 aug: 
-    use_edm_aug: False
-# 我们应该用不到fid
+    use_edm_aug: False # NOTE: if you want to turn on this, also turn on model.use_aug_label
+
 fid:
-    on_use: True
     eval_only: False
     fid_per_epoch: 200
     num_samples: 50000
-    # device_batch_size: 64
     cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
-evalu:
+
+evalu: # In principle, this should not be used
     ema: True
     sample: True
 
-train_classifier: False # default: False
-continue_training: False
-wandb: True # no 💩
 batch_size: 2048
-num_epochs: 2
+num_epochs: 2000
 learning_rate: 0.0008
 lr_schedule: const
-weight_decay: 0.05
+weight_decay: 0.0
 optimizer: adamw
 adam_b2: 0.95
+grad_clip: 0.0
 warmup_epochs: 200
 log_per_step: 20
-visualize_per_epoch: 1
-eval_per_epoch: 1
-checkpoint_per_epoch: 10086
-load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241210_003420_srefmk_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/best_fid/checkpoint_24000 # this is an unconditional model
-# load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241210_003719_b663n5_kmh-tpuvm-v2-32-7__b_lr_ep_eval/best_fid/checkpoint_19200 # this is an conditional model
-run_classifier_guidance: True
-load_classifier_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241206_233913_v8zrw5_kmh-tpuvm-v2-32-preemptible-1__b_lr_ep_eval # this classifier has highest valid acc
-# load_classifier_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241206_223120_0d4dku_kmh-tpuvm-v2-32-preemptible-1__b_lr_ep_eval # this classifier has lowest valid loss
-classifier_scale: 0.1
+visualize_per_epoch: 50
+eval_per_epoch: 100
+checkpoint_per_epoch: 500
+save_by_fid: False # if True, then only save checkpoint with fid better than all previous checkpoints
 
-# diffusion:
-diffusion_nT: 4000
-diffusion_schedule: cosine
-time_weighting: const 
+############################################
+#    Training Classifier Configuration     #
+############################################
+# Not Implememnted!
 
-# # Here is for IMAGENET32x32:
-
-# training:
-#     learning_rate: 0.0001
-#     scheduler: poly # constant
-#     warmup_steps: 20000
-#     num_epochs: 200
-#     batch_size: 1024
-#     log_per_step: 20
-#     sigma_min: 0.0
-#     wandb: True
-#     checkpoint_per_epoch: 1000
-#     eval_per_epoch: 5
-#     # load_from: /kmh-nfs-us-mount/logs/sqa/sqa_NCSNv2/20241101_030317_2ml2nf_kmh-tpuvm-v2-32-1__b_lr_ep_torchvision_r50_eval/checkpoint_5684
-# model:
-#     name: UNet_for_32
-# dataset:
-#     name: imagenet2012:5.*.*
-#     # root: /kmh-nfs-ssd-eu-mount/code/qiao/data/MNIST/
-#     image_size: 32
-#     prefetch_factor: 2
-#     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
-# sampling:
-#     ema: True
-#     ema_decay: 0.999
-#     save_dir: null
-# fid:
-#     eval_only: True
-#     fid_per_epoch: 10
-
-# NOTE: you cannot add more hierarchy structure without modifying default.py and load_config.py
+# train_classifier: True
+# lr_schedule: classifier_specific
