@@ -380,12 +380,14 @@ def prepare_batch_data(batch, config, batch_size=None):
 #   return jax.tree_util.tree_map(lambda x, y: ema_decay * x + (1.0 - ema_decay) * y, model_avg, state_params)
 #   # return model_avg
 
-def init_t_network():
+def init_t_network(debug=False):
+  """
+  debug: whether to replicate the state
+  """
   model_cls = t.sqa_t_ver1
   rngs = nn.Rngs(0)
   model = model_cls(rngs=rngs)
   show_dict(f'number of model parameters:{count_params(model)}')
-  # show_dict(display_model(model))
 
   ########### Create LR FN ###########
   learning_rate_fn = lambda:1 # just in order to create the state
@@ -397,9 +399,10 @@ def init_t_network():
   #   raise ValueError('Checkpoint path must be absolute')
   # if not os.path.exists(config.load_from):
   #   raise ValueError('Checkpoint path {} does not exist'.format(config.load_from))
-  state = restore_checkpoint(model_cls, state, "/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241128_031750_8xab8k_kmh-tpuvm-v2-32-preemptible-2__b_lr_ep_eval/checkpoint_4850", {})
+  state = restore_checkpoint(model_cls, state, NotImplementedError, {})
   state_step = int(state.step)
-  state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
+  if not debug:
+    state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
   return state
 
 

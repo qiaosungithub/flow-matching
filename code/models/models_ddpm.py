@@ -121,14 +121,26 @@ def generate(state: NNXTrainState, model, rng, n_sample, t_state=None):
 
   # prepare schedule
   num_steps = model.n_T
-
   # initialize noise
   x_shape = (n_sample, model.image_size, model.image_size, model.out_channels)
   rng_used, rng = jax.random.split(rng, 2)
   # sample from prior
   x_prior = jax.random.normal(rng_used, x_shape, dtype=model.dtype)
 
-  assert model.sampler in ["DDIM", "DDIM_t"]
+  assert model.sampler in ["DDIM", "DDIM_t", "adaptive"]
+  if model.sampler == "adaptive":
+    x_i = x_prior
+    def step_fn(i, inputs):
+      x_i, rng = inputs
+      rng_this_step = jax.random.fold_in(rng, i)
+      rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
+      merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
+      x_i = merged_model.sample_one_step(x_i, rng_z, i, t_state=t_state)
+      outputs = (x_i, rng)
+      return outputs
+    input = (x_i, rng)
+    outputs = jax.lax.fori_loop(0, num_steps, step_fn, input)
+    return outputs[0]
   if model.sampler == "DDIM_t":
     assert model.no_condition_t
     assert t_state is not None
@@ -179,6 +191,58 @@ def generate(state: NNXTrainState, model, rng, n_sample, t_state=None):
   # images = jnp.stack(all_x, axis=0)
   # denoised = jnp.stack(denoised, axis=0)
   # return images, denoised # for debug
+
+def generate_verbose(state: NNXTrainState, model, rng, n_sample, t_state=None):
+  """
+  Generate samples from the model
+
+  Here we tend to not use nnx.Rngs
+  state: maybe a train state
+  ---
+  verbose version, return all t
+  return shape: (n_sample, 32, 32, 3)
+  """
+  if model.ode_solver == 'O':
+    raise NotImplementedError
+    return sample_by_diffeq(state,model,rng,n_sample, t_min=model.eps)
+
+  # prepare schedule
+  num_steps = model.n_T
+  # initialize noise
+  x_shape = (n_sample, model.image_size, model.image_size, model.out_channels)
+  rng_used, rng = jax.random.split(rng, 2)
+  # sample from prior
+  x_prior = jax.random.normal(rng_used, x_shape, dtype=model.dtype)
+
+  if model.sampler == "adaptive":
+    x_i = x_prior
+    def step_fn(i, inputs):
+      x_i, rng = inputs
+      rng_this_step = jax.random.fold_in(rng, i)
+      rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
+      merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
+      x_i = merged_model.sample_one_step(x_i, rng_z, i, t_state=t_state, verbose=True)
+      outputs = (x_i, rng)
+      return outputs
+    all_x = []
+    # denoised = []
+    all_t = []
+    for i in range(num_steps):
+      D = step_fn(i, (x_i, rng))
+      x_i, t = D[0]
+      rng = D[1]
+      all_t.append(t)
+      all_x.append(x_i)
+    images = jnp.stack(all_x, axis=1)
+    all_t = jnp.stack(all_t, axis=1)
+    return images, all_t
+  
+  elif model.sampler in ['edm', 'edm-sde']:
+    raise NotImplementedError
+  elif model.sampler == "ban": # sqa experiment
+    raise NotImplementedError
+  else:
+    raise NotImplementedError
 
 class SimDDPM(nn.Module):
   """Simple DDPM."""
@@ -311,19 +375,21 @@ class SimDDPM(nn.Module):
     }
     return loss_train, dict_losses
 
-  def sample_one_step(self, x_i, rng, i):
+  def sample_one_step(self, x_i, rng, i, t_state=None, verbose=False):
 
     if self.sampler == 'euler':
       x_next = self.sample_one_step_euler(x_i, i) 
     elif self.sampler == 'heun':
       x_next = self.sample_one_step_heun(x_i, i) 
+    elif self.sampler == 'adaptive':
+      x_next = self.sample_one_step_adaptive(x_i, i, t_state=t_state, verbose=verbose)
     else:
       raise NotImplementedError
 
     return x_next
   
   def sample_one_step_edm(self, x_i, rng, i, t_steps):
-
+    raise NotImplementedError
     if self.sampler == 'edm':
       x_next = self.sample_one_step_edm_ode(x_i, i, t_steps) 
       # x_next, denoised = self.sample_one_step_edm_ode(x_i, i, t_steps) # for debug
@@ -337,7 +403,7 @@ class SimDDPM(nn.Module):
     # return x_next, denoised 
 
   def sample_one_step_heun(self, x_i, i):
-
+    raise NotImplementedError
     x_cur = x_i
 
     t_cur = i / self.n_T  # t start from 0 (t = 0 is noise here)
@@ -367,6 +433,7 @@ class SimDDPM(nn.Module):
     return x_next
 
   def sample_one_step_euler(self, x_i, i):
+    raise NotImplementedError
     # i: loop from 0 to self.n_T - 1
     t = i / self.n_T  # t start from 0 (t = 0 is noise here)
     t = t * (1 - self.eps) + self.eps
@@ -379,6 +446,31 @@ class SimDDPM(nn.Module):
     x_next = x_i + u_pred * dt
 
     return x_next
+    # return x_next, x_i + u_pred * (1 - t)
+
+  def sample_one_step_adaptive(self, x_i, i, t_state, verbose=False):
+    # this is for no t
+    # i: loop from 0 to self.n_T - 1
+    merged_model = nn.merge(t_state.graphdef, t_state.params, t_state.rng_states, t_state.batch_stats, t_state.useless_variable_state)
+    t = merged_model.forward(x_i)
+    t = jnp.squeeze(t, axis=-1)  # remove the last dim
+    # t_shape = jnp.repeat(t, x_i.shape[0]) # to ensure the shape is correct
+
+    eps = self.forward_DDIM_pred_function(x_i, t, train=False)
+    x0_t = batch_mul(x_i - batch_mul(eps, jnp.sqrt(1 - t)), 1. / jnp.sqrt(t))  # when eta=0, no need to add noise
+    # move one step\
+    t_next = jnp.maximum(t - 0.01, 0)
+    # dt = jnp.where(dt < 0.01, 0, dt) # for small t, we don't move
+    x_next = batch_mul(x0_t, jnp.sqrt(t_next)) + batch_mul(eps, jnp.sqrt(1-t_next))
+
+    t_next_pred = merged_model.forward(x_next)
+    t_next_pred = jnp.squeeze(t_next_pred, axis=-1)  # remove the last dim
+    x_next = jnp.where(t_next_pred.reshape(-1, 1, 1, 1) < t.reshape(-1, 1, 1, 1), x_next, x_i) # if t_next is smaller than t, we don't move
+
+    if verbose:
+      return x_next, t
+    else:
+      return x_next
   
   def sample_one_step_edm_ode(self, x_i, i, t_steps):
     """
@@ -460,12 +552,8 @@ class SimDDPM(nn.Module):
     """
     # we only implement 'generalized' here
     # we only implement 'skip_type=uniform' here
-    if self.sampler == "DDIM":
-      at = self.compute_alpha(t.astype(jnp.int32))
-      at_next = self.compute_alpha(next_t.astype(jnp.int32))
-    else:
-      # implement adaptive sampler for DDIM
-      pass
+    at = self.compute_alpha(t.astype(jnp.int32))
+    at_next = self.compute_alpha(next_t.astype(jnp.int32))
 
     eps = self.forward_DDIM_pred_function(x_i, t, train=False)
     # x0_t = (x_i - eps * jnp.sqrt(1 - at)) / jnp.sqrt(at)
@@ -502,7 +590,7 @@ class SimDDPM(nn.Module):
     return denoiser
 
   def forward_flow_pred_function(self, z, t, augment_label=None, train: bool = True):  # EDM
-
+    raise NotImplementedError
     t_cond = jnp.zeros_like(t) if self.no_condition_t else jnp.log(t * 999)
     u_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
     return u_pred

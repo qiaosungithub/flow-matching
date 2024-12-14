@@ -44,7 +44,7 @@ import utils.fid_util as fid_util
 import utils.sample_util as sample_util
 
 import models.models_ddpm as models_ddpm
-from models.models_ddpm import generate, edm_ema_scales_schedules
+from models.models_ddpm import generate, edm_ema_scales_schedules, generate_verbose
 import input_pipeline
 from input_pipeline import prepare_batch_data
 
@@ -231,15 +231,38 @@ def sample_step(state, sample_idx, model, rng_init, device_batch_size, MEAN_RGB=
   """
   rng_sample = random.fold_in(rng_init, sample_idx)  # fold in sample_idx
   images = generate(state, model, rng_sample, n_sample=device_batch_size, t_state=t_state)
+  nfe = None
+  if model.ode_solver == 'O':
+    images, nfe = images
 
-  images_all = lax.all_gather(images, axis_name='batch')  # each device has a copy  
+  images_all = lax.all_gather(images, axis_name='batch')  # each device has a copy
   images_all = images_all.reshape(-1, *images_all.shape[2:])
 
   # The images should be [-1, 1], which is correct
 
   # images_all = images_all * (jnp.array(STDDEV_RGB)/255.).reshape(1,1,1,3) + (jnp.array(MEAN_RGB)/255.).reshape(1,1,1,3)
   # images_all = (images_all - 0.5) / 0.5
-  return images_all
+  nfe = jax.device_get(nfe).mean() if nfe is not None else None
+  return images_all, nfe
+
+def sample_step_verbose(state, sample_idx, model, rng_init, device_batch_size, MEAN_RGB=None, STDDEV_RGB=None, t_state=None):
+  """
+  sample_idx: each random sampled image corrresponds to a seed
+  rng_init: here we do not want nnx.Rngs
+  """
+  rng_sample = random.fold_in(rng_init, sample_idx)  # fold in sample_idx
+  images = generate_verbose(state, model, rng_sample, n_sample=device_batch_size, t_state=t_state)
+  images, all_t = images
+  nfe = None
+  if model.ode_solver == 'O':
+    images, nfe = images
+
+  # images_all = lax.all_gather(images, axis_name='batch')  # each device has a copy
+  # images_all = images_all.reshape(-1, *images_all.shape[2:])
+  # all_t = lax.all_gather(all_t, axis_name='batch')
+  # all_t = all_t.reshape(-1, *all_t.shape[2:])
+  nfe = jax.device_get(nfe).mean() if nfe is not None else None
+  return images, nfe, all_t
 
 def global_seed(seed):
   torch.manual_seed(seed)
@@ -616,31 +639,37 @@ def train_and_evaluate(
   log_for_0(f'fixed_sample_idx: {vis_sample_idx}')
 
   ########### FID ###########
-  if config.model.ode_solver == 'jax':
-    t_state = init_t_network() if config.model.sampler == "DDIM_t" else None
+  if config.model.ode_solver in ['jax', 'O']:
     p_sample_step = jax.pmap(
       partial(sample_step, 
               model=model, 
               rng_init=random.PRNGKey(0), 
               device_batch_size=config.fid.device_batch_size, 
               MEAN_RGB=input_pipeline.MEAN_RGB, 
-              STDDEV_RGB=input_pipeline.STDDEV_RGB,
-              t_state=t_state,
+              STDDEV_RGB=input_pipeline.STDDEV_RGB
       ),
       axis_name='batch'
     )
 
-    def run_p_sample_step(p_sample_step, state, sample_idx):
+    def run_p_sample_step(p_sample_step, state, sample_idx, verbose=False):
       """
       state: train state
       """
       # redefine the interface
-      images = p_sample_step(state, sample_idx=sample_idx)
+      images = p_sample_step(state, sample_idx=sample_idx, verbose=verbose)
+      if verbose:
+        images, nfe, all_t = images
+      else:
+        images, nfe = images
       # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
       jax.random.normal(random.key(0), ()).block_until_ready()
-      return images[0]  # images have been all gathered
+      if verbose:
+        return images[0], nfe, all_t[0]
+      else:
+        return images[0], nfe  # images have been all gathered
     
   elif config.model.ode_solver == 'scipy':
+    raise DeprecationWarning('其实用这个')
     from utils.rk45_util import get_rk45_functions
     run_p_sample_step, p_sample_step = get_rk45_functions(model, config, random.PRNGKey(0))
 
@@ -654,7 +683,7 @@ def train_and_evaluate(
 
     if config.fid.eval_only: # debug, this is tang
 
-      samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step)
+      samples_all, _ = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step)
       mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
       fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
       log_for_0(f' w/ ema: FID at {samples_all.shape[0]} samples: {fid_score}')
@@ -738,7 +767,6 @@ def train_and_evaluate(
       # continue
 
       state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute, model_config)
-      
       if epoch == epoch_offset and n_batch == 0:
         log_for_0('p_train_step compiled in {}s'.format(time.time() - train_metrics_last_t))
         log_for_0('Initial compilation completed. Reset timer.')
@@ -827,7 +855,7 @@ def train_and_evaluate(
       or epoch == config.num_epochs
       # or epoch == 0
     ):
-      samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step)
+      samples_all, _ = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step)
       mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
       fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
       log_for_0(f'w/o ema: FID at {samples_all.shape[0]} samples: {fid_score}')
@@ -835,7 +863,7 @@ def train_and_evaluate(
       # ema results are much better
       eval_state = sync_batch_stats(state)
       eval_state = eval_state.replace(params=model_avg)
-      samples_all = sample_util.generate_samples_for_fid_eval(eval_state, workdir, config, p_sample_step, run_p_sample_step)
+      samples_all, nfe = sample_util.generate_samples_for_fid_eval(eval_state, workdir, config, p_sample_step, run_p_sample_step)
       mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
       fid_score_ema = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
       log_for_0(f'w/ ema: FID at {samples_all.shape[0]} samples: {fid_score_ema}')
@@ -845,6 +873,8 @@ def train_and_evaluate(
           'FID': fid_score,
           'FID_ema': fid_score_ema
         })
+        if nfe is not None:
+          wandb.log({'NFE': nfe})
 
       vis = make_grid_visualization(samples_all, to_uint8=False)
       vis = jax.device_get(vis)
@@ -871,7 +901,7 @@ def just_evaluate(
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='LMCI-eval', dir=workdir, tags=['SQA-DDIM'])
+    wandb.init(project='LMCI-eval', dir=workdir, tags=['SQA-DDIM-exp'])
     # wandb.init(project='sqa_edm_debug', dir=workdir)
     wandb.config.update(config.to_dict())
   # dtype = jnp.bfloat16 if model_config.half_precision else jnp.float32
@@ -899,7 +929,8 @@ def just_evaluate(
     raise ValueError('Checkpoint path {} does not exist'.format(config.load_from))
   state = restore_checkpoint(model_init_fn, state, config.load_from, model_config, ema=config.evalu.ema) # NOTE: whether to use the ema model
   state_step = int(state.step)
-  state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
+  # t_state = init_t_network(debug=True) if config.model.sampler == "adaptive" else None
+  # state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
 
   
   # ### debug sampler here, please delete the above line
@@ -937,29 +968,43 @@ def just_evaluate(
 
   ########### FID ###########
   vis_sample_idx = jax.process_index() * jax.local_device_count() + jnp.arange(jax.local_device_count())  # for visualization
-  if config.model.ode_solver == 'jax':
+  if config.model.ode_solver in ['jax', 'O']:
+    t_state = init_t_network(debug=True) if config.model.sampler == "adaptive" else None
     p_sample_step = jax.pmap(
       partial(sample_step, 
               model=model, 
               rng_init=random.PRNGKey(0), 
               device_batch_size=config.fid.device_batch_size, 
               # MEAN_RGB=input_pipeline.MEAN_RGB, 
-              # STDDEV_RGB=input_pipeline.STDDEV_RGB
+              # STDDEV_RGB=input_pipeline.STDDEV_RGB,
+              t_state=t_state,
       ),
       axis_name='batch'
     )
 
-    def run_p_sample_step(p_sample_step, state, sample_idx):
+    def run_p_sample_step(p_sample_step, state, sample_idx, verbose=False):
       """
       state: train state
       """
       # redefine the interface
-      images = p_sample_step(state, sample_idx=sample_idx)
+      if verbose:
+        images, nfe, all_t = p_sample_step(state, sample_idx=sample_idx)
+        # print("all_t.shape: ", all_t.shape)
+        # all_t = jnp.mean(all_t, axis=0)
+      else:
+        images, nfe = p_sample_step(state, sample_idx=sample_idx)
+      nfe = None
       # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
       jax.random.normal(random.key(0), ()).block_until_ready()
-      return images[0]  # images have been all gathered
+      # print('images.shape:',jax.device_get(images).shape)
+      nfe = nfe.mean() if nfe is not None else None
+      if verbose:
+        return images[0], nfe, all_t[0]
+      else:
+        return images[0], nfe  # images have been all gathered
     
   elif config.model.ode_solver == 'scipy':
+    raise DeprecationWarning('其实用这个')
     from utils.rk45_util import get_rk45_functions
     run_p_sample_step, p_sample_step = get_rk45_functions(model, config, random.PRNGKey(0))
 
@@ -992,13 +1037,22 @@ def just_evaluate(
   log_for_0(f'fixed_sample_idx: {vis_sample_idx}')
   log_for_0('Eval...')
   ########### Sampling ###########
-  eval_state = sync_batch_stats(state)
+  # eval_state = sync_batch_stats(state)
   if config.evalu.sample: # if we want to sample
     log_for_0(f'Sample...')
-    # sync batch statistics across replicas
-    # eval_state = eval_state.replace(params=model_avg)
-    vis = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx)
-    vis = make_grid_visualization(vis)
+    vis, _, all_t = sample_step_verbose(state, 0, model, random.PRNGKey(0), 16, t_state=t_state)
+    print("vis.shape: ", vis.shape)
+    print("all_t.shape: ", all_t.shape)
+    all_t = jnp.mean(all_t, axis=0)
+    if config.wandb and index == 0:
+      for ep in range(1, all_t.shape[0]):
+        wandb.log({
+          't': all_t[ep],
+          # 'iter': ep
+          })
+    # print("vis shape: ", vis.shape)
+    vis = vis[:,-1] # only take the last one
+    vis = make_grid_visualization(vis, grid=4)
     vis = jax.device_get(vis) # np.ndarray
     vis = vis[0]
     # print(vis.shape)
@@ -1008,9 +1062,12 @@ def just_evaluate(
       wandb.log({'gen': wandb.Image(canvas)})
     # sample_step(eval_state, image_size, sampling_config, epoch, use_wandb=config.wandb)
   ########### FID ###########
+  eval_state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
   if config.fid.on_use:
 
-    samples_all = sample_util.generate_samples_for_fid_eval(eval_state, workdir, config, p_sample_step, run_p_sample_step)
+    samples_all, nfe = sample_util.generate_samples_for_fid_eval(eval_state, workdir, config, p_sample_step, run_p_sample_step)
+    # assert samples_all.ndim == 10086, 'Get wrong shape: {}'.format(samples_all.shape)
+    # print("samples_all.shape: ", samples_all.shape)
     mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
     fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
     log_for_0(f'FID at {samples_all.shape[0]} samples: {fid_score}')
@@ -1019,6 +1076,8 @@ def just_evaluate(
       wandb.log({
         'FID': fid_score,
       })
+      if nfe is not None:
+        wandb.log({'NFE': nfe})
 
     vis = make_grid_visualization(samples_all, to_uint8=False)
     vis = jax.device_get(vis)
@@ -1029,9 +1088,10 @@ def just_evaluate(
 
   if rank == 0 and config.wandb:
     nfe = config.model.n_T
-    if config.model.ode_solver == 'scipy': nfe=100 # TODO: show the rk45 nfe
-    elif config.model.sampler not in ['euler', "DDIM"]: nfe*=2
-    wandb.log({'NFE': nfe})
+    if config.model.ode_solver == 'scipy': raise LookupError('Not implemented')
+    elif config.model.sampler not in ['euler', "DDIM", "adaptive"]: nfe*=2
+    if config.model.ode_solver != 'O':
+      wandb.log({'NFE': nfe})
 
   jax.random.normal(jax.random.key(0), ()).block_until_ready()
   if index == 0 and config.wandb:
