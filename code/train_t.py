@@ -213,6 +213,33 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn):
 
   return new_state, metrics
 
+def sqa_eval_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, eval_noise_scale):
+  """
+  Perform a single training step.
+  We will NOT pmap this function
+  ---
+  batch: a dict, with image, label, augment_label
+  rngs: nnx.Rngs
+  train_step_compute_fn: the pmaped version of train_step_compute
+  """
+
+  # # ResNet has no dropout; but maintain rng_dropout for future usage
+  # rng_step = random.fold_in(rng_init, state.step)
+  # rng_device = random.fold_in(rng_step, lax.axis_index(axis_name='batch'))
+  # rng_gen, rng_dropout = random.split(rng_device)
+
+  images = batch['image']
+  # print("images.shape: ", images.shape) # (8, 64, 32, 32, 3)
+  b1, b2 = images.shape[0], images.shape[1]
+  noise_batch = jax.random.normal(rngs.train(), images.shape)
+  t_batch = jnp.ones((b1, b2)) * eval_noise_scale
+
+  new_state, metrics, t_pred = train_step_compute_fn(state, batch, noise_batch, t_batch)
+  # print("t_pred.shape: ", t_pred.shape)
+  # print(t_pred[0][:4].reshape(4))
+
+  return new_state, metrics
+
 def eval_step(train_state:NNXTrainState, batch, noise_batch, t_batch):
   t_pred, new_batch_stats, new_rng_params = train_state.apply_fn(train_state.graphdef, train_state.params, train_state.rng_states, train_state.batch_stats, train_state.useless_variable_state, False, batch['image'], noise_batch, t_batch) # False: is_training
   loss = jnp.mean((t_pred - t_batch.reshape(-1,1)) ** 2) # 菜就多练
@@ -657,7 +684,7 @@ def train_and_evaluate(
 def just_evaluate(
     config: ml_collections.ConfigDict, workdir: str
   ):
-  from langevin import langevin_step
+  # from langevin import langevin_step
   ########### Initialize ###########
   rank = index = jax.process_index()
   config.dataset.out_channels = config.model.out_channels
@@ -665,34 +692,68 @@ def just_evaluate(
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='sqa_t_energy', dir=workdir)
+    wandb.init(project='sqa_t_eval', dir=workdir)
     wandb.config.update(config.to_dict())
   # dtype = jnp.bfloat16 if model_config.half_precision else jnp.float32
   global_seed(config.seed)
   image_size = model_config.image_size
 
   ########### Create Model ###########
-  model_cls = getattr(t, model_config.net_type)
+  model_cls = t.sqa_t_ver1
   rngs = nn.Rngs(config.seed, params=config.seed + 114, dropout=config.seed + 514, train=config.seed + 1919, sample=config.seed + 810)
-  dtype = get_dtype(config.half_precision)
-  model_init_fn = partial(model_cls, dtype=dtype)
-  model = model_init_fn(rngs=rngs, **model_config)
+  # dtype = get_dtype(config.half_precision)
+  # model_init_fn = partial(model_cls, dtype=dtype)
+  model = model_cls(rngs=rngs)
   show_dict(f'number of model parameters:{count_params(model)}')
-  # show_dict(display_model(model))
 
   ########### Create LR FN ###########
   learning_rate_fn = lambda:1 # just in order to create the state
 
   ########### Create Train State ###########
   state = create_train_state(config, model, image_size, learning_rate_fn)
-  assert config.get('load_from',None) is not None, 'Must provide a checkpoint path for evaluation'
-  if not os.path.isabs(config.load_from):
-    raise ValueError('Checkpoint path must be absolute')
-  if not os.path.exists(config.load_from):
-    raise ValueError('Checkpoint path {} does not exist'.format(config.load_from))
-  state = restore_checkpoint(model_init_fn, state, config.load_from, model_config)
+  # assert config.get('load_from',None) is not None, 'Must provide a checkpoint path for evaluation'
+  # if not os.path.isabs(config.load_from):
+  #   raise ValueError('Checkpoint path must be absolute')
+  # if not os.path.exists(config.load_from):
+  #   raise ValueError('Checkpoint path {} does not exist'.format(config.load_from))
+  state = restore_checkpoint(model_cls, state, "/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241128_031750_8xab8k_kmh-tpuvm-v2-32-preemptible-2__b_lr_ep_eval/checkpoint_4850", {})
   state_step = int(state.step)
-  # state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
+  state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
+  ########### Create DataLoaders ###########
+  input_pipeline = get_input_pipeline(dataset_config)
+  input_type = tf.bfloat16 if config.half_precision else tf.float32
+  dataset_builder = tfds.builder(dataset_config.name)
+  assert config.batch_size % jax.process_count() == 0, ValueError('Batch size must be divisible by the number of devices')
+  local_batch_size = config.batch_size // jax.process_count()
+  assert local_batch_size % jax.local_device_count() == 0, ValueError('Local batch size must be divisible by the number of local devices')
+  log_for_0('local_batch_size: {}'.format(local_batch_size))
+  log_for_0('jax.local_device_count: {}'.format(jax.local_device_count()))
+  log_for_0('global batch_size: {}'.format(config.batch_size))
+  # train_loader, steps_per_epoch, yierbayiyiliuqi = input_pipeline.create_split(
+  #   dataset_builder,
+  #   dataset_config=dataset_config,
+  #   training_config=config,
+  #   local_batch_size=local_batch_size,
+  #   input_type=input_type,
+  #   train=False if dataset_config.fake_data else True
+  # )
+  val_loader, val_steps, _ = input_pipeline.create_split(
+    dataset_builder,
+    dataset_config=dataset_config,
+    training_config=config,
+    local_batch_size=local_batch_size,
+    input_type=input_type,
+    train=False
+  )
+  if dataset_config.fake_data:
+    log_for_0('Note: using fake data')
+  # log_for_0('steps_per_epoch: {}'.format(steps_per_epoch))
+  log_for_0('eval_steps: {}'.format(val_steps))
+
+  p_eval_step_compute = jax.pmap(
+    eval_step,
+    axis_name='batch'
+  )
 
   ########### FID ###########
   # no
@@ -700,26 +761,50 @@ def just_evaluate(
   ########### Gen ###########
 
   log_for_0('Eval...')
-  ########### Sampling ###########
-  # eval_state = sync_batch_stats(state)
-  x = jax.random.normal(jax.random.PRNGKey(0), (8, image_size, image_size, model_config.out_channels))
-  # all_images = [x] # how to visualize?
-  for i in range(config.evalu.epochs):
-    x, mean_of_t, grad_norm, signal_to_noise_ratio = langevin_step(x, state, rngs, config.evalu)
-    # all_images.append(x)
-    y = make_grid_visualization(x)
-    y = jax.device_get(y)
-    y = y[0]
-    canvas = Image.fromarray(y)
-    if config.wandb and index == 0:
-      wandb.log({'gen': wandb.Image(canvas)})
-    log_for_0(f'epoch {i} mean_of_t: {mean_of_t}, grad_norm: {grad_norm}, signal_to_noise_ratio: {signal_to_noise_ratio}')
+
+  ########### Evaluation ###########
+  eval_metrics_buffer = []
+  eval_scales=[0, 0.01, 0.02]
+  for n_batch, batch in zip(range(val_steps), val_loader):
+    batch = prepare_batch_data(batch, config) 
+    if eval_scales == []: break
+    eval_noise_scale = eval_scales[0]
+    _, metrics = sqa_eval_step(state, batch, rngs, p_eval_step_compute, eval_noise_scale=eval_noise_scale)
+    eval_metrics_buffer.append(metrics)
+    # if (n_batch + 1) % config.log_per_step == 0:
+    # log_for_0(f"[Eval] noise level {eval_noise_scale}")
+    eval_metrics = common_utils.get_metrics(eval_metrics_buffer)
+    tang_reduce(eval_metrics)
+    loss_to_display = eval_metrics['loss']
     if config.wandb and index == 0:
       wandb.log({
-        'mean_of_t': mean_of_t,
-        'grad_norm': grad_norm,
-        'signal_to_noise_ratio': signal_to_noise_ratio,
-      })
+        'test_loss': loss_to_display,
+        'eval_noise_scale': eval_noise_scale,
+        })
+    log_for_0(f'eval noise scale: {eval_noise_scale}, test_loss: {loss_to_display}')
+    eval_metrics_buffer = []
+    eval_scales.pop(0)
+
+  ########### Sampling ###########
+  # # eval_state = sync_batch_stats(state)
+  # x = jax.random.normal(jax.random.PRNGKey(0), (8, image_size, image_size, model_config.out_channels))
+  # # all_images = [x] # how to visualize?
+  # for i in range(config.evalu.epochs):
+  #   x, mean_of_t, grad_norm, signal_to_noise_ratio = langevin_step(x, state, rngs, config.evalu)
+  #   # all_images.append(x)
+  #   y = make_grid_visualization(x)
+  #   y = jax.device_get(y)
+  #   y = y[0]
+  #   canvas = Image.fromarray(y)
+  #   if config.wandb and index == 0:
+  #     wandb.log({'gen': wandb.Image(canvas)})
+  #   log_for_0(f'epoch {i} mean_of_t: {mean_of_t}, grad_norm: {grad_norm}, signal_to_noise_ratio: {signal_to_noise_ratio}')
+  #   if config.wandb and index == 0:
+  #     wandb.log({
+  #       'mean_of_t': mean_of_t,
+  #       'grad_norm': grad_norm,
+  #       'signal_to_noise_ratio': signal_to_noise_ratio,
+  #     })
   ########### FID ###########
   # if config.fid.on_use:
 

@@ -381,11 +381,13 @@ def prepare_batch_data(batch, config, batch_size=None):
 #   # return model_avg
 
 def init_t_network(debug=False):
+  """
+  debug: whether to replicate the state
+  """
   model_cls = t.sqa_t_ver1
   rngs = nn.Rngs(0)
   model = model_cls(rngs=rngs)
   show_dict(f'number of model parameters:{count_params(model)}')
-  # show_dict(display_model(model))
 
   ########### Create LR FN ###########
   learning_rate_fn = lambda:1 # just in order to create the state
