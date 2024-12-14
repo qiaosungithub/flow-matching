@@ -1,5 +1,5 @@
 import sys
-sys.path.append('/kmh-nfs-ssd-eu-mount/code/qiao/flow-matching/sqa-flow-matching/code/models')
+sys.path.append('/kmh-nfs-ssd-eu-mount/code/qiao/work/sqa-flow-matching/code/models')
 
 import jax.numpy as jnp
 import flax.nnx as nn
