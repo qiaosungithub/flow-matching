@@ -1403,6 +1403,8 @@ class SimDDPM(nn.Module):
         return self.forward_Diffusion(*args, **kwargs)
       elif self.task == 'Classifier':
         return self.forward_Classifier(*args, **kwargs)
+      elif self.task in ['EDM', 'edm']:
+        return self.forward_EDM(*args, **kwargs)
       else:
         raise NotImplementedError(f'Unknown task: {self.task}')
   
