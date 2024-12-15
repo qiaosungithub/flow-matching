@@ -464,6 +464,7 @@ class SimDDPM(nn.Module):
 
     eps = self.forward_DDIM_pred_function(x_i, t, train=False)
     x0_t = batch_mul(x_i - batch_mul(eps, jnp.sqrt(t)), 1. / jnp.sqrt(1 - t))  # when eta=0, no need to add noise
+    x0_t = jnp.clip(x0_t, -1, 1)  # clip x0_t to [-1, 1]
     # move one step
     t_next = jnp.maximum(t - 0.01, 0)
     # dt = jnp.where(dt < 0.01, 0, dt) # for small t, we don't move
@@ -471,12 +472,14 @@ class SimDDPM(nn.Module):
 
     t_next_pred = merged_model.forward(x_next)
     t_next_pred = jnp.squeeze(t_next_pred, axis=-1)  # remove the last dim
-    x_next = jnp.where(t_next_pred.reshape(-1, 1, 1, 1) < t.reshape(-1, 1, 1, 1), x_next, x_i) # if t_next is smaller than t, we don't move
+    # we hope for t > 0.5, always move; else if the t gets smaller we move
+    x_out = jnp.where(t_next_pred.reshape(-1, 1, 1, 1) < t.reshape(-1, 1, 1, 1), x_next, x_i) # if t_next is smaller than t, we don't move
+    x_out = jnp.where(t_next_pred.reshape(-1, 1, 1, 1) > 0.5, x_next, x_out) # if t_next is bigger than 0.5, we move
 
     if verbose:
-      return x_next, t, x0_t
+      return x_out, t, x0_t
     else:
-      return x_next
+      return x_out
   
   def sample_one_step_edm_ode(self, x_i, i, t_steps):
     """

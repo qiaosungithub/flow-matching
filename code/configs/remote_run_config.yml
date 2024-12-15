@@ -28,7 +28,7 @@ dataset:
 aug: 
     use_edm_aug: False # NOTE: if you want to turn on this, also turn on model.use_aug_label
 fid:
-    on_use: False
+    # on_use: False
     eval_only: False
     fid_per_epoch: 50
     num_samples: 50000

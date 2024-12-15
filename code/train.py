@@ -1039,7 +1039,9 @@ def just_evaluate(
   # eval_state = sync_batch_stats(state)
   if config.evalu.sample: # if we want to sample
     log_for_0(f'Sample...')
-    vis_all, _, all_t, denoised = sample_step_verbose(state, 0, model, random.PRNGKey(2), 1, t_state=t_state)
+    grid = 4
+    num_sample = grid ** 2
+    vis_all, _, all_t, denoised = sample_step_verbose(state, 0, model, random.PRNGKey(2), num_sample, t_state=t_state)
     print("vis.shape: ", vis_all.shape)
     print("all_t.shape: ", all_t.shape)
     all_t = jnp.mean(all_t, axis=0)
@@ -1051,7 +1053,7 @@ def just_evaluate(
           })
         # print("vis shape: ", vis.shape)
         vis = vis_all[:,ep] # only take the last one
-        vis = make_grid_visualization(vis, grid=1)
+        vis = make_grid_visualization(vis, grid=grid)
         vis = jax.device_get(vis) # np.ndarray
         vis = vis[0]
         # print(vis.shape)
@@ -1061,7 +1063,7 @@ def just_evaluate(
           wandb.log({'gen': wandb.Image(canvas)})
 
         vis = denoised[:,ep]
-        vis = make_grid_visualization(vis, grid=1)
+        vis = make_grid_visualization(vis, grid=grid)
         vis = jax.device_get(vis)
         vis = vis[0]
         canvas = Image.fromarray(vis)
