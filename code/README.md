@@ -19,12 +19,15 @@ After testing, `sqa_t_ver1` reaches the best performance with the least number o
 
 Vanilla FM baseline: `/kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241127_010129_q9ifcu_kmh-tpuvm-v2-32-6__b_lr_ep_eval/checkpoint_194000`
 
-t_network: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241128_031750_8xab8k_kmh-tpuvm-v2-32-preemptible-2__b_lr_ep_eval/checkpoint_4850`
+t_network FM: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241128_031750_8xab8k_kmh-tpuvm-v2-32-preemptible-2__b_lr_ep_eval/checkpoint_4850`
+
+t_network VP: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241214_222845_zlf55q_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/checkpoint_19400`
 
 FM with no t baseline: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241130_140252_c95a47_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/checkpoint_194000`
 
 DDIM: `/kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241209_004559_gihhxu_kmh-tpuvm-v2-32-1__b_lr_ep_eval/checkpoint_194000`
 
+DDIM w/o t: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241210_185646_e19l8l_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_194000`
 ## datasets
 
 We now use pytorch dataset. To use tfds, switch to the `FM-nnx-tfds` branch.
