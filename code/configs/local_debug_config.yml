@@ -2,8 +2,8 @@
 model:
     image_size: 32
     out_channels: 3
-    base_width: 4
-    n_T: 1
+    base_width: 128
+    n_T: 2
     use_aug_label: False
     dropout: 0.3 # CT
     net_type: ncsnppedm
@@ -42,7 +42,7 @@ num_epochs: 400
 learning_rate: 0.0001 # CT
 lr_schedule: const
 weight_decay: 0
-nan_to_num: True # TODO: 深意
+nan_to_num: True # 深意
 optimizer: radam
 adam_b2: 0.999
 grad_clip: 0.0
