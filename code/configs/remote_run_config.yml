@@ -3,7 +3,7 @@ model:
     image_size: 32
     out_channels: 3
     base_width: 128
-    n_T: 1
+    n_T: 2
     use_aug_label: False
     dropout: 0.3 # CT
     net_type: ncsnppedm
@@ -43,7 +43,7 @@ num_epochs: 8000
 learning_rate: 0.0001
 lr_schedule: const
 weight_decay: 0.0
-# optimizer: radam # CT, TODO: radam / adamw?
+# optimizer: radam # CT
 optimizer: adamw
 adam_b2: 0.999
 grad_clip: 0.0
@@ -52,7 +52,7 @@ log_per_step: 100
 visualize_per_epoch: 50
 eval_per_epoch: 50
 checkpoint_per_epoch: 1000
-# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241202_214940_zd8s4j_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_48500
+load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241209_173932_kkesfc_kmh-tpuvm-v2-32-6__b_lr_ep_eval/checkpoint_388000
 
 # # Here is for IMAGENET32x32:
 

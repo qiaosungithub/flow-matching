@@ -156,14 +156,12 @@ def edm_ema_scales_schedules(step, config, steps_per_epoch):
 # move this out from model for JAX compilation
 def generate(state: NNXTrainState, model, rng, n_sample):
   """
-  Generate samples from the model
-  TODO: do 2-step generation
-
-  Here we tend to not use nnx.Rngs
-  state: maybe a train state
+  rng: rng key
+  state: train state
   ---
   return shape: (n_sample, 32, 32, 3)
   """
+  assert model.n_T in [1, 2]
 
   # initialize noise
   x_shape = (n_sample, model.image_size, model.image_size, model.out_channels)
@@ -176,6 +174,11 @@ def generate(state: NNXTrainState, model, rng, n_sample):
   rng_z, 别传进去 = jax.random.split(rng, 2)
   merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
   outputs = merged_model.sample_one_step_CT(x_T, rng_z)
+
+  if model.n_T == 2:
+    middle_t = 0.821
+    noisy_x = outputs + jax.random.normal(rng, outputs.shape) * middle_t
+    outputs = merged_model.sample_one_step_CT(noisy_x, rng_z)
 
   return outputs
 
