@@ -7,7 +7,7 @@ sleep 2s
 echo 'Killing jobs...'
 gcloud compute tpus tpu-vm ssh $VM_NAME --zone $ZONE --worker=all \
     --command "
-pgrep -af python | grep 'main.py' | grep -v 'grep' | awk '{print \"sudo kill -9 \" \$1}' | sh
+sudo lsof -w /dev/accel0 | grep python | grep -v 'grep' | awk '{print \"sudo kill -9 \" \$1}' | sh
 " # &> /dev/null
 echo 'Killed jobs.'
 
