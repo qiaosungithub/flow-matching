@@ -252,7 +252,7 @@ def sample_step_verbose(state, sample_idx, model, rng_init, device_batch_size, M
   """
   rng_sample = random.fold_in(rng_init, sample_idx)  # fold in sample_idx
   images = generate_verbose(state, model, rng_sample, n_sample=device_batch_size, t_state=t_state)
-  images, all_t = images
+  images, all_t, denoised = images
   nfe = None
   if model.ode_solver == 'O':
     images, nfe = images
@@ -262,7 +262,7 @@ def sample_step_verbose(state, sample_idx, model, rng_init, device_batch_size, M
   # all_t = lax.all_gather(all_t, axis_name='batch')
   # all_t = all_t.reshape(-1, *all_t.shape[2:])
   nfe = jax.device_get(nfe).mean() if nfe is not None else None
-  return images, nfe, all_t
+  return images, nfe, all_t, denoised
 
 def global_seed(seed):
   torch.manual_seed(seed)
@@ -1039,8 +1039,8 @@ def just_evaluate(
   # eval_state = sync_batch_stats(state)
   if config.evalu.sample: # if we want to sample
     log_for_0(f'Sample...')
-    vis, _, all_t = sample_step_verbose(state, 0, model, random.PRNGKey(0), 16, t_state=t_state)
-    print("vis.shape: ", vis.shape)
+    vis_all, _, all_t, denoised = sample_step_verbose(state, 0, model, random.PRNGKey(2), 1, t_state=t_state)
+    print("vis.shape: ", vis_all.shape)
     print("all_t.shape: ", all_t.shape)
     all_t = jnp.mean(all_t, axis=0)
     if config.wandb and index == 0:
@@ -1049,16 +1049,24 @@ def just_evaluate(
           't': all_t[ep],
           # 'iter': ep
           })
-    # print("vis shape: ", vis.shape)
-    vis = vis[:,-1] # only take the last one
-    vis = make_grid_visualization(vis, grid=4)
-    vis = jax.device_get(vis) # np.ndarray
-    vis = vis[0]
-    # print(vis.shape)
-    # exit("王广廷")
-    canvas = Image.fromarray(vis)
-    if config.wandb and index == 0:
-      wandb.log({'gen': wandb.Image(canvas)})
+        # print("vis shape: ", vis.shape)
+        vis = vis_all[:,ep] # only take the last one
+        vis = make_grid_visualization(vis, grid=1)
+        vis = jax.device_get(vis) # np.ndarray
+        vis = vis[0]
+        # print(vis.shape)
+        # exit("王广廷")
+        canvas = Image.fromarray(vis)
+        if config.wandb and index == 0:
+          wandb.log({'gen': wandb.Image(canvas)})
+
+        vis = denoised[:,ep]
+        vis = make_grid_visualization(vis, grid=1)
+        vis = jax.device_get(vis)
+        vis = vis[0]
+        canvas = Image.fromarray(vis)
+        if config.wandb and index == 0:
+          wandb.log({'denoised': wandb.Image(canvas)})
     # sample_step(eval_state, image_size, sampling_config, epoch, use_wandb=config.wandb)
   ########### FID ###########
   eval_state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior

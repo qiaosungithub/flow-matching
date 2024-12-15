@@ -28,13 +28,14 @@ dataset:
 aug: 
     use_edm_aug: False # NOTE: if you want to turn on this, also turn on model.use_aug_label
 fid:
+    on_use: False
     eval_only: False
     fid_per_epoch: 50
     num_samples: 50000
     cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
 evalu:
     ema: True
-    sample: False
+    sample: True
 batch_size: 512
 num_epochs: 2000
 learning_rate: 0.0004 # DDIM

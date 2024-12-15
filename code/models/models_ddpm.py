@@ -225,17 +225,19 @@ def generate_verbose(state: NNXTrainState, model, rng, n_sample, t_state=None):
       outputs = (x_i, rng)
       return outputs
     all_x = []
-    # denoised = []
+    denoised = []
     all_t = []
     for i in range(num_steps):
       D = step_fn(i, (x_i, rng))
-      x_i, t = D[0]
+      x_i, t, d = D[0]
       rng = D[1]
       all_t.append(t)
+      denoised.append(d)
       all_x.append(x_i)
     images = jnp.stack(all_x, axis=1)
+    denoised = jnp.stack(denoised, axis=1)
     all_t = jnp.stack(all_t, axis=1)
-    return images, all_t
+    return images, all_t, denoised
   
   elif model.sampler in ['edm', 'edm-sde']:
     raise NotImplementedError
@@ -449,26 +451,30 @@ class SimDDPM(nn.Module):
     # return x_next, x_i + u_pred * (1 - t)
 
   def sample_one_step_adaptive(self, x_i, i, t_state, verbose=False):
+    """
+    t is bigger for noisy image
+    """
     # this is for no t
     # i: loop from 0 to self.n_T - 1
     merged_model = nn.merge(t_state.graphdef, t_state.params, t_state.rng_states, t_state.batch_stats, t_state.useless_variable_state)
     t = merged_model.forward(x_i)
     t = jnp.squeeze(t, axis=-1)  # remove the last dim
     # t_shape = jnp.repeat(t, x_i.shape[0]) # to ensure the shape is correct
+    t = jnp.clip(t, 0, 1-(1e-8))  # clip t to [0, 1]
 
     eps = self.forward_DDIM_pred_function(x_i, t, train=False)
-    x0_t = batch_mul(x_i - batch_mul(eps, jnp.sqrt(1 - t)), 1. / jnp.sqrt(t))  # when eta=0, no need to add noise
-    # move one step\
+    x0_t = batch_mul(x_i - batch_mul(eps, jnp.sqrt(t)), 1. / jnp.sqrt(1 - t))  # when eta=0, no need to add noise
+    # move one step
     t_next = jnp.maximum(t - 0.01, 0)
     # dt = jnp.where(dt < 0.01, 0, dt) # for small t, we don't move
-    x_next = batch_mul(x0_t, jnp.sqrt(t_next)) + batch_mul(eps, jnp.sqrt(1-t_next))
+    x_next = batch_mul(x0_t, jnp.sqrt(1-t_next)) + batch_mul(eps, jnp.sqrt(t_next))
 
     t_next_pred = merged_model.forward(x_next)
     t_next_pred = jnp.squeeze(t_next_pred, axis=-1)  # remove the last dim
     x_next = jnp.where(t_next_pred.reshape(-1, 1, 1, 1) < t.reshape(-1, 1, 1, 1), x_next, x_i) # if t_next is smaller than t, we don't move
 
     if verbose:
-      return x_next, t
+      return x_next, t, x0_t
     else:
       return x_next
   
@@ -658,7 +664,7 @@ class SimDDPM(nn.Module):
     z = batch_mul(jnp.sqrt(alphas), x_data) + batch_mul(jnp.sqrt(1-alphas), x_prior)
 
     # forward network
-    eps_pred = self.forward_DDIM_pred_function(z, t, augment_label=augment_label, train=train) # TODO: maybe we do t.float() here
+    eps_pred = self.forward_DDIM_pred_function(z, t, augment_label=augment_label, train=train)
 
 
     # loss
