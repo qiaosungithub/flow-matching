@@ -44,7 +44,7 @@ import utils.fid_util as fid_util
 import utils.sample_util as sample_util
 
 import models.models_ddpm as models_ddpm
-from models.models_ddpm import generate, edm_ema_scales_schedules
+from models.models_ddpm import generate, general_ema_scales_schedules
 import input_pipeline
 from input_pipeline import prepare_batch_data
 
@@ -202,6 +202,8 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, config)
     t_batch = jax.random.uniform(rngs.train(), (b1, b2))
   elif config.model.task == 'Diffusion':
     t_batch = jax.random.randint(rngs.train(), (b1, b2), minval=0, maxval=config.diffusion.diffusion_nT) # [0, num_time_steps)
+  elif config.model.task == 'EDM':
+    t_batch = jax.random.uniform(rngs.train(), (b1, b2))
   else:
     raise NotImplementedError('Unknown task: {}'.format(config.model.task))
 
@@ -564,7 +566,7 @@ def train_and_evaluate(
     steps_per_epoch=steps_per_epoch,
   )
 
-  ema_scales_fn = partial(edm_ema_scales_schedules, steps_per_epoch=steps_per_epoch, config=config)
+  ema_scales_fn = partial(general_ema_scales_schedules, steps_per_epoch=steps_per_epoch, config=config)
 
   ########### Create Train State ###########
   state = create_train_state(config, model, image_size, learning_rate_fn)
@@ -680,7 +682,7 @@ def train_and_evaluate(
     for n_batch, batch in zip(range(steps_per_epoch), train_loader):
 
       step = epoch * steps_per_epoch + n_batch
-      assert config.aug.use_edm_aug == False, "we don't support edm aug for now"
+      # assert config.aug.use_edm_aug == False, "we don't support edm aug for now"
       batch = prepare_batch_data(batch, config)
       # ep = step / steps_per_epoch
       ep = epoch + n_batch / steps_per_epoch # avoid jumping

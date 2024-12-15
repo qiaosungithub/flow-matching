@@ -112,10 +112,10 @@ class NCSNpp(nn.Module):
             raise ValueError(f"embedding type {embedding_type} unknown.")
         self.input_temb_dim = input_temb_dim = nf if embedding_type == "positional" else 2 * nf # NOTE: here, if use fourier embedding, the output dim is 2 * nf; for positional embedding, the output dim is nf. This is tang
         #################### aug label ############################
-        assert not use_aug_label
+        # assert not use_aug_label 
         if use_aug_label:
             assert aug_label_dim is not None
-            assert embedding_type == "positional" # in edm_jax, Kaiming only supports positional embedding
+            assert embedding_type == "fourier" # in edm_jax, Kaiming only supports fourier embedding
             self.augemb_layer = nn.Linear(aug_label_dim, input_temb_dim, kernel_init=default_initializer(), use_bias=False, rngs=rngs)
         #################### noise condition ############################
         #################### class condition ############################
@@ -315,6 +315,7 @@ class NCSNpp(nn.Module):
         # assert x.shape[-1] == self.out_channels or x.shape[-1] * 2== self.out_channels # assert个牛魔王
         
         assert (y is None) == (not self.class_conditional)
+        assert (augment_label is None) == ((not self.use_aug_label) or (not train)) # have augment label <=> training and using aug label
 
         logging_fn = logging.info if verbose else lambda x: None
 

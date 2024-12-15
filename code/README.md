@@ -5,7 +5,7 @@ To merge list:
 - [X] We start from `FM`
 - [X] Merge `DDPM` + `ADM`
 - [X] Merge `DDIM`
-- [ ] Merge `EDM`
+- [X] Merge `EDM`
 - [ ] Merge `CM`
 
 ## Sanity checks
@@ -14,6 +14,7 @@ To merge list:
 
 - Naive Flow Matching (status: **failed** (FID is lower than previous value))
 - ADM + class conditional (status: **failed** (FID is lower than previous value))
+- EDM (status: **running**)
 
 ### Evaluation
 
@@ -23,6 +24,7 @@ To merge list:
 - ADM + class conditional (status: **passed**)
 - ADM (uncond) + classifier guidance (status: **passed** (FID difference is within `1e-3`))
 - DDIM (status: **passed**)
+- EDM (status: **passed**)
 
 ## Experiments to do (this should be done finally once)
 

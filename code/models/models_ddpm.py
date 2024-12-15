@@ -100,8 +100,7 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
 
 
 def edm_ema_scales_schedules(step, config, steps_per_epoch):
-  # ema_halflife_kimg = 500  # from edm
-  ema_halflife_kimg = 50000  # log(0.5) / log(0.999999) * 128 / 1000 = 88722 kimg, from flow
+  ema_halflife_kimg = config.get('ema_halflife_king',50000)  # log(0.5) / log(0.999999) * 128 / 1000 = 88722 kimg, from flow
   ema_halflife_nimg = ema_halflife_kimg * 1000
 
   ema_rampup_ratio = 0.05
@@ -110,6 +109,13 @@ def edm_ema_scales_schedules(step, config, steps_per_epoch):
   ema_beta = 0.5 ** (config.batch_size / jnp.maximum(ema_halflife_nimg, 1e-8))
   scales = jnp.ones((1,), dtype=jnp.int32)
   return ema_beta, scales
+
+def general_ema_scales_schedules(step, config, steps_per_epoch):
+  sche_type = config.get('ema_schedule', 'edm')
+  if sche_type in ['edm', 'EDM']:
+    return edm_ema_scales_schedules(step, config, steps_per_epoch)
+  else:
+    raise NotImplementedError(f'Unknown ema_schedule: {sche_type}')
 
 def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
     """
@@ -382,15 +388,15 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
 
     outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
     images = outputs[0]
-    return images, num_steps * {
-      'euler': 1,
-      'heun': 2,
+    return images,  {
+      'euler': num_steps,
+      'heun': 2 * num_steps - 1,
     }[model.sampler] # heun has two steps per iteration
   
   elif model.sampler in ['edm', 'edm-sde']:
     assert y is None, NotImplementedError()
     assert classifier is None, NotImplementedError()
-    t_steps = model.compute_t(jnp.arange(num_steps), num_steps)
+    t_steps = model.compute_edm_t(jnp.arange(num_steps), num_steps)
     t_steps = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
     x_i = x_prior * t_steps[0]
 
@@ -412,9 +418,9 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
 
     outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
     images = outputs[0]
-    return images, num_steps * num_steps * {
-      'edm': 2,
-      'edm-sde': 2,
+    return images, {
+      'edm': 2 * num_steps - 1,
+      'edm-sde': 2 * num_steps - 1,
     }[model.sampler]
     # # for debug
     # all_x = []
@@ -564,6 +570,8 @@ def get_t_process_fn(t_condition_method):
     return lambda t: t
   elif t_condition_method == 'not': # no t: 没有t
     return lambda t: jnp.zeros_like(t)
+  elif t_condition_method == 'dot25log':
+    return lambda t: 0.25 * jnp.log(t)
   else:
     raise NotImplementedError('Unknown t_condition_method: {m}'.format(m=t_condition_method))
 
@@ -584,7 +592,7 @@ class SimDDPM(nn.Module):
     use_aug_label = False,
     average_loss = False,
     eps=1e-3,
-    h_init=0.035,
+    # h_init=0.035,
     sampler='euler',
     sample_clip_denoised=True,
     ode_solver='jax',
@@ -620,7 +628,7 @@ class SimDDPM(nn.Module):
     self.use_aug_label = use_aug_label
     self.average_loss = average_loss
     self.eps = eps
-    self.h_init = h_init
+    # self.h_init = h_init
     self.sampler = sampler
     self.ode_solver = ode_solver
     self.learn_var = learn_var
@@ -701,21 +709,23 @@ class SimDDPM(nn.Module):
     # self.net_ema = net_fn(name='net_ema')
     # self.num_timesteps = num_diffusion_timesteps
     self.net = net_fn()
-
+    
+    # edm specific settings
+    if self.task in ['edm', 'EDM']:
+      self.t_min = 0.002
+      self.t_max = 80.0
+      self.rho = 7.0
+      self.data_std = 0.5    
 
   def get_visualization(self, list_imgs):
     vis = jnp.concatenate(list_imgs, axis=1)
     return vis
 
-  def compute_t(self, indices, scales):
-    raise NotImplementedError
-    t_max = 80
-    t_min = 0.002
-    rho = 7.0
-    t = t_max ** (1 / rho) + indices / (scales - 1) * (
-        t_min ** (1 / rho) - t_max ** (1 / rho)
+  def compute_edm_t(self, indices, scales):
+    t = self.t_max ** (1 / self.rho) + indices / (scales - 1) * (
+        self.t_min ** (1 / self.rho) - self.t_max ** (1 / self.rho)
     )
-    t = t**rho
+    t = t**self.rho
     return t
 
   def training_diffusion_schedule(self):
@@ -747,7 +757,7 @@ class SimDDPM(nn.Module):
     if self.sampler == 'euler':
       x_next = self.sample_one_step_euler(x_i, i) 
     elif self.sampler == 'heun':
-      x_next = self.sample_one_step_heun(x_i, i) 
+      x_next = self.sample_one_step_heun(x_i, i)
     else:
       raise NotImplementedError(f'Unknown sampler: {self.sampler}')
 
@@ -1001,26 +1011,6 @@ class SimDDPM(nn.Module):
   #   eps_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
   #   return eps_pred
   
-  def forward_edm_denoising_function(self, x, sigma, augment_label=None, train: bool = True):  # EDM
-    """
-    code from edm
-    for FM API use
-    ---
-    input: x (noisy image, =x+sigma*noise), sigma (condition)
-    We hope this function operates D(x+sigma*noise) = x
-    our network has F((1-t)x + t*noise) = x - noise
-    """
-
-    # forward network
-    c_in = 1 / (sigma + 1)
-    in_x = batch_mul(x, c_in)
-    c_out = sigma / (sigma + 1)
-
-    F_x = self.forward_prediction_function(in_x, c_in, augment_label=augment_label, train=train)
-
-    D_x = in_x + batch_mul(F_x, c_out)
-    return D_x
-
   def forward_FM(self, imgs, labels, augment_label, noise_batch, t_batch, train: bool = True):
     """
     You should first sample the noise and t and input them
@@ -1227,6 +1217,98 @@ class SimDDPM(nn.Module):
        x_data_pred, # prediction of clean image, reparameterized by the network
       # x_data_sanity, # sanity check, this should be the same as `gt`
       ])
+
+    return loss_train, dict_losses, images
+  
+  def forward_edm_denoising_function(self, x, sigma, augment_label=None, train: bool = True):  # EDM
+    """
+    code from edm
+    ---
+    input: x (noisy image, =x+sigma*noise), sigma (condition)
+    We hope this function operates D(x+sigma*noise) = x
+    our network has F((1-t)x + t*noise) = x - noise
+    """
+
+    # # use FM network to denoise
+    # c_in = 1 / (sigma + 1)
+    # in_x = batch_mul(x, c_in)
+    # c_out = sigma / (sigma + 1)
+
+    # F_x = self.forward_flow_pred_function(in_x, c_in, augment_label=augment_label, train=train)
+
+    # D_x = in_x + batch_mul(F_x, c_out)
+    # return D_x
+
+    # edm network
+    c_skip = self.data_std ** 2 / (sigma ** 2 + self.data_std ** 2)
+    c_out = sigma * self.data_std / jnp.sqrt(sigma ** 2 + self.data_std ** 2)
+
+    c_in = 1 / jnp.sqrt(sigma ** 2 + self.data_std ** 2)
+
+    # forward network
+    in_x = batch_mul(x, c_in)
+    sigma = sigma.reshape(sigma.shape[0])
+
+    # F_x = self.net(in_x, c_noise, augment_label=augment_label, train=train)
+    F_x = self.forward_prediction_function(in_x, sigma, augment_label=augment_label, train=train)
+
+    D_x = batch_mul(x, c_skip) + batch_mul(F_x, c_out)
+    return D_x
+  
+  def forward_EDM(self, imgs, labels, augment_label, noise_batch, t_batch, train: bool = True):
+    """
+    code from edm
+    for FM API use
+    ---
+    input: x (noisy image, =x+sigma*noise), sigma (condition)
+    We hope this function operates D(x+sigma*noise) = x
+    our network has F((1-t)x + t*noise) = x - noise
+    """
+    
+    """
+    edm version
+    ---
+    You should first sample the noise and t and input them
+    ---
+    t_batch: here is normal (bs,), we will process it into sigma batch. NOTE: this is normal, not uniform
+    """
+    imgs = imgs.astype(self.dtype)
+    gt = imgs
+    x = imgs
+    bz = imgs.shape[0]
+
+    assert noise_batch.shape == x.shape
+    assert t_batch.shape == (bz,)
+    # t_batch = t_batch.reshape(bz, 1, 1, 1)
+
+    # -----------------------------------------------------------------
+    # sample t step
+    sigma = jnp.exp(t_batch * self.P_std + self.P_mean)
+    weight = (sigma ** 2 + self.data_std ** 2) / (sigma * self.data_std) ** 2
+
+    xn = x + batch_mul(noise_batch, sigma)
+    D_xn = self.forward_edm_denoising_function(xn, sigma, augment_label)
+
+    # loss
+    loss = (D_xn - gt)**2
+    loss = batch_mul(loss, weight)
+
+    if self.average_loss:
+      raise ValueError("we recommend to use sum loss")
+      loss = jnp.mean(loss, axis=(1, 2, 3))  # mean over pixels
+    else:
+      loss = jnp.sum(loss, axis=(1, 2, 3))  # sum over pixels
+    loss = loss.mean()  # mean over batch
+
+    loss_train = loss
+
+    dict_losses = {}
+    dict_losses['loss'] = loss  # legacy
+    dict_losses['loss_train'] = loss_train
+
+    # prepare some visualization
+    # if we can pred u, then we can reconstruct x_data from x_prior
+    images = self.get_visualization([gt, xn, D_xn])
 
     return loss_train, dict_losses, images
   
