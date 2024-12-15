@@ -4,7 +4,7 @@ To merge list:
 
 - [X] We start from `FM`
 - [X] Merge `DDPM` + `ADM`
-- [ ] Merge `DDIM`
+- [X] Merge `DDIM`
 - [ ] Merge `EDM`
 - [ ] Merge `CM`
 
@@ -22,6 +22,7 @@ To merge list:
 - ADM (status: **passed**)
 - ADM + class conditional (status: **passed**)
 - ADM (uncond) + classifier guidance (status: **passed** (FID difference is within `1e-3`))
+- DDIM (status: **passed**)
 
 ## Experiments to do (this should be done finally once)
 

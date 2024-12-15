@@ -251,6 +251,8 @@ def diffusion_sampling_schedule(diffusion_schedule, diffusion_nT, sample_nT):
         'sample_posterior_mean_coef1': posterior_mean_coef1[::-1],
         'sample_posterior_mean_coef2': posterior_mean_coef2[::-1],
         'sample_beta': new_betas[::-1],
+        'sample_alpha_cumprods': new_alpha_cumprods[::-1],
+        'sample_alphas_cumprod_prev': new_alphas_cumprod_prev[::-1],
     }) # note we flip t
     return o
 
@@ -267,6 +269,10 @@ def diffusion_beta_schedule(diffusion_schedule, diffusion_nT):
               diffusion_nT,
               lambda t: math.cos((t + 0.008) / 1.008 * math.pi / 2) ** 2,
           )
+    elif diffusion_schedule == 'linear':
+      return jnp.linspace(
+            1e-4, 0.02, diffusion_nT, dtype=np.float32
+        )
     else:
       raise NotImplementedError(f'Unknown diffusion schedule: {diffusion_schedule}')
     
@@ -421,9 +427,8 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
     # images = jnp.stack(all_x, axis=0)
     # denoised = jnp.stack(denoised, axis=0)
     # return images, denoised
-  elif model.sampler in ['ddpm']:
+  elif model.sampler in ['ddpm', 'DDPM']:
     x_i = x_prior
-    # o = create_zhh_SAMPLING_diffusion_schedule(config)
     o = model.sampling_diffusion_schedule()
     t_steps = o['sample_ts']
     sqrt_recip_alphas_cumprod_steps = o['sample_sqrt_recip_alphas_cumprod']
@@ -478,55 +483,40 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
     # return images, denoised
   
     return images, num_steps
-  # elif model.sampler == 'DDIM':
-  #   skip = model.num_diffusion_timesteps // num_steps
-  #   # skip = 1
-  #   seq = range(0, model.num_timesteps, skip)
-  #   T = len(seq)
-  #   seq_next = [-1] + list(seq[:-1])
-  #   seq_reversed = jnp.array(list(reversed(seq)))
-  #   seq_next_reversed = jnp.array(list(reversed(seq_next)))
-  #   eta = 0.0 # control the noise level added every step, 0 -> ODE sampler TODO: implement eta > 0.0
-  #   n = x_prior.shape[0]
-  #   x0_preds = []
-  #   xs = [x_prior]
+  elif model.sampler in ['ddim', 'DDIM']:
+    assert y is None, NotImplementedError()
+    assert classifier is None, NotImplementedError()
+    x_i = x_prior
+    o = model.sampling_diffusion_schedule()
+    t_steps = o['sample_ts']
+    alpha_cumprod_steps = o['sample_alpha_cumprods']
+    alpha_cumprod_prev_steps = o['sample_alphas_cumprod_prev']
 
-  #   x_i = x_prior
+    def step_fn(i, inputs):
+      x_i, rng = inputs
+      rng_this_step = jax.random.fold_in(rng, i)
+      rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
 
-  #   def step_fn(i, inputs):
-  #     x_i, rng = inputs
+      merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
+      x_i = merged_model.sample_one_step_DDIM(x_i, rng_z, i, y=y, t_steps=t_steps, alpha_cumprod_steps=alpha_cumprod_steps, alpha_cumprod_prev_steps=alpha_cumprod_prev_steps)
+      outputs = (x_i, rng)
+      return outputs
+      # return outputs, denoised # for debug
 
-  #     _i = seq_reversed[i]
-  #     _j = seq_next_reversed[i]
-
-  #     t = jnp.ones(n) * _i
-  #     next_t = jnp.ones(n) * _j
-
-  #     rng_this_step = jax.random.fold_in(rng, i)
-  #     rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
-
-  #     merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-  #     x_i = merged_model.sample_one_step_DDIM(x_i, rng_z, t, next_t)
-  #     # x_i, denoised = merged_model.sample_one_step_DDIM(x_i, rng_z, t, next_t) # for debug
-
-  #     outputs = (x_i, rng)
-  #     return outputs
-  #     # return outputs, denoised # for debug
-
-  #   outputs = jax.lax.fori_loop(0, T, step_fn, (x_i, rng))
-  #   images = outputs[0]
-  #   return images
-  #   # all_x = []
-  #   # denoised = []
-  #   # for i in range(T):
-  #   #   D = step_fn(i, (x_i, rng))
-  #   #   x_i, rng = D[0]
-  #   #   denoised.append(D[1])
-  #   #   all_x.append(x_i)
-  #   # images = jnp.stack(all_x, axis=0)
-  #   # denoised = jnp.stack(denoised, axis=0)
-  #   # return images, denoised # for debug
-
+    outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
+    images = outputs[0]
+    # all_x = []
+    # denoised = []
+    # for i in range(T):
+    #   D = step_fn(i, (x_i, rng))
+    #   x_i, rng = D[0]
+    #   denoised.append(D[1])
+    #   all_x.append(x_i)
+    # images = jnp.stack(all_x, axis=0)
+    # denoised = jnp.stack(denoised, axis=0)
+    # return images, denoised # for debug
+    
+    return images, num_steps
   else:
     raise NotImplementedError(f'Unknown sampler: {model.sampler}')
 
@@ -947,26 +937,32 @@ class SimDDPM(nn.Module):
       # return x_start
       return sample
   
-  # def sample_one_step_DDIM(self, x_i, rng, t, next_t):
-  #   """
-  #   rng here is useless, if we set eta = 0
-  #   """
-  #   # we only implement 'generalized' here
-  #   # we only implement 'skip_type=uniform' here
-  #   at = self.compute_alpha(t.astype(jnp.int32))
-  #   at_next = self.compute_alpha(next_t.astype(jnp.int32))
+  def sample_one_step_DDIM(self, x_i, rng, i, t_steps, alpha_cumprod_steps, alpha_cumprod_prev_steps,y=None):
+    """
+    rng here is useless, if we set eta = 0
+    """
+    # we only implement 'generalized' here
+    # we only implement 'skip_type=uniform' here
+    b = x_i.shape[0]
+    t = batch_t(t_steps[i],b)
+    at = batch_t(alpha_cumprod_steps[i],b)
+    at_next = batch_t(alpha_cumprod_prev_steps[i],b)
 
-  #   eps = self.forward_DDIM_pred_function(x_i, t, train=False)
-  #   # x0_t = (x_i - eps * jnp.sqrt(1 - at)) / jnp.sqrt(at)
-  #   x0_t = batch_mul(x_i - batch_mul(eps, jnp.sqrt(1 - at)), 1. / jnp.sqrt(at))  # when eta=0, no need to add noise
-  #   # when eta=0, no need to add noise
-  #   c2 = jnp.sqrt(1 - at_next)
-  #   # x_next = jnp.sqrt(at_next) * x0_t + c2 * eps
-  #   x_next = batch_mul(x0_t, jnp.sqrt(at_next)) + batch_mul(eps, c2)
-  #   return x_next
-  #   # x_next = x0_t = x_i
-  #   # print(at, at_next) # debug
-  #   # return x_next, x0_t # debug
+    assert not self.learn_var, 'DDIM only supports fixed variance DDPMs'
+    eps = self.forward_prediction_function(x_i, t, train=False)
+    # x0_t = (x_i - eps * jnp.sqrt(1 - at)) / jnp.sqrt(at)
+    x0_t = batch_mul(x_i - batch_mul(eps, jnp.sqrt(1 - at)), 1. / jnp.sqrt(at))  # when eta=0, no need to add noise
+    # when eta=0, no need to add noise
+    if self.sample_clip_denoised:
+      x0_t = jnp.clip(x0_t, -1, 1)
+    
+    c2 = jnp.sqrt(1 - at_next)
+    # x_next = jnp.sqrt(at_next) * x0_t + c2 * eps
+    x_next = batch_mul(x0_t, jnp.sqrt(at_next)) + batch_mul(eps, c2)
+    return x_next
+    # x_next = x0_t = x_i
+    # print(at, at_next) # debug
+    # return x_next, x0_t # debug
 
   def forward_consistency_function(self, x, t, pred_t=None):
     raise NotImplementedError

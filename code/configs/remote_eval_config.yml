@@ -2,8 +2,9 @@ continue_training: False # this is for resuming training
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241206_001843_i2wyhh_kmh-tpuvm-v3-32-1__b_lr_ep_eval # FM model (w/ t)
 # load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241213_190021_ftvrxo_kmh-tpuvm-v2-32-2__b_lr_ep_eval # New FM model (w/ t)
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241207_160106_l7h71r_kmh-tpuvm-v3-32-1__b_lr_ep_eval # DDPM model (w/ t)
-load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241210_003420_srefmk_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/best_fid # ADM model (w/ t)
+# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241210_003420_srefmk_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/best_fid # ADM model (w/ t)
 # load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241210_003719_b663n5_kmh-tpuvm-v2-32-7__b_lr_ep_eval/best_fid # ADM class-conditional model (w/ t)
+load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241209_004559_gihhxu_kmh-tpuvm-v2-32-1__b_lr_ep_eval/checkpoint_194000 # DDIM model (w/ t); diffusion schedule is "linear"
 ############################################
 #     Normal Training Configuration        #
 ############################################
@@ -27,13 +28,13 @@ model:
     ##### FM-specific configs #####
 
     ##### Diffusion-specific configs #####
-    learn_var: True # default: False
+    learn_var: False # default: False
 
     ##### Conditional Generation #####
     class_conditional: False
 
     ##### Sampling Configs #####
-    n_T: 250 # num of sample steps, matches "diffusion_nT"
+    n_T: 100 # num of sample steps, matches "diffusion_nT"
     
     # --- Flow Matching --- #
     # sampler: euler
@@ -44,13 +45,13 @@ model:
     # ode_solver: O
 
     # --- Diffusion --- #
-    sampler: ddpm
-    # sampler: DDIM
+    # sampler: ddpm
+    sampler: DDIM
     sample_clip_denoised: True
 
 diffusion:
-    diffusion_nT: 4000
-    diffusion_schedule: cosine
+    diffusion_nT: 1000
+    diffusion_schedule: linear
 
 dataset:
     name: cifar10
@@ -88,19 +89,19 @@ checkpoint_per_epoch: 500
 save_by_fid: False # if True, then only save checkpoint with fid better than all previous checkpoints
 
 ##### Classifier Guidance #####
-run_classifier_guidance: True
+run_classifier_guidance: False
 # load_classifier_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241206_233913_v8zrw5_kmh-tpuvm-v2-32-preemptible-1__b_lr_ep_eval # this classifier has lowest valid loss
-load_classifier_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241215_025006_1tmfkz_kmh-tpuvm-v2-32-4__b_lr_ep_eval # a new classifier for testing
-classifier_scale: 5.0
-classifier_model:
-    task: Classifier
-    image_size: 32
-    out_channels: 3
-    base_width: 32
-    n_T: 250 # num of sample steps, matches "diffusion_nT"
-    dropout: 0.3
-    net_type: ncsnppedm_classifier
-    average_loss: True # use average or sum for loss
+# load_classifier_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241215_025006_1tmfkz_kmh-tpuvm-v2-32-4__b_lr_ep_eval # a new classifier for testing
+# classifier_scale: 5.0
+# classifier_model:
+#     task: Classifier
+#     image_size: 32
+#     out_channels: 3
+#     base_width: 32
+#     n_T: 250 # num of sample steps, matches "diffusion_nT"
+#     dropout: 0.3
+#     net_type: ncsnppedm_classifier
+#     average_loss: True # use average or sum for loss
 
-    t_condition_method: direct # default: log999
-    classifier_model_depth: 3
+#     t_condition_method: direct # default: log999
+#     classifier_model_depth: 3
