@@ -203,7 +203,7 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, config)
   elif config.model.task == 'Diffusion':
     t_batch = jax.random.randint(rngs.train(), (b1, b2), minval=0, maxval=config.diffusion.diffusion_nT) # [0, num_time_steps)
   elif config.model.task == 'EDM':
-    t_batch = jax.random.uniform(rngs.train(), (b1, b2))
+    t_batch = jax.random.normal(rngs.train(), (b1, b2))
   else:
     raise NotImplementedError('Unknown task: {}'.format(config.model.task))
 
