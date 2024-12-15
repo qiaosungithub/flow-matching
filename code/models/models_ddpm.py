@@ -601,7 +601,7 @@ class SimDDPM(nn.Module):
     # no_condition_t=False,
     t_condition_method = 'log999',
     rngs=None,
-    embedding_type='fourier',
+    embedding_type='positional',
     # task
     task='FM',
     
@@ -691,7 +691,7 @@ class SimDDPM(nn.Module):
         out_channels=self.out_channels,
         out_channel_multiple = (2 if self.learn_var else 1),
         dropout=self.dropout,
-        embedding_type=embedding_type,
+        # embedding_type=embedding_type, # this is uselsee
         use_aug_label=self.use_aug_label,
         aug_label_dim=9,
         class_conditional=self.class_conditional,
@@ -1235,6 +1235,8 @@ class SimDDPM(nn.Module):
     return loss_train, dict_losses, images
   
   def forward_Classifier(self, imgs, labels, augment_label, noise_batch, t_batch, train: bool = True):
+    # 别被忽悠了: 这个train没有用！
+    
     imgs = imgs.astype(self.dtype)
     gt = imgs
     x = imgs

@@ -610,7 +610,7 @@ def train_and_evaluate(
     # zhh's checkpointer
     if (
       (epoch + 1) % config.checkpoint_per_epoch == 0
-      or epoch == config.num_epochs
+      or epoch == config.num_epochs - 1
       or epoch == 0  # saving at the first epoch for sanity check
       ):
       # pass

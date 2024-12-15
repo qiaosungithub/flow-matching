@@ -82,7 +82,7 @@ def get_config():
   classifier_model.ode_solver = 'jax'  # or 'scipy', which use RK45 solver
   classifier_model.net_type = 'ncsnpp'
 
-  classifier_model.no_condition_t = False
+  # classifier_model.no_condition_t = False
   classifier_model.learn_var = False
   classifier_model.class_conditional = False
 

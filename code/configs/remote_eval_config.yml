@@ -1,5 +1,6 @@
 continue_training: False # this is for resuming training
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241206_001843_i2wyhh_kmh-tpuvm-v3-32-1__b_lr_ep_eval # FM model (w/ t)
+# load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241213_190021_ftvrxo_kmh-tpuvm-v2-32-2__b_lr_ep_eval # New FM model (w/ t)
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241207_160106_l7h71r_kmh-tpuvm-v3-32-1__b_lr_ep_eval # DDPM model (w/ t)
 load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241210_003420_srefmk_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/best_fid # ADM model (w/ t)
 # load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241210_003719_b663n5_kmh-tpuvm-v2-32-7__b_lr_ep_eval/best_fid # ADM class-conditional model (w/ t)
@@ -40,6 +41,7 @@ model:
     # sampler: edm
     # sampler: edm-sde
     # ode_solver: jax
+    # ode_solver: O
 
     # --- Diffusion --- #
     sampler: ddpm
@@ -87,8 +89,8 @@ save_by_fid: False # if True, then only save checkpoint with fid better than all
 
 ##### Classifier Guidance #####
 run_classifier_guidance: True
-# load_classifier_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241206_223120_0d4dku_kmh-tpuvm-v2-32-preemptible-1__b_lr_ep_eval # this classifier has lowest valid loss
-load_classifier_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241214_030452_kf66zv_kmh-tpuvm-v2-32-4__b_lr_ep_eval # a new classifier for testing
+# load_classifier_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241206_233913_v8zrw5_kmh-tpuvm-v2-32-preemptible-1__b_lr_ep_eval # this classifier has lowest valid loss
+load_classifier_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241215_025006_1tmfkz_kmh-tpuvm-v2-32-4__b_lr_ep_eval # a new classifier for testing
 classifier_scale: 5.0
 classifier_model:
     task: Classifier
@@ -101,4 +103,4 @@ classifier_model:
     average_loss: True # use average or sum for loss
 
     t_condition_method: direct # default: log999
-    classifier_model_depth: 1
+    classifier_model_depth: 3

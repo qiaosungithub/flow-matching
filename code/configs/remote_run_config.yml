@@ -100,7 +100,7 @@ model:
     base_width: 32
     net_type: ncsnppedm_classifier
     dropout: 0.3
-    classifier_model_depth: 1
+    classifier_model_depth: 3
 
 diffusion:
     diffusion_nT: 4000
@@ -116,13 +116,13 @@ dataset:
 batch_size: 2048
 num_epochs: 500
 learning_rate: 0.0008
-weight_decay: 0.0
+weight_decay: 0.099
 optimizer: adamw
-adam_b2: 0.999
+adam_b2: 0.95
 grad_clip: 0.0
 warmup_epochs: 200
 log_per_step: 20
 visualize_per_epoch: 50
 eval_per_epoch: 100
-checkpoint_per_epoch: 200
+checkpoint_per_epoch: 500 # only save the last checkpoint
 save_by_fid: False # if True, then only save checkpoint with fid better than all previous checkpoints

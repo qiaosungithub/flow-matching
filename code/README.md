@@ -12,8 +12,8 @@ To merge list:
 
 ### Training
 
-- Naive Flow Matching (status: running)
-- ADM + class conditional (status: running)
+- Naive Flow Matching (status: **failed** (FID is lower than previous value))
+- ADM + class conditional (status: **failed** (FID is lower than previous value))
 
 ### Evaluation
 
@@ -21,6 +21,7 @@ To merge list:
 - DDPM (status: **passed**)
 - ADM (status: **passed**)
 - ADM + class conditional (status: **passed**)
+- ADM (uncond) + classifier guidance (status: **passed** (FID difference is within `1e-3`))
 
 ## Experiments to do (this should be done finally once)
 

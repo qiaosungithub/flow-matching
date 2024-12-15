@@ -55,7 +55,7 @@ class NCSNpp(nn.Module):
         dropout = 0.0,
         fir_kernel = (1, 3, 3, 1),
         resblock_type = "biggan",
-        embedding_type = "fourier",
+        embedding_type = "positional",
         fourier_scale = 16.0,
         rngs = None,
         use_aug_label = False,
