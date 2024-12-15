@@ -41,9 +41,10 @@ fid:
 evalu:
     ema: True
     sample: False
-ema_value: 0.9999 # ICM
+# ema_value: 0.9999 # ICM
+ema_value: 0.9993 # ECM
 batch_size: 1024
-num_epochs: 2000
+num_epochs: 4000
 # learning_rate: 0.0004
 learning_rate: 0.0001
 lr_schedule: const
@@ -51,7 +52,7 @@ weight_decay: 0.0
 optimizer: radam # CT & ECM
 # optimizer: adamw
 nan_to_num: True # ECM
-adam_b2: 0.999
+adam_b2: 0.95
 grad_clip: 0.0
 warmup_epochs: 0 # CT & ECM
 log_per_step: 100
