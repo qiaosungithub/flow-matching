@@ -127,6 +127,12 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
     K = total_steps
     r = step / K
     scales = jnp.array(jnp.ceil(jnp.sqrt(s0**2 + ((s1 + 1)**2 - s0**2) * r) - 1) + 1, dtype=jnp.float32)
+  elif config.ct.n_schedule == 'quickexp':
+    s0 = start_scales
+    s1 = end_scales
+    K = total_steps
+    K_ = jnp.floor(K / (jnp.log2(jnp.floor(s1 / s0)) / 2 + 1)) # log_4{x} = log_2{x} / 2
+    scales = jnp.minimum(s0 * (4 ** jnp.floor(step / K_)), s1) + 1
   else:
     raise ValueError(f'Unknown schedule: {config.ct.n_schedule}')
   

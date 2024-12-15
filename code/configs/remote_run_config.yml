@@ -54,20 +54,25 @@ model:
     t_condition_method: one_fourth_log # default: one_fourth_log
 
     # CT
-    # embedding_type: fourier # try
-    # fourier_scale: 0.02 # CT
+    embedding_type: fourier # try
+    fourier_scale: 0.02 # CT
 
-    embedding_type: positional
-    t_sampling: original
-    # t_sampling: icm # or original
+    # embedding_type: positional
+    # t_sampling: original
+    t_sampling: icm # or original
     # loss_type: "l2"
+    # weighting: "uniform"
     # loss_type: "huber_bug"
-    loss_type: "huber"
+    # loss_type: "huber0_01"
+    loss_type: "huber_wo_mean"
+    # loss_type: "huber"
 ct:
     start_scales: 10
     # end_scales: 640
     end_scales: 1280
     # end_scales: 2560
+    # n_schedule: baseline
+    # n_schedule: quickexp
     n_schedule: exp
     # n_schedule: square
 dataset:
@@ -80,19 +85,32 @@ aug:
     use_edm_aug: False
 fid:
     eval_only: False
-    fid_per_epoch: 200
+    fid_per_epoch: 100 # increase fid freq
     num_samples: 50000
     cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
 evalu:
     ema: True
     sample: False
-ema_value: 0.9993
+ema_schedule: const # default: const
+# ema_schedule: edm # default: const
+ema_value: 0.9993 # only useful for const
+ema_king: 2000 # default: 2000 # only useful for edm
+ema_ramp: 0.2 # default: 0.05 # only useful for edm
+# ema_ramp: 0.05 # default: 0.05 # only useful for edm
+# batch_size: 512
 batch_size: 2048
 num_epochs: 2000
 learning_rate: 0.0004
-# learning_rate: 0.0001
-lr_schedule: const
+# learning_rate: 0.0004
+# lr_schedule: cosine
+lr_schedule: heaviside
+warmup_epochs: 1
+min_lr: 0.0001
+lr_jump_ep: 1000
+# min_lr: 0.00005
+# lr_schedule: const
 weight_decay: 0.0
+# optimizer: adamw # CT, TODO: radam / adamw?
 optimizer: radam # CT, TODO: radam / adamw?
 adam_b2: 0.95
 grad_clip: 0.0

@@ -99,7 +99,12 @@ def create_learning_rate_fn(
   elif config.lr_schedule in ['cosine', 'cos']:
     cosine_epochs = max(config.num_epochs - config.warmup_epochs, 1)
     sched_fn = optax.cosine_decay_schedule(
-      init_value=base_learning_rate, decay_steps=cosine_epochs * steps_per_epoch
+      init_value=base_learning_rate, decay_steps=cosine_epochs * steps_per_epoch, alpha=config.min_lr / base_learning_rate
+    )
+  elif config.lr_schedule == 'heaviside':
+    return optax.join_schedules(
+      schedules=[constant_lr_fn(base_learning_rate), constant_lr_fn(config.min_lr)],
+      boundaries=[config.lr_jump_ep * steps_per_epoch],
     )
   else:
     raise ValueError('Unknown learning rate scheduler {}'.format(config.lr_schedule))
