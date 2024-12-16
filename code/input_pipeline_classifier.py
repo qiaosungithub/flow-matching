@@ -131,17 +131,20 @@ def create_split(
         ]),
       )
     elif dataset_cfg.root == "CIFAR":
-      ds = datasets.CIFAR10(
-        root='~/cache',
-        train=True,
-        download=True,
-        transform=transforms.Compose([
+      t_list = [
           transforms.RandomResizedCrop(32, scale=(0.8, 1.0), ratio=(3.0 / 4.0, 4.0 / 3.0),), # 不知道是啥，先相信你
           transforms.RandomHorizontalFlip(p=0.5),
           # transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
           transforms.ToTensor(),
           transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-        ]),
+        ]
+      if not dataset_cfg.get('simple_augs', False):
+        t_list = t_list[1:] # only keep flip
+      ds = datasets.CIFAR10(
+        root='~/cache',
+        train=True,
+        download=True,
+        transform=transforms.Compose(t_list),
       )
     else:
       raise NotImplementedError(f"Dataset {dataset_cfg.root} not supported.")

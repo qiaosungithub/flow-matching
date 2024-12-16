@@ -32,7 +32,7 @@ from flax.training.train_state import TrainState as FlaxTrainState
 from functools import partial
 
 # from models.models_unet import ContextUnet
-from models.models_ncsnpp_edm import NCSNpp as NCSNppEDM, NCSNppClassifier as NCSNppEDMClassifier
+from models.models_ncsnpp_edm import NCSNpp as NCSNppEDM, NCSNppClassifier as NCSNppEDMClassifier, SQA_TNet_Ver1 as SQA_TNet_Ver1
 # from models.models_ncsnpp import NCSNpp
 # import models.jcm.sde_lib as sde_lib
 from models.jcm.sde_lib import batch_mul
@@ -701,6 +701,33 @@ class SimDDPM(nn.Module):
         use_attn_pool=True,
         ### end
         rngs=self.rngs)
+    elif self.net_type == 'ncsnppedm_t_predictor':
+      assert not self.class_conditional, 'class conditional t predictors are not supported yet'
+      net_fn = partial(NCSNppEDMClassifier,
+        base_width=self.base_width,
+        image_size=self.image_size,
+        out_channels=self.out_channels,
+        out_channel_multiple = (2 if self.learn_var else 1),
+        dropout=self.dropout,
+        # embedding_type=embedding_type, # this is uselsee
+        use_aug_label=self.use_aug_label,
+        aug_label_dim=9,
+        class_conditional=self.class_conditional,
+        num_classes=1,
+        num_res_blocks=classifier_model_depth,
+        ### these settings are from repo
+        use_scale_shift_norm=True,
+        resblock_updown=True,
+        use_attn_pool=True,
+        ### end
+        rngs=self.rngs)
+    elif self.net_type == 'sqa_t_predictor':
+      assert not self.class_conditional, 'class conditional t predictors are not supported yet'
+      net_fn = partial(SQA_TNet_Ver1,
+        base_width=self.base_width,
+        use_sigmoid = True,
+        # use_sigmoid = False,
+        rngs=self.rngs)
     else:
       raise ValueError(f'Unknown net type: {self.net_type}')
 
@@ -716,6 +743,9 @@ class SimDDPM(nn.Module):
       self.t_max = 80.0
       self.rho = 7.0
       self.data_std = 0.5    
+      
+    if 't_predictor' in self.task:
+      assert t_condition_method == 'not', 't predictors cannot condition on t'
 
   def get_visualization(self, list_imgs):
     vis = jnp.concatenate(list_imgs, axis=1)
@@ -1396,6 +1426,104 @@ class SimDDPM(nn.Module):
 
     return loss_train, dict_losses, images
   
+  def pre_process_for_t_prediction_Diffusion(self, imgs, labels, augment_label, noise_batch, t_batch, train: bool = True):
+    imgs = imgs.astype(self.dtype)
+    x = imgs
+    bz = imgs.shape[0]
+
+    # -----------------------------------------------------------------
+    #  diffusion alpha, betas
+    o = self.training_diffusion_schedule()
+    o = index_dictionary(o, t_batch)
+    alpha_cumprod_batch, alpha_cumprod_prev_batch, posterior_log_variance_clipped_batch, beta_batch = o['alphas_cumprod'], o['alphas_cumprod_prev'], o['posterior_log_variance_clipped'], o['betas']
+    
+    betas = beta_batch
+    assert betas.shape == t_batch.shape, 'betas shape: {s}, t_batch shape: {t}'.format(s=betas.shape, t=t_batch.shape)
+    alphas = 1.0 - betas
+    alphas_cumprod = alpha_cumprod_batch
+    assert alpha_cumprod_batch.shape == t_batch.shape, 'alpha_cumprod_batch shape: {s}, t_batch shape: {t}'.format(s=alpha_cumprod_batch.shape, t=t_batch.shape)
+    sqrt_alphas_cumprod = jnp.sqrt(alphas_cumprod)
+    sqrt_one_minus_alphas_cumprod = jnp.sqrt(1.0 - alphas_cumprod)
+    
+    # -----------------------------------------------------------------
+
+    # sample from data
+    x_data = x
+    # sample from prior (noise)
+    x_prior = noise_batch
+
+    x_mixtue = batch_mul(sqrt_alphas_cumprod, x_data) + batch_mul(sqrt_one_minus_alphas_cumprod, x_prior)
+    
+    # we normalize t into mean 0 and std 1, before letting our network to predict
+    # for DDPM: 0, 1, 2, ..., self.diffusion_nT - 1 -> approx as [0, self.diffusion_nT]
+    t_batch = t_batch / self.diffusion_nT # [0, 1]
+    t_batch = (t_batch - 0.5) * jnp.sqrt(jnp.array(12.0, dtype=jnp.float32))  # std becomes 1
+    
+    return x_mixtue, t_batch
+  
+  def pre_process_for_t_prediction_FM(self, imgs, labels, augment_label, noise_batch, t_batch, train: bool = True):
+    imgs = imgs.astype(self.dtype)
+    x = imgs
+    bz = imgs.shape[0]
+
+
+    # sample from data
+    x_data = x
+    # sample from prior (noise)
+    x_prior = noise_batch
+
+    t = t_batch
+    t = t * (1 - self.eps) + self.eps
+    x_mixtue = batch_mul(1-t, x_data) + batch_mul(t, x_prior)
+    # x_mixtue = batch_mul(t, x_data) + batch_mul(1-t, x_prior)
+    
+    # we normalize t into mean 0 and std 1, before letting our network to predict
+    # for FM: [self.eps,1], 但是因为我想写，所以就当[0,1]
+    # t = (t - 0.5) * jnp.sqrt(jnp.array(12.0, dtype=jnp.float32))  # std becomes 1
+    
+    return x_mixtue, t
+  
+  def forward_T_predictor_main(self, pre_process_fn, imgs, labels, augment_label, noise_batch, t_batch, train: bool = True):
+    
+    bz = imgs.shape[0]
+    assert noise_batch.shape == imgs.shape
+    assert t_batch.shape == (bz,)
+    
+    x_mixtue, v_target = pre_process_fn(imgs, labels, augment_label, noise_batch, t_batch, train=train)
+
+    # forward network
+    u_pred = self.forward_prediction_function(x_mixtue, t_batch, train=train,y=labels).reshape((bz,) ) # shape: [b, 1] -> [b]
+
+    # loss: MSE loss
+    assert v_target.shape == u_pred.shape, 'v_target shape: {v}, u_pred shape: {u}'.format(v=v_target.shape, u=u_pred.shape)
+    loss = jnp.mean((v_target - u_pred)**2)
+
+    loss_train = loss
+    
+    # vis & log
+    vis_target = v_target.reshape(bz, 1, 1, 1).repeat(32, axis=1).repeat(32,axis=2).repeat(3,axis=3).astype(jnp.float32)
+    vis_pred = u_pred.reshape(bz, 1, 1, 1).repeat(32, axis=1).repeat(32,axis=2).repeat(3,axis=3).astype(jnp.float32)
+    err = jnp.abs(v_target - u_pred).reshape(bz, 1, 1, 1).repeat(32, axis=1).repeat(32,axis=2).repeat(3,axis=3).astype(jnp.float32) * 25
+
+    dict_losses = {}
+    dict_losses['loss'] = loss  # legacy
+    dict_losses['loss_train'] = loss_train
+    dict_losses['acc_train'] = jnp.mean((jnp.abs(v_target - u_pred) < 1e-2).astype(jnp.float32))
+    dict_losses['pred_mean'] = jnp.mean(u_pred)
+    dict_losses['target_mean'] = jnp.mean(v_target)
+    dict_losses['pred_std'] = jnp.std(u_pred)
+    dict_losses['target_std'] = jnp.std(v_target)
+
+    images = self.get_visualization(
+      [imgs,        # image (from dataset)
+       x_mixtue,  # mixture of data and noise
+        vis_target,  # target of network (known)
+        vis_pred,    # prediction of network
+        err,   # error, black is good
+      ])
+
+    return loss_train, dict_losses, images
+  
   def forward(self, *args, **kwargs):
       if self.task == 'FM':
         return self.forward_FM(*args, **kwargs)
@@ -1405,6 +1533,13 @@ class SimDDPM(nn.Module):
         return self.forward_Classifier(*args, **kwargs)
       elif self.task in ['EDM', 'edm']:
         return self.forward_EDM(*args, **kwargs)
+      elif 't_predictor' in self.task:
+        if self.task == 'FM_t_predictor':
+          return self.forward_T_predictor_main(self.pre_process_for_t_prediction_FM, *args, **kwargs)
+        elif self.task == 'Diffusion_t_predictor':
+          return self.forward_T_predictor_main(self.pre_process_for_t_prediction_Diffusion, *args, **kwargs)
+        else:
+          raise NotImplementedError(f'Unknown t predicting task: {self.task}')
       else:
         raise NotImplementedError(f'Unknown task: {self.task}')
   

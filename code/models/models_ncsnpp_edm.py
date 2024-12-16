@@ -966,13 +966,41 @@ class NCSNppClassifier(nn.Module):
 
         return self.out(h)
 
-# # test
+class SQA_TNet_Ver1(nn.Module):
 
-# rngs = nn.Rngs(0, params=114, dropout=514, train=1919)
-# model = NCSNpp(base_width=16, rngs=rngs)
-# from jax import random
-# inputs = random.normal(rngs.train(), (2, 32, 32, 3))
-# time_cond = jnp.log(jnp.array([1, 0.1]))
-# output = model(inputs, time_cond, train=True, verbose=True)
-# print(output.shape)
-# print(jnp.sum(output**2))
+    def __init__(self, 
+                 base_width = 10,
+                 dtype = jnp.float32, 
+                 use_sigmoid = True,
+                 rngs=None, 
+                 **kwargs):
+        self.conv1 = conv3x3(3, base_width, rngs=rngs)
+        self.conv2 = conv3x3(base_width, base_width, rngs=rngs)
+        self.act = nn.relu
+        # self.act = nn.silu
+        self.pool = nn.avg_pool
+        self.fc = nn.Linear(base_width, 1, rngs=rngs)
+        self.use_sigmoid = use_sigmoid
+    
+    def __call__(self, x, time_cond, augment_label=None,y=None, train=True, verbose=False):
+        x = self.conv1(x)
+        x = self.act(x)
+        x = self.conv2(x)
+        x = self.act(x)
+        x = self.pool(x, (32, 32))
+        x = jnp.reshape(x, (x.shape[0], -1))
+        x = self.fc(x)
+        if self.use_sigmoid:
+            x = nn.sigmoid(x)
+        return x
+
+# # test
+# if __name__ == "__main__":
+#     rngs = nn.Rngs(0, params=114, dropout=514, train=1919)
+#     model = NCSNppClassifier(base_width=16, rngs=rngs, num_classes=1)
+#     from jax import random
+#     inputs = random.normal(rngs.train(), (2, 32, 32, 3))
+#     time_cond = jnp.zeros((2,))
+#     output = model(inputs, time_cond, train=True, verbose=True)
+#     print(output.shape)
+#     print(jax.device_get(output))

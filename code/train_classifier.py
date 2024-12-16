@@ -177,7 +177,12 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, config)
   # print("images.shape: ", images.shape) # (8, 64, 32, 32, 3)
   b1, b2 = images.shape[0], images.shape[1]
   noise_batch = jax.random.normal(rngs.train(), images.shape)
-  t_batch = jax.random.randint(rngs.train(), (b1, b2), minval=0, maxval=config.diffusion.diffusion_nT) # [0, num_time_steps)
+  if config.model.task == 'FM_t_predictor':
+    t_batch = jax.random.uniform(rngs.train(), (b1, b2))
+  elif config.model.task in ['Diffusion_t_predictor', 'Classifier']:
+    t_batch = jax.random.randint(rngs.train(), (b1, b2), minval=0, maxval=config.diffusion.diffusion_nT) # [0, num_time_steps)
+  else:
+    raise NotImplementedError('Unknown task: {}'.format(config.model.task))
 
   new_state, metrics, images = train_step_compute_fn(state, batch, noise_batch, t_batch)
 
@@ -444,7 +449,7 @@ def train_and_evaluate(
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='LMCI', dir=workdir, tags=['Sanity_Check'])
+    wandb.init(project='LMCI', dir=workdir, tags=['T-predictor'])
     # wandb.init(project='sqa_FM_compare', dir=workdir)
     wandb.config.update(config.to_dict())
   global_seed(config.seed)
@@ -518,7 +523,7 @@ def train_and_evaluate(
       raise ValueError('Checkpoint path must be absolute')
     if not os.path.exists(config.load_from):
       raise ValueError('Checkpoint path {} does not exist'.format(config.load_from))
-    state = restore_checkpoint(model_init_fn, state, config.load_from)
+    state = restore_checkpoint(model_init_fn, state, config.load_from, model_config, ema=False)
     # sanity check, as in Kaiming's code
     assert state.step > 0 and state.step % steps_per_epoch == 0, ValueError('Got an invalid checkpoint with step {}'.format(state.step))
   step_offset = int(state.step)
