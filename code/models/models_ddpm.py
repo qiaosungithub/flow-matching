@@ -1426,6 +1426,38 @@ class SimDDPM(nn.Module):
 
     return loss_train, dict_losses, images
   
+  def reduce_t(self, t):
+    if 't_predictor' not in self.task:
+      raise NotImplementedError(f'reduce t can only be called if task is t_predictor, but task is {self.task}')
+    if self.task == 'FM_t_predictor':
+      # we normalize t into mean 0 and std 1, before letting our network to predict
+      # for FM: [self.eps,1], 但是因为我想写，所以就当[0,1]
+      t_target = (t - 0.5) * jnp.sqrt(jnp.array(12.0, dtype=jnp.float32))  # std becomes 1
+      return t_target
+    elif self.task == 'Diffusion_t_predictor':
+      t_target = t / self.diffusion_nT # [0, 1]
+      t_target = (t_target - 0.5) * jnp.sqrt(jnp.array(12.0, dtype=jnp.float32))  # std becomes 1
+      return t_target
+    else:
+      raise NotImplementedError(f'Unknown t predicting task: {self.task}')
+    
+  def unreduce_t(self, t_target):
+    # this is the inverse for self.reduce_t
+    if 't_predictor' not in self.task:
+      raise NotImplementedError(f'reduce t can only be called if task is t_predictor, but task is {self.task}')
+    if self.task == 'FM_t_predictor':
+      # we normalize t into mean 0 and std 1, before letting our network to predict
+      # for FM: [self.eps,1], 但是因为我想写，所以就当[0,1]
+      t = 0.5 + t_target / jnp.sqrt(jnp.array(12.0, dtype=jnp.float32))
+      t = jnp.clip(t, self.eps, 1)
+      return t
+    elif self.task == 'Diffusion_t_predictor':
+      t = (0.5 + t_target / jnp.sqrt(jnp.array(12.0, dtype=jnp.float32))) * self.diffusion_nT
+      t = jnp.clip(t.astype(jnp.int32), 0, self.diffusion_nT-1)
+      return t
+    else:
+      raise NotImplementedError(f'Unknown t predicting task: {self.task}')
+  
   def pre_process_for_t_prediction_Diffusion(self, imgs, labels, augment_label, noise_batch, t_batch, train: bool = True):
     imgs = imgs.astype(self.dtype)
     x = imgs
@@ -1454,11 +1486,6 @@ class SimDDPM(nn.Module):
 
     x_mixtue = batch_mul(sqrt_alphas_cumprod, x_data) + batch_mul(sqrt_one_minus_alphas_cumprod, x_prior)
     
-    # we normalize t into mean 0 and std 1, before letting our network to predict
-    # for DDPM: 0, 1, 2, ..., self.diffusion_nT - 1 -> approx as [0, self.diffusion_nT]
-    t_batch = t_batch / self.diffusion_nT # [0, 1]
-    t_batch = (t_batch - 0.5) * jnp.sqrt(jnp.array(12.0, dtype=jnp.float32))  # std becomes 1
-    
     return x_mixtue, t_batch
   
   def pre_process_for_t_prediction_FM(self, imgs, labels, augment_label, noise_batch, t_batch, train: bool = True):
@@ -1476,10 +1503,6 @@ class SimDDPM(nn.Module):
     t = t * (1 - self.eps) + self.eps
     x_mixtue = batch_mul(t, x_data) + batch_mul(1-t, x_prior)
     
-    # we normalize t into mean 0 and std 1, before letting our network to predict
-    # for FM: [self.eps,1], 但是因为我想写，所以就当[0,1]
-    # t = (t - 0.5) * jnp.sqrt(jnp.array(12.0, dtype=jnp.float32))  # std becomes 1
-    
     return x_mixtue, t
   
   def forward_T_predictor_main(self, pre_process_fn, imgs, labels, augment_label, noise_batch, t_batch, train: bool = True):
@@ -1488,17 +1511,19 @@ class SimDDPM(nn.Module):
     assert noise_batch.shape == imgs.shape
     assert t_batch.shape == (bz,)
     
-    x_mixtue, v_target = pre_process_fn(imgs, labels, augment_label, noise_batch, t_batch, train=train)
+    x_mixtue, real_t = pre_process_fn(imgs, labels, augment_label, noise_batch, t_batch, train=train)
+    
+    v_target = self.reduce_t(real_t)
 
     # forward network
     u_pred = self.forward_prediction_function(x_mixtue, t_batch, train=train,y=labels).reshape((bz,) ) # shape: [b, 1] -> [b]
 
     # loss: MSE loss
     assert v_target.shape == u_pred.shape, 'v_target shape: {v}, u_pred shape: {u}'.format(v=v_target.shape, u=u_pred.shape)
-    assert v_target.shape == (bz,), 'v_target shape: {v}'.format(v=v_target.shape)
     loss = jnp.mean((v_target - u_pred)**2)
 
     loss_train = loss
+    true_loss = jnp.mean((real_t - self.unreduce_t(u_pred))**2)
     
     # vis & log
     vis_target = v_target.reshape(bz, 1, 1, 1).repeat(32, axis=1).repeat(32,axis=2).repeat(3,axis=3).astype(jnp.float32)
@@ -1508,6 +1533,7 @@ class SimDDPM(nn.Module):
     dict_losses = {}
     dict_losses['loss'] = loss  # legacy
     dict_losses['loss_train'] = loss_train
+    dict_losses['true_loss'] = true_loss
     dict_losses['acc_train'] = jnp.mean((jnp.abs(v_target - u_pred) < 1e-2).astype(jnp.float32))
     dict_losses['pred_mean'] = jnp.mean(u_pred)
     dict_losses['target_mean'] = jnp.mean(v_target)

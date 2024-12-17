@@ -588,17 +588,32 @@ def train_and_evaluate(
           step_per_sec = config.log_per_step / timer.elapse_with_reset()
           loss_to_display = train_metrics['loss_train']
           acc_to_display = train_metrics['acc_train']
-          if config.wandb and index == 0:
-            wandb.log({
-              # 'ema_decay': train_metrics['ema_decay'],
-              'ep:': ep, 
-              'loss_train': loss_to_display, 
-              'acc_train': acc_to_display,
-              'lr': train_metrics['lr'], 
-              'step': step, 
-              'step_per_sec': step_per_sec})
-          # log_for_0('epoch: {} step: {} loss: {}, step_per_sec: {}'.format(ep, step, loss_to_display, step_per_sec))
-          log_for_0(f'step: {step}, loss: {loss_to_display}, acc: {acc_to_display}, step_per_sec: {step_per_sec}')
+          if 'true_loss' in train_metrics:
+            true_loss_to_display = train_metrics['true_loss']
+            if config.wandb and index == 0:
+              wandb.log({
+                # 'ema_decay': train_metrics['ema_decay'],
+                'ep:': ep, 
+                'loss_train': loss_to_display, 
+                'acc_train': acc_to_display,
+                'lr': train_metrics['lr'], 
+                'step': step, 
+                'true_loss_train': true_loss_to_display,
+                'step_per_sec': step_per_sec})
+            # log_for_0('epoch: {} step: {} loss: {}, step_per_sec: {}'.format(ep, step, loss_to_display, step_per_sec))
+            log_for_0(f'step: {step}, loss: {loss_to_display}, acc: {acc_to_display}, step_per_sec: {step_per_sec}, true_loss: {true_loss_to_display}')
+          else:
+            if config.wandb and index == 0:
+              wandb.log({
+                # 'ema_decay': train_metrics['ema_decay'],
+                'ep:': ep, 
+                'loss_train': loss_to_display, 
+                'acc_train': acc_to_display,
+                'lr': train_metrics['lr'], 
+                'step': step, 
+                'step_per_sec': step_per_sec})
+            # log_for_0('epoch: {} step: {} loss: {}, step_per_sec: {}'.format(ep, step, loss_to_display, step_per_sec))
+            log_for_0(f'step: {step}, loss: {loss_to_display}, acc: {acc_to_display}, step_per_sec: {step_per_sec}')
           train_metrics_buffer = []
 
       # EMA
@@ -660,15 +675,28 @@ def train_and_evaluate(
     step_per_sec = config.log_per_step / timer.elapse_with_reset()
     loss_to_display = val_metrics['loss_train']
     acc_to_display = val_metrics['acc_train']
-    if config.wandb and index == 0:
-      wandb.log({
-        'ep:': ep, 
-        'loss_val': loss_to_display, 
-        'acc_val': acc_to_display,
-        'step': step
-      })
-    # log_for_0('epoch: {} step: {} loss: {}, step_per_sec: {}'.format(ep, step, loss_to_display, step_per_sec))
-    log_for_0(f'[Eval] step: {step}, loss: {loss_to_display}, acc: {acc_to_display}, step_per_sec: {step_per_sec}')
+    if 'true_loss' in val_metrics:
+      true_loss_to_display = val_metrics['true_loss']
+      if config.wandb and index == 0:
+        wandb.log({
+          'ep:': ep, 
+          'loss_val': loss_to_display, 
+          'acc_val': acc_to_display,
+          'true_loss_val': true_loss_to_display,
+          'step': step
+        })
+      # log_for_0('epoch: {} step: {} loss: {}, step_per_sec: {}'.format(ep, step, loss_to_display, step_per_sec))
+      log_for_0(f'[Eval] step: {step}, loss: {loss_to_display}, acc: {acc_to_display}, step_per_sec: {step_per_sec}, true_loss: {true_loss_to_display}')
+    else:
+      if config.wandb and index == 0:
+        wandb.log({
+          'ep:': ep, 
+          'loss_val': loss_to_display, 
+          'acc_val': acc_to_display,
+          'step': step
+        })
+      # log_for_0('epoch: {} step: {} loss: {}, step_per_sec: {}'.format(ep, step, loss_to_display, step_per_sec))
+      log_for_0(f'[Eval] step: {step}, loss: {loss_to_display}, acc: {acc_to_display}, step_per_sec: {step_per_sec}')
     
     # logging visualizations
     if (epoch + 1) % config.visualize_per_epoch == 0:
