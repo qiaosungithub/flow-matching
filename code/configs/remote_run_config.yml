@@ -96,7 +96,7 @@
 # Please comment the lines above to train classifier!
 
 train_classifier: True
-lr_schedule: const # options: [const, classifier_specific]
+lr_schedule: cosine # options: [const, classifier_specific, cosine]
 model:
     task: FM_t_predictor # options: [Classifier, FM_t_predictor, Diffusion_t_predictor]
     t_condition_method: not # options: [direct, log999, not (i.e. no t)] # note: t predictor must not condition on t
@@ -104,7 +104,7 @@ model:
     image_size: 32
     out_channels: 3
     base_width: 20 # previous: 32
-    net_type: sqa_t_predictor # options: [ncsnppedm_classifier, ncsnppedm_t_predictor, sqa_t_predictor]
+    net_type: ncsnppedm_t_predictor # options: [ncsnppedm_classifier, ncsnppedm_t_predictor, sqa_t_predictor]
     dropout: 0.0
     classifier_model_depth: 1
 
@@ -120,9 +120,9 @@ dataset:
     cache: True
     simple_augs: False # this is some simple augmentations (e.g. crop)
 
-batch_size: 512
-num_epochs: 50
-learning_rate: 0.0001
+batch_size: 2048
+num_epochs: 400
+learning_rate: 0.0004
 weight_decay: 0.0 # 0.099 for classifier
 optimizer: adamw
 adam_b2: 0.95

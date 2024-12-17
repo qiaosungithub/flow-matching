@@ -1474,8 +1474,7 @@ class SimDDPM(nn.Module):
 
     t = t_batch
     t = t * (1 - self.eps) + self.eps
-    x_mixtue = batch_mul(1-t, x_data) + batch_mul(t, x_prior)
-    # x_mixtue = batch_mul(t, x_data) + batch_mul(1-t, x_prior)
+    x_mixtue = batch_mul(t, x_data) + batch_mul(1-t, x_prior)
     
     # we normalize t into mean 0 and std 1, before letting our network to predict
     # for FM: [self.eps,1], 但是因为我想写，所以就当[0,1]
@@ -1489,11 +1488,7 @@ class SimDDPM(nn.Module):
     assert noise_batch.shape == imgs.shape
     assert t_batch.shape == (bz,)
     
-    # x_mixtue, v_target = pre_process_fn(imgs, labels, augment_label, noise_batch, t_batch, train=train)
-    # x_mixtue = noise_batch
-    # x_mixtue = batch_mul(t_batch, imgs) + batch_mul(1-t_batch, noise_batch)
-    x_mixtue = batch_mul(1-t_batch, imgs) + batch_mul(t_batch, noise_batch)
-    v_target = t_batch
+    x_mixtue, v_target = pre_process_fn(imgs, labels, augment_label, noise_batch, t_batch, train=train)
 
     # forward network
     u_pred = self.forward_prediction_function(x_mixtue, t_batch, train=train,y=labels).reshape((bz,) ) # shape: [b, 1] -> [b]
