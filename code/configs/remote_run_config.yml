@@ -121,14 +121,14 @@ dataset:
     simple_augs: False # this is some simple augmentations (e.g. crop)
 
 batch_size: 512
-num_epochs: 51
+num_epochs: 50
 learning_rate: 0.0001
 weight_decay: 0.0 # 0.099 for classifier
 optimizer: adamw
 adam_b2: 0.95
 grad_clip: 0.0
 warmup_epochs: 0
-log_per_step: 20
+log_per_step: 50
 visualize_per_epoch: 50
 eval_per_epoch: 100
 checkpoint_per_epoch: 500 # only save the last checkpoint

@@ -725,8 +725,8 @@ class SimDDPM(nn.Module):
       assert not self.class_conditional, 'class conditional t predictors are not supported yet'
       net_fn = partial(SQA_TNet_Ver1,
         base_width=self.base_width,
-        use_sigmoid = True,
-        # use_sigmoid = False,
+        # use_sigmoid = True,
+        use_sigmoid = False,
         rngs=self.rngs)
     else:
       raise ValueError(f'Unknown net type: {self.net_type}')
@@ -1489,13 +1489,18 @@ class SimDDPM(nn.Module):
     assert noise_batch.shape == imgs.shape
     assert t_batch.shape == (bz,)
     
-    x_mixtue, v_target = pre_process_fn(imgs, labels, augment_label, noise_batch, t_batch, train=train)
+    # x_mixtue, v_target = pre_process_fn(imgs, labels, augment_label, noise_batch, t_batch, train=train)
+    # x_mixtue = noise_batch
+    # x_mixtue = batch_mul(t_batch, imgs) + batch_mul(1-t_batch, noise_batch)
+    x_mixtue = batch_mul(1-t_batch, imgs) + batch_mul(t_batch, noise_batch)
+    v_target = t_batch
 
     # forward network
     u_pred = self.forward_prediction_function(x_mixtue, t_batch, train=train,y=labels).reshape((bz,) ) # shape: [b, 1] -> [b]
 
     # loss: MSE loss
     assert v_target.shape == u_pred.shape, 'v_target shape: {v}, u_pred shape: {u}'.format(v=v_target.shape, u=u_pred.shape)
+    assert v_target.shape == (bz,), 'v_target shape: {v}'.format(v=v_target.shape)
     loss = jnp.mean((v_target - u_pred)**2)
 
     loss_train = loss
