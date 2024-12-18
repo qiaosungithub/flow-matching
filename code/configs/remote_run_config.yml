@@ -11,7 +11,7 @@ model:
 
     no_condition_t: False
     # CT
-    fourier_scale: 0.02 # CT
+    fourier_scale: 0.04 # CT
 
     # embedding_type: positional2
     embedding_type: fourier
@@ -44,7 +44,7 @@ evalu:
 ema_value: 0.9999 # ICM
 # ema_value: 0.9993 # ECM
 batch_size: 1024
-num_epochs: 8000
+num_epochs: 4000
 # learning_rate: 0.0004
 learning_rate: 0.0001
 lr_schedule: const
