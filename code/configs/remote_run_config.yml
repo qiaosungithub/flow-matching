@@ -98,7 +98,7 @@
 train_classifier: True
 lr_schedule: cosine # options: [const, classifier_specific, cosine]
 model:
-    task: FM_t_predictor # options: [Classifier, FM_t_predictor, Diffusion_t_predictor]
+    task: Diffusion_t_predictor # options: [Classifier, FM_t_predictor, Diffusion_t_predictor]
     t_condition_method: not # options: [direct, log999, not (i.e. no t)] # note: t predictor must not condition on t
     eps: 0.0
     image_size: 32
@@ -108,9 +108,9 @@ model:
     dropout: 0.0
     classifier_model_depth: 1
 
-# diffusion:
-#     diffusion_nT: 4000
-#     diffusion_schedule: cosine
+diffusion:
+    diffusion_nT: 1000
+    diffusion_schedule: linear
 
 dataset:
     name: cifar10
