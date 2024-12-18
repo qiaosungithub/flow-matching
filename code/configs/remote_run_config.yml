@@ -11,7 +11,7 @@ model:
 
     no_condition_t: False
     # CT
-    fourier_scale: 0.04 # CT
+    fourier_scale: 0.02 # CT
 
     # embedding_type: positional2
     embedding_type: fourier
@@ -41,7 +41,7 @@ fid:
 evalu:
     ema: True
     sample: False
-ema_value: 0.9999 # ICM
+ema_value: 0.99993 # ICM
 # ema_value: 0.9993 # ECM
 batch_size: 1024
 num_epochs: 4000
