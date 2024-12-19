@@ -43,8 +43,8 @@ num_epochs: 8000
 learning_rate: 0.0001
 lr_schedule: const
 weight_decay: 0.0
-# optimizer: radam # CT
-optimizer: adamw
+optimizer: radam # CT
+# optimizer: adamw
 adam_b2: 0.999
 grad_clip: 0.0
 warmup_epochs: 0 # CT
