@@ -332,7 +332,7 @@ def sample_by_diffeq(state: NNXTrainState, model, rng, n_sample,t_min:float=0.0)
     return images, nfes.mean()
 
 # move this out from model for JAX compilation
-def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='random',classifier=None,classifier_state=None,classifier_scale=0.0):
+def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='random',classifier=None,classifier_state=None,classifier_scale=0.0,t_predictor_state=None):
   """
   Generate samples from the model
 
@@ -373,6 +373,7 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
   if model.sampler in ['euler', 'heun']:
     assert y is None, NotImplementedError()
     assert classifier is None, NotImplementedError()
+    assert t_predictor_state is None, NotImplementedError()
       
     x_i = x_prior
 
@@ -396,6 +397,7 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
   elif model.sampler in ['edm', 'edm-sde']:
     assert y is None, NotImplementedError()
     assert classifier is None, NotImplementedError()
+    assert t_predictor_state is None, NotImplementedError()
     t_steps = model.compute_edm_t(jnp.arange(num_steps), num_steps)
     t_steps = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
     x_i = x_prior * t_steps[0]
@@ -434,6 +436,7 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
     # denoised = jnp.stack(denoised, axis=0)
     # return images, denoised
   elif model.sampler in ['ddpm', 'DDPM']:
+    assert not ((t_predictor_state is not None) and (classifier is not None)), 'using t predictor with classifier guidance is not implemented'
     x_i = x_prior
     o = model.sampling_diffusion_schedule()
     t_steps = o['sample_ts']
@@ -459,14 +462,20 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
       logits = jax.nn.log_softmax(logits, axis=-1)
       selected_logits = logits[jnp.arange(b), y]
       return selected_logits.sum()
-
+    
+    def t_predictor_fn(x,t):
+      b = x.shape[0]
+      merged_t_predictor = nn.merge(t_predictor_state.graphdef, t_predictor_state.params, t_predictor_state.rng_states, t_predictor_state.batch_stats, t_predictor_state.useless_variable_state)
+      input_t_batch = merged_t_predictor.unreduce_t(merged_t_predictor.forward_prediction_function(x, t, train=False,y=None).reshape(b,))
+      return input_t_batch
+    
     def step_fn(i, inputs):
       x_i, rng = inputs
       rng_this_step = jax.random.fold_in(rng, i)
       rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
 
       merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-      x_i = merged_model.sample_one_step_ddpm(x_i, rng_z, i, y=y, t_steps=t_steps, sqrt_recip_alphas_cumprod_steps=sqrt_recip_alphas_cumprod_steps, sqrt_recipm1_alphas_cumprod_steps=sqrt_recipm1_alphas_cumprod_steps,posterior_mean_coef1_steps=posterior_mean_coef1_steps,posterior_mean_coef2_steps=posterior_mean_coef2_steps,log_model_variance_steps=log_model_variance_steps,posterior_log_variance_clipped_steps=posterior_log_variance_clipped_steps,beta_steps=beta_steps,classifier_grad_fn=jax.grad(classifier_fn) if classifier is not None else None,classifier_scale=classifier_scale)
+      x_i = merged_model.sample_one_step_ddpm(x_i, rng_z, i, y=y, t_steps=t_steps, sqrt_recip_alphas_cumprod_steps=sqrt_recip_alphas_cumprod_steps, sqrt_recipm1_alphas_cumprod_steps=sqrt_recipm1_alphas_cumprod_steps,posterior_mean_coef1_steps=posterior_mean_coef1_steps,posterior_mean_coef2_steps=posterior_mean_coef2_steps,log_model_variance_steps=log_model_variance_steps,posterior_log_variance_clipped_steps=posterior_log_variance_clipped_steps,beta_steps=beta_steps,classifier_grad_fn=jax.grad(classifier_fn) if classifier is not None else None,classifier_scale=classifier_scale,t_predictor_fn=t_predictor_fn if t_predictor_state is not None else None)
       outputs = (x_i, rng)
       return outputs
 
@@ -925,7 +934,7 @@ class SimDDPM(nn.Module):
     # return x_next, denoised # for debug
     return x_next
 
-  def sample_one_step_ddpm(self, x_i, rng, i, t_steps, sqrt_recip_alphas_cumprod_steps, sqrt_recipm1_alphas_cumprod_steps, posterior_mean_coef1_steps, posterior_mean_coef2_steps,log_model_variance_steps,posterior_log_variance_clipped_steps, beta_steps,y=None,classifier_grad_fn=None,classifier_scale=None):
+  def sample_one_step_ddpm(self, x_i, rng, i, t_steps, sqrt_recip_alphas_cumprod_steps, sqrt_recipm1_alphas_cumprod_steps, posterior_mean_coef1_steps, posterior_mean_coef2_steps,log_model_variance_steps,posterior_log_variance_clipped_steps, beta_steps,y=None,classifier_grad_fn=None,classifier_scale=None,t_predictor_fn=None):
       """
       DDPM
       """
@@ -933,7 +942,10 @@ class SimDDPM(nn.Module):
         assert classifier_grad_fn is not None, 'We assume that you are doing conditional generation for an unconditional model, so you must use classifier guidance'
       
       b = x_i.shape[0]
-      t = batch_t(t_steps[i],b)
+      if t_predictor_fn is None:
+        t = batch_t(t_steps[i],b)
+      else:
+        t = t_predictor_fn(x_i, batch_t(t_steps[i],b))
       sqrt_recip_alphas_cumprod = batch_t(sqrt_recip_alphas_cumprod_steps[i],b)
       sqrt_recipm1_alphas_cumprod = batch_t(sqrt_recipm1_alphas_cumprod_steps[i],b)
       posterior_mean_coef1 = batch_t(posterior_mean_coef1_steps[i],b)
@@ -967,7 +979,7 @@ class SimDDPM(nn.Module):
         # assert False, '不高兴的'
       
       #### END ####
-
+      
       noise = jax.random.normal(rng, x_i.shape)
 
       nonzero_mask = jnp.where(t > 0.5, 1, 0) # no noise when t == 0

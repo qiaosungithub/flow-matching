@@ -30,6 +30,7 @@ from ml_collections import config_flags
 
 import train
 import train_classifier
+import train_with_tnet
 import classifier_guidance
 from utils import logging_util
 from utils.logging_util import log_for_0
@@ -79,6 +80,12 @@ def main(argv):
     exit(0)
   elif FLAGS.config.get('run_classifier_guidance', False):
     classifier_guidance.just_evaluate(FLAGS.config, FLAGS.workdir)
+    exit(0)
+  elif FLAGS.config.get('use_t_predictor', False):
+    if FLAGS.config.load_from is not None and not (FLAGS.config.continue_training):
+      train_with_tnet.just_evaluate(FLAGS.config, FLAGS.workdir)
+    else:
+      train_with_tnet.train_and_evaluate(FLAGS.config, FLAGS.workdir)
     exit(0)
   if FLAGS.config.load_from is not None and not (FLAGS.config.continue_training):
     train.just_evaluate(FLAGS.config, FLAGS.workdir)

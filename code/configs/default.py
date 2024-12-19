@@ -86,6 +86,26 @@ def get_config():
   classifier_model.learn_var = False
   classifier_model.class_conditional = False
 
+  # T predictor
+  config.t_predictor_model = t_predictor_model = ml_collections.ConfigDict()
+  t_predictor_model.image_size = 32
+  t_predictor_model.out_channels = 1
+
+  t_predictor_model.base_width = 64
+  t_predictor_model.n_T = 18  # inference stepss
+  t_predictor_model.dropout = 0.0
+
+  t_predictor_model.use_aug_label = False
+  t_predictor_model.average_loss = False
+
+  t_predictor_model.sampler = 'ddpm' # or 'heun'
+  t_predictor_model.ode_solver = 'jax'  # or 'scipy', which use RK45 solver
+  t_predictor_model.net_type = 'ncsnpp'
+
+  # t_predictor_model.no_condition_t = False
+  t_predictor_model.learn_var = False
+  t_predictor_model.class_conditional = False
+
   # Augmentation
   config.aug = aug = ml_collections.ConfigDict()
   aug.use_edm_aug = False

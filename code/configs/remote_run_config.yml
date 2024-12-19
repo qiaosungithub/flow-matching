@@ -1,112 +1,46 @@
 ############################################
 #      Normal Training Configuration       #
 ############################################
-# model:
-#     ##### T-conditioning #####
-#     t_condition_method: dot25log # options: [direct, log999, dot25log, not (i.e. no t)] # note: edm must use "dot25log"
-    
-#     ##### Common Configs (rarely changes) #####
-#     image_size: 32
-#     out_channels: 3
-#     base_width: 128
-#     use_aug_label: True
-#     net_type: ncsnppedm
-#     average_loss: False # use average or sum for loss # note: edm must use False
-
-#     ##### Common Configs (may changes) #####
-#     dropout: 0.15
-#     embedding_type: fourier # options: [positional, fourier]
-#     task: EDM # options: [FM, Diffusion, EDM]
-
-#     ##### FM-specific configs #####
-
-#     ##### Diffusion-specific configs #####
-#     # learn_var: True # default: False
-
-#     ##### Conditional Generation #####
-#     class_conditional: False
-
-#     ##### Sampling Configs #####
-#     n_T: 18 # num of sample steps, matches "diffusion_nT"
-    
-#     # --- Flow Matching / EDM --- #
-#     # sampler: euler
-#     # sampler: heun
-#     sampler: edm
-#     # sampler: edm-sde
-#     ode_solver: jax
-#     # ode_solver: O
-
-#     # --- Diffusion --- #
-#     # sampler: ddpm
-#     # sampler: DDIM
-#     # sample_clip_denoised: True
-
-# diffusion:
-#     diffusion_nT: 1000
-#     diffusion_schedule: linear
-
-# dataset:
-#     name: cifar10
-#     root: CIFAR # pytorch
-#     prefetch_factor: 2
-#     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
-#     cache: True
-
-# aug: 
-#     use_edm_aug: True # NOTE: if you want to turn on this, you must also turn on model.use_aug_label
-
-# fid:
-#     eval_only: False
-#     fid_per_epoch: 200
-#     num_samples: 50000
-#     cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
-
-# evalu: # In principle, this should not be used
-#     ema: True
-#     sample: True
-
-# batch_size: 512
-# num_epochs: 4000
-# learning_rate: 0.001
-# lr_schedule: const
-
-# # ema
-# ema_schedule: edm # options: [const, edm]
-# ema_halflife_king: 500 # default: 50000
-
-# weight_decay: 0.0
-# optimizer: adamw
-# adam_b2: 0.95
-# grad_clip: 0.0
-# warmup_epochs: 200
-# log_per_step: 20
-# visualize_per_epoch: 50
-# eval_per_epoch: 100
-# checkpoint_per_epoch: 500
-# save_by_fid: False # if True, then only save checkpoint with fid better than all previous checkpoints
-
-# # continue_training: True # this is for resuming training
-# # load_from: /path/to/your/checkpoint
-
-############################################
-#    Training Classifier / t predictor     #
-#              Configuration               #
-############################################
-# Please comment the lines above to train classifier!
-
-train_classifier: True
-lr_schedule: cosine # options: [const, classifier_specific, cosine]
 model:
-    task: Diffusion_t_predictor # options: [Classifier, FM_t_predictor, Diffusion_t_predictor]
-    t_condition_method: not # options: [direct, log999, not (i.e. no t)] # note: t predictor must not condition on t
-    eps: 0.0
+    ##### T-conditioning #####
+    t_condition_method: direct # options: [direct, log999, dot25log, not (i.e. no t)] # note: edm must use "dot25log"
+    
+    ##### Common Configs (rarely changes) #####
     image_size: 32
     out_channels: 3
-    base_width: 20 # previous: 32
-    net_type: ncsnppedm_t_predictor # options: [ncsnppedm_classifier, ncsnppedm_t_predictor, sqa_t_predictor]
-    dropout: 0.0
-    classifier_model_depth: 1
+    base_width: 128
+    use_aug_label: False
+    net_type: ncsnppedm
+    average_loss: True # use average or sum for loss # note: edm must use False
+
+    ##### Common Configs (may changes) #####
+    dropout: 0.15
+    embedding_type: positional # options: [positional, fourier]
+    task: Diffusion # options: [FM, Diffusion, EDM]
+
+    ##### FM-specific configs #####
+
+    ##### Diffusion-specific configs #####
+    # learn_var: True # default: False
+
+    ##### Conditional Generation #####
+    class_conditional: False
+
+    ##### Sampling Configs #####
+    n_T: 100 # num of sample steps, matches "diffusion_nT"
+    
+    # --- Flow Matching / EDM --- #
+    # sampler: euler
+    # sampler: heun
+    # sampler: edm
+    # sampler: edm-sde
+    # ode_solver: jax
+    # ode_solver: O
+
+    # --- Diffusion --- #
+    # sampler: ddpm
+    sampler: DDIM
+    sample_clip_denoised: True
 
 diffusion:
     diffusion_nT: 1000
@@ -118,18 +52,97 @@ dataset:
     prefetch_factor: 2
     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
     cache: True
-    simple_augs: False # this is some simple augmentations (e.g. crop)
+
+aug: 
+    use_edm_aug: False # NOTE: if you want to turn on this, you must also turn on model.use_aug_label
+
+fid:
+    eval_only: False
+    fid_per_epoch: 200
+    num_samples: 50000
+    cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
+
+evalu: # In principle, this should not be used
+    ema: True
+    sample: True
 
 batch_size: 2048
-num_epochs: 400
-learning_rate: 0.0004
-weight_decay: 0.0 # 0.099 for classifier
+num_epochs: 2000
+learning_rate: 0.0008
+lr_schedule: const
+
+# ema
+ema_schedule: edm
+# ema_halflife_king: 500 # default: 50000
+
+weight_decay: 0.0
 optimizer: adamw
 adam_b2: 0.95
 grad_clip: 0.0
-warmup_epochs: 0
-log_per_step: 50
+warmup_epochs: 200
+log_per_step: 20
 visualize_per_epoch: 50
 eval_per_epoch: 100
-checkpoint_per_epoch: 500 # only save the last checkpoint
+checkpoint_per_epoch: 500
 save_by_fid: False # if True, then only save checkpoint with fid better than all previous checkpoints
+
+# continue_training: True # this is for resuming training
+# load_from: /path/to/your/checkpoint
+
+#### use the following if you want to train with t-prediction net ####
+use_t_predictor: True
+t_predictor_model:
+    t_condition_method: not
+    task: Diffusion_t_predictor # options: [FM_t_predictor, Diffusion_t_predictor]
+    net_type: ncsnppedm_t_predictor
+    image_size: 32
+    out_channels: 3
+    dropout: 0.0
+    base_width: 20
+    classifier_model_depth: 1
+load_t_predictor_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241217_181307_k69pdi_kmh-tpuvm-v2-32-4__b_lr_ep_eval
+
+############################################
+#    Training Classifier / t predictor     #
+#              Configuration               #
+############################################
+# Please comment the lines above to train classifier!
+
+# train_classifier: True
+# lr_schedule: cosine # options: [const, classifier_specific, cosine]
+# model:
+#     task: Diffusion_t_predictor # options: [Classifier, FM_t_predictor, Diffusion_t_predictor]
+#     t_condition_method: not # options: [direct, log999, not (i.e. no t)] # note: t predictor must not condition on t
+#     eps: 0.0
+#     image_size: 32
+#     out_channels: 3
+#     base_width: 20 # previous: 32
+#     net_type: ncsnppedm_t_predictor # options: [ncsnppedm_classifier, ncsnppedm_t_predictor, sqa_t_predictor]
+#     dropout: 0.0
+#     classifier_model_depth: 1
+# 
+# diffusion:
+#     diffusion_nT: 1000
+#     diffusion_schedule: linear
+# 
+# dataset:
+#     name: cifar10
+#     root: CIFAR # pytorch
+#     prefetch_factor: 2
+#     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
+#     cache: True
+#     simple_augs: False # this is some simple augmentations (e.g. crop)
+# 
+# batch_size: 2048
+# num_epochs: 400
+# learning_rate: 0.0004
+# weight_decay: 0.0 # 0.099 for classifier
+# optimizer: adamw
+# adam_b2: 0.95
+# grad_clip: 0.0
+# warmup_epochs: 0
+# log_per_step: 50
+# visualize_per_epoch: 50
+# eval_per_epoch: 100
+# checkpoint_per_epoch: 500 # only save the last checkpoint
+# save_by_fid: False # if True, then only save checkpoint with fid better than all previous checkpoints
