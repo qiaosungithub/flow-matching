@@ -73,7 +73,8 @@ ct:
     # end_scales: 2560
     # n_schedule: baseline
     # n_schedule: quickexp
-    n_schedule: exp
+    n_schedule: custom1
+    # n_schedule: exp
     # n_schedule: square
 dataset:
     name: cifar10
@@ -106,7 +107,7 @@ learning_rate: 0.0004
 lr_schedule: heaviside
 warmup_epochs: 1
 min_lr: 0.0001
-lr_jump_ep: 1000
+lr_jump_ep: 1500
 # min_lr: 0.00005
 # lr_schedule: const
 weight_decay: 0.0

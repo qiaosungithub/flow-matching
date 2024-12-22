@@ -95,6 +95,29 @@ def edm_ema_scales_schedules(step, config, steps_per_epoch):
     scales = jnp.ones((1,), dtype=jnp.int32)
     return ema_beta, scales
 
+def custom_scale_schedule(d):
+    # d is a dict:
+    # {10: 1/4, 20: 1/2, 30: 1/4}
+    # each key is a "scale" value, and each value is how much ratio of steps we spend on the scale
+    cumsum = jnp.cumsum(jnp.array(list(d.values())))
+    assert 0.9999 < cumsum[-1] < 1.0001, f"cumsum[-1] should be 1, but got {cumsum[-1]}"
+    scales = jnp.array(list(d.keys()))
+    def scale_fn(step):
+        idx = jnp.argmax(cumsum > step)
+        return scales[idx].reshape(1,) + 1
+    return scale_fn
+
+custom_scales_fn_1 = custom_scale_schedule({
+    10: 3/16,
+    20: 3/16,
+    40: 3/16,
+    80: 3/16, 
+    160: 1/16,
+    320: 1/16,
+    640: 1/16,
+    1280: 1/16,
+})
+
 def ct_ema_scales_schedules(step, config, steps_per_epoch):
   """
   ICM improved version
@@ -133,6 +156,8 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
     K = total_steps
     K_ = jnp.floor(K / (jnp.log2(jnp.floor(s1 / s0)) / 2 + 1)) # log_4{x} = log_2{x} / 2
     scales = jnp.minimum(s0 * (4 ** jnp.floor(step / K_)), s1) + 1
+  elif config.ct.n_schedule == 'custom1':
+    scales = custom_scales_fn_1(step / total_steps)
   else:
     raise ValueError(f'Unknown schedule: {config.ct.n_schedule}')
   
