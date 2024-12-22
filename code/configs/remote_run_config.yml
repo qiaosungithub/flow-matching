@@ -43,9 +43,9 @@ evalu:
     sample: False
 ema_value: 0.99993
 batch_size: 1024
-num_epochs: 4000
+num_epochs: 8000
 # learning_rate: 0.0004
-learning_rate: 0.0002
+learning_rate: 0.0001
 lr_schedule: const
 weight_decay: 0.0
 optimizer: radam # CT & ECM
