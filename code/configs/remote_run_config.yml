@@ -41,7 +41,7 @@ fid:
 evalu:
     ema: True
     sample: False
-ema_value: 0.99993
+ema_value: 0.99995
 batch_size: 1024
 num_epochs: 8000
 # learning_rate: 0.0004
