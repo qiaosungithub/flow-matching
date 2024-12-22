@@ -117,22 +117,11 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
 
   ema_decay, scales = ema_scales_fn(state.step)
 
-  def loss_fn(params_to_train, use_t_predictor=False):
+  def loss_fn(params_to_train):
     """loss function used for training."""
-    if use_t_predictor:
-      b = batch['image'].shape[0]
-      merged_t_predictor = nn.merge(t_predictor_state.graphdef, t_predictor_state.params, t_predictor_state.rng_states, t_predictor_state.batch_stats, t_predictor_state.useless_variable_state)
-      input_t_batch = merged_t_predictor.unreduce_t(merged_t_predictor.forward_prediction_function(batch['image'], t_batch, train=False,y=None).reshape(b,))
-      input_t_batch = jax.lax.stop_gradient(input_t_batch)
-    else:
-      input_t_batch = t_batch
     
-    outputs = state.apply_fn(state.graphdef, params_to_train, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'], batch['label'] if config.model.class_conditional else None, batch['augment_label'], noise_batch, input_t_batch)
+    outputs = state.apply_fn(state.graphdef, params_to_train, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'], batch['label'] if config.model.class_conditional else None, batch['augment_label'], noise_batch, t_batch, t_predictor_state=t_predictor_state)
     loss, new_batch_stats, new_rng_states, dict_losses, images = outputs
-    
-    if use_t_predictor:
-      assert input_t_batch.shape == t_batch.shape, f"input_t_batch.shape: {input_t_batch.shape}, t_batch.shape: {t_batch.shape}"
-      dict_losses['t_predictor_diff'] = jnp.sqrt(jnp.mean((input_t_batch - t_batch)**2))
 
     return loss, (new_batch_stats, new_rng_states, dict_losses, images)
 
@@ -143,7 +132,7 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
   if dynamic_scale:
     raise NotImplementedError('dynamic_scale is not implemented')
   else:
-    grad_fn = jax.value_and_grad(partial(loss_fn, use_t_predictor=(t_predictor_state is not None)), has_aux=True)
+    grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
     # aux, grads = grad_fn(state.params)
     aux, grads = grad_fn(state.params)
     # Re-use same axis_name as in the call to `pmap(...train_step...)` below.
@@ -370,7 +359,7 @@ def create_train_state(
 
   print_params(params)
 
-  def apply_fn(graphdef2, params2, rng_states2, batch_stats2, useless_, is_training, images, labels, augment_labels, noise_batch, t_batch):
+  def apply_fn(graphdef2, params2, rng_states2, batch_stats2, useless_, is_training, images, labels, augment_labels, noise_batch, t_batch, t_predictor_state=None):
     """
     input:
       images
@@ -390,7 +379,7 @@ def create_train_state(
     else:
       merged_model.eval()
     del params2, rng_states2, batch_stats2, useless_
-    loss_train, dict_losses, images = merged_model.forward(images, labels, augment_labels, noise_batch, t_batch)
+    loss_train, dict_losses, images = merged_model.forward(images, labels, augment_labels, noise_batch, t_batch, t_predictor_state=t_predictor_state)
     new_batch_stats, new_rng_states, _ = nn.state(merged_model, nn.BatchStat, nn.RngState, ...)
     return loss_train, new_batch_stats, new_rng_states, dict_losses, images
 
@@ -783,6 +772,9 @@ def train_and_evaluate(
           step_per_sec = config.log_per_step / timer.elapse_with_reset()
           loss_to_display = train_metrics['loss_train']
           t_diff_to_display = train_metrics['t_predictor_diff']
+          real_t_mean_to_display = train_metrics['real_t_mean']
+          pred_t_mean_to_display = train_metrics['pred_t_mean']
+          
           if config.wandb and index == 0:
             wandb.log({
               'ema_decay': train_metrics['ema_decay'],
@@ -793,7 +785,7 @@ def train_and_evaluate(
               'step': step, 
               'step_per_sec': step_per_sec})
           # log_for_0('epoch: {} step: {} loss: {}, step_per_sec: {}'.format(ep, step, loss_to_display, step_per_sec))
-          log_for_0(f'step: {step}, loss: {loss_to_display}, step_per_sec: {step_per_sec}, t_predictor_diff: {t_diff_to_display}')
+          log_for_0(f'step: {step}, loss: {loss_to_display}, step_per_sec: {step_per_sec}, t_predictor_diff: {t_diff_to_display}, real_t_mean: {real_t_mean_to_display}, pred_t_mean: {pred_t_mean_to_display}')
           train_metrics_buffer = []
 
       # EMA

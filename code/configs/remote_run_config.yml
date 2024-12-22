@@ -1,6 +1,7 @@
 ############################################
 #      Normal Training Configuration       #
 ############################################
+wandb: False
 model:
     ##### T-conditioning #####
     t_condition_method: direct # options: [direct, log999, dot25log, not (i.e. no t)] # note: edm must use "dot25log"
@@ -100,7 +101,8 @@ t_predictor_model:
     dropout: 0.0
     base_width: 20
     classifier_model_depth: 1
-load_t_predictor_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241217_181307_k69pdi_kmh-tpuvm-v2-32-4__b_lr_ep_eval
+load_t_predictor_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241217_181307_k69pdi_kmh-tpuvm-v2-32-4__b_lr_ep_eval # this is a DDPM t predictor, 1000 linear schedule
+# load_t_predictor_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241217_172912_fh4onv_kmh-tpuvm-v2-32-4__b_lr_ep_eval # this is a FM t predictor, eps=1e-3
 
 ############################################
 #    Training Classifier / t predictor     #

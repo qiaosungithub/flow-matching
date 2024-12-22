@@ -437,6 +437,7 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
     # return images, denoised
   elif model.sampler in ['ddpm', 'DDPM']:
     assert not ((t_predictor_state is not None) and (classifier is not None)), 'using t predictor with classifier guidance is not implemented'
+    assert t_predictor_state is None, NotImplementedError()
     x_i = x_prior
     o = model.sampling_diffusion_schedule()
     t_steps = o['sample_ts']
@@ -513,23 +514,24 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
       rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
 
       merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-      x_i = merged_model.sample_one_step_DDIM(x_i, rng_z, i, y=y, t_steps=t_steps, alpha_cumprod_steps=alpha_cumprod_steps, alpha_cumprod_prev_steps=alpha_cumprod_prev_steps)
+      x_i, aux = merged_model.sample_one_step_DDIM(x_i, rng_z, i, y=y, t_steps=t_steps, alpha_cumprod_steps=alpha_cumprod_steps, alpha_cumprod_prev_steps=alpha_cumprod_prev_steps)
       outputs = (x_i, rng)
-      return outputs
+      return outputs, aux
       # return outputs, denoised # for debug
 
-    outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
-    images = outputs[0]
-    # all_x = []
-    # denoised = []
-    # for i in range(T):
-    #   D = step_fn(i, (x_i, rng))
-    #   x_i, rng = D[0]
-    #   denoised.append(D[1])
-    #   all_x.append(x_i)
-    # images = jnp.stack(all_x, axis=0)
+    # outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
+    # images = outputs[0]
+    all_x = []
+    denoised = []
+    for i in range(num_steps):
+      D = step_fn(i, (x_i, rng))
+      x_i, rng = D[0]
+      denoised.append((jax.device_get(c) for c in D[1]))
+      all_x.append(x_i)
+    images = jnp.stack(all_x, axis=0)
+    print(denoised)
     # denoised = jnp.stack(denoised, axis=0)
-    # return images, denoised # for debug
+    return images, denoised # for debug
     
     return images, num_steps
   else:
@@ -989,16 +991,28 @@ class SimDDPM(nn.Module):
       # return x_start
       return sample
   
-  def sample_one_step_DDIM(self, x_i, rng, i, t_steps, alpha_cumprod_steps, alpha_cumprod_prev_steps,y=None):
+  def sample_one_step_DDIM(self, x_i, rng, i, t_steps, alpha_cumprod_steps, alpha_cumprod_prev_steps,y=None, t_predictor_state=None):
     """
     rng here is useless, if we set eta = 0
     """
     # we only implement 'generalized' here
     # we only implement 'skip_type=uniform' here
+    o = self.training_diffusion_schedule()
+    
+    if t_predictor_state is not None:
+      t = self.let_t_predictor_predict( t_predictor_state, x_i)
+    else:
+      t = batch_t(t_steps[i],b)
+    
+    assert t.dtype == jnp.int32, 'Get a t with dtype: {d}'.format(d=t.dtype)
+    
+    all_alpha_bars = o['alphas_cumprod']
+      
     b = x_i.shape[0]
-    t = batch_t(t_steps[i],b)
-    at = batch_t(alpha_cumprod_steps[i],b)
-    at_next = batch_t(alpha_cumprod_prev_steps[i],b)
+    # at = batch_t(all_alpha_bars[t],b)
+    at = all_alpha_bars[t]
+    # at_next = batch_t(alpha_cumprod_prev_steps[i],b)
+    at_next = jnp.where(i < self.n_T - 1, all_alpha_bars[batch_t(t_steps[i+1],b)], 1.0)
 
     assert not self.learn_var, 'DDIM only supports fixed variance DDPMs'
     eps = self.forward_prediction_function(x_i, t, train=False)
@@ -1011,7 +1025,7 @@ class SimDDPM(nn.Module):
     c2 = jnp.sqrt(1 - at_next)
     # x_next = jnp.sqrt(at_next) * x0_t + c2 * eps
     x_next = batch_mul(x0_t, jnp.sqrt(at_next)) + batch_mul(eps, c2)
-    return x_next
+    return x_next, (t, t_steps[i])
     # x_next = x0_t = x_i
     # print(at, at_next) # debug
     # return x_next, x0_t # debug
@@ -1117,7 +1131,14 @@ class SimDDPM(nn.Module):
 
     return loss_train, dict_losses, images
   
-  def forward_Diffusion(self, imgs, labels, augment_label, noise_batch, t_batch, train: bool = True):
+  @staticmethod
+  def let_t_predictor_predict(t_predictor_state, x):
+    merged_model = nn.merge(t_predictor_state.graphdef, t_predictor_state.params, t_predictor_state.rng_states, t_predictor_state.batch_stats, t_predictor_state.useless_variable_state)
+    t = merged_model.T_predictor_predict_t(x)
+    t = jax.lax.stop_gradient(t)
+    return t
+    
+  def forward_Diffusion(self, imgs, labels, augment_label, noise_batch, t_batch, train: bool = True, t_predictor_state=None):
     """
     You should first sample the noise and t and input them
     """
@@ -1157,7 +1178,10 @@ class SimDDPM(nn.Module):
 
     x_mixtue = batch_mul(sqrt_alphas_cumprod, x_data) + batch_mul(sqrt_one_minus_alphas_cumprod, x_prior)
     
-    t = t_batch
+    if t_predictor_state is not None:
+      t = self.let_t_predictor_predict(t_predictor_state, x_mixtue)
+    else:
+      t = t_batch
 
     # create v target
     v_target = x_prior
@@ -1512,7 +1536,7 @@ class SimDDPM(nn.Module):
     x_prior = noise_batch
 
     t = t_batch
-    t = t * (1 - self.eps) + self.eps
+    # t = t * (1 - self.eps) + self.eps
     x_mixtue = batch_mul(t, x_data) + batch_mul(1-t, x_prior)
     
     return x_mixtue, t
@@ -1561,6 +1585,11 @@ class SimDDPM(nn.Module):
       ])
 
     return loss_train, dict_losses, images
+  
+  def T_predictor_predict_t(self, x):
+    b = x.shape[0]
+    t = jnp.zeros((b,))
+    return self.unreduce_t(self.forward_prediction_function(x, t, train=False).reshape((b,)))
   
   def forward(self, *args, **kwargs):
       if self.task == 'FM':
