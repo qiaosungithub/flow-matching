@@ -218,7 +218,7 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, model_c
   t_batch = jax.random.uniform(rngs.train(), (b1, b2))
 
   # for debug
-  print(f"before exp: {t_batch[0][:5]}", flush=True)
+  # print(f"before exp: {t_batch[0][:5]}", flush=True)
 
   if model_config.get("exp", None) == "disturb":
     disturb = model_config.get("disturb", None)
@@ -231,7 +231,7 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, model_c
     noisy_images = t * images + (1-t) * noise_batch
     t_batch = 1. - t_predictor.forward(noisy_images.reshape(-1, *images.shape[2:])).reshape(b1, b2) # this is tang
 
-  print(f"after exp: {t_batch[0][:5]}", flush=True)
+  # print(f"after exp: {t_batch[0][:5]}", flush=True)
 
   new_state, metrics, images = train_step_compute_fn(state, batch, noise_batch, t_batch)
 
