@@ -35,7 +35,7 @@ from models.models_ncsnpp_edm import NCSNpp as NCSNppEDM
 # from models.models_ncsnpp import NCSNpp
 # import models.jcm.sde_lib as sde_lib
 from models.jcm.sde_lib import batch_mul
-
+from models.t.t import sqa_t_ver1
 
 
 ModuleDef = Any
@@ -383,6 +383,7 @@ class SimDDPM(nn.Module):
     # beta_start=1e-4,
     # beta_end=0.02,
     # num_diffusion_timesteps=1000,
+    exp=None,
     **kwargs
   ):
     self.image_size = image_size
@@ -403,6 +404,8 @@ class SimDDPM(nn.Module):
     self.ode_solver = ode_solver
     self.no_condition_t = no_condition_t
     self.rngs = rngs
+    self.embedding_type = embedding_type
+    self.exp = exp
     # self.beta_schedule = beta_schedule
     # self.beta_start = beta_start
     # self.beta_end = beta_end
@@ -449,6 +452,9 @@ class SimDDPM(nn.Module):
     # self.net_ema = net_fn(name='net_ema')
     # self.num_timesteps = num_diffusion_timesteps
     self.net = net_fn()
+    if self.exp == "joint":
+      assert self.no_condition_t == False
+      self.t_net = sqa_t_ver1(rngs=rngs)
 
 
   def get_visualization(self, list_imgs):
@@ -706,6 +712,8 @@ class SimDDPM(nn.Module):
 
   def forward_flow_pred_function(self, z, t, augment_label=None, train: bool = True):  # EDM
 
+    if self.exp == "joint":
+      t = 1 - self.t_net.forward(z).squeeze(-1)
     t_cond = jnp.zeros_like(t) if self.no_condition_t else jnp.log(t * 999)
     u_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
     return u_pred

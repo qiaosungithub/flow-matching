@@ -2,25 +2,29 @@
 model:
     image_size: 32
     out_channels: 3
-    base_width: 128
-    n_T: 100
+    base_width: 8
+    n_T: 50
     use_aug_label: False
     dropout: 0.15 # FM
     net_type: ncsnppedm
     average_loss: True # use average or sum for loss
 
-    # sampler: euler
+    sampler: euler
     # sampler: heun
     # sampler: edm
     # sampler: edm-sde
     # sampler: DDIM
     # sampler: ban
-    sampler: adaptive
+    # sampler: adaptive
     ode_solver: jax
     # ode_solver: scipy # rk45
     
-    no_condition_t: True
+    no_condition_t: False
     embedding_type: positional # FM
+
+    # experiments
+    exp: joint # option: disturb, predict, joint
+    disturb: 0.01
 dataset:
     name: cifar10
     root: CIFAR # pytorch
@@ -50,5 +54,5 @@ log_per_step: 100
 visualize_per_epoch: 50
 eval_per_epoch: 80
 checkpoint_per_epoch: 500
-# wandb: False
-load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241211_150928_85yb5q_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/checkpoint_48000
+wandb: False
+# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241211_150928_85yb5q_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/checkpoint_48000

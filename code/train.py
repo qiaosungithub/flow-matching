@@ -47,6 +47,7 @@ import models.models_ddpm as models_ddpm
 from models.models_ddpm import generate, edm_ema_scales_schedules, generate_verbose
 import input_pipeline
 from input_pipeline import prepare_batch_data
+from models.jcm.sde_lib import batch_mul
 
 from init_t import init_t_network
 
@@ -193,7 +194,7 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
   return new_state, metrics, images
 
 
-def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, model_config):
+def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, model_config, t_predictor=None):
   """
   Perform a single training step.
   We will pmap this function
@@ -201,6 +202,8 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, model_c
   batch: a dict, with image, label, augment_label
   rngs: nnx.Rngs
   train_step_compute_fn: the pmaped version of train_step_compute
+  ---
+  t_state (for exp predict): the t_state for the model, which should be replicated
   """
 
   # # ResNet has no dropout; but maintain rng_dropout for future usage
@@ -213,6 +216,22 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, model_c
   b1, b2 = images.shape[0], images.shape[1]
   noise_batch = jax.random.normal(rngs.train(), images.shape)
   t_batch = jax.random.uniform(rngs.train(), (b1, b2))
+
+  # for debug
+  print(f"before exp: {t_batch[0][:5]}", flush=True)
+
+  if model_config.get("exp", None) == "disturb":
+    disturb = model_config.get("disturb", None)
+    assert disturb is not None
+    t_batch += disturb * jax.random.normal(rngs.train(), (b1, b2))
+  elif model_config.get("exp", None) == "predict":
+    assert t_predictor is not None
+    t = t_batch * (1-1e-3)+1e-3
+    t = t.reshape((b1, b2, 1, 1, 1))
+    noisy_images = t * images + (1-t) * noise_batch
+    t_batch = 1. - t_predictor.forward(noisy_images.reshape(-1, *images.shape[2:])).reshape(b1, b2) # this is tang
+
+  print(f"after exp: {t_batch[0][:5]}", flush=True)
 
   new_state, metrics, images = train_step_compute_fn(state, batch, noise_batch, t_batch)
 
@@ -586,6 +605,11 @@ def train_and_evaluate(
   model = model_init_fn(rngs=rngs, **model_config)
   show_dict(f'number of model parameters:{count_params(model)}')
 
+  if model_config.get("exp", None) == "predict":
+    t_state = init_t_network(debug=True)
+    t_predictor = nn.merge(t_state.graphdef, t_state.params, t_state.rng_states, t_state.batch_stats, t_state.useless_variable_state)
+  else: t_predictor = None
+
   ########### Create LR FN ###########
   base_lr = config.learning_rate
   learning_rate_fn = create_learning_rate_fn(
@@ -761,7 +785,7 @@ def train_and_evaluate(
       #   exit(114514)
       # continue
 
-      state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute, model_config)
+      state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute, model_config, t_predictor=t_predictor)
       if epoch == epoch_offset and n_batch == 0:
         log_for_0('p_train_step compiled in {}s'.format(time.time() - train_metrics_last_t))
         log_for_0('Initial compilation completed. Reset timer.')
