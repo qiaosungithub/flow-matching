@@ -42,6 +42,10 @@ model:
     # sampler: DDIM
     # sample_clip_denoised: True
 
+    # experiments (sqa)
+    exp: disturb # options: disturb, predict, joint
+    disturb: 0.01
+
 diffusion:
     diffusion_nT: 1000
     diffusion_schedule: linear
