@@ -789,8 +789,8 @@ class SimDDPM(nn.Module):
       # stop gradient
       in_t = jax.lax.stop_gradient(in_t)
     else: in_t = t
-    error = jnp.mean((in_t-t)**2)
-    jax.debug.print('error: {e}', e=error)
+    # error = jnp.mean((in_t-t)**2)
+    # jax.debug.print('error: {e}', e=error)
     u_pred = self.forward_flow_pred_function(z, in_t)
 
     # loss
