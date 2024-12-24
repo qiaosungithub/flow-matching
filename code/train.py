@@ -675,13 +675,15 @@ def train_and_evaluate(
       state: train state
       """
       # redefine the interface
-      images = p_sample_step(state, sample_idx=sample_idx, verbose=verbose)
       if verbose:
-        images, nfe, all_t = images
+        images, nfe, all_t = p_sample_step(state, sample_idx=sample_idx)
+        # print("all_t.shape: ", all_t.shape)
+        # all_t = jnp.mean(all_t, axis=0)
       else:
-        images, nfe = images
+        images, nfe = p_sample_step(state, sample_idx=sample_idx)
       # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
       jax.random.normal(random.key(0), ()).block_until_ready()
+      nfe = nfe.mean() if nfe is not None else None
       if verbose:
         return images[0], nfe, all_t[0]
       else:

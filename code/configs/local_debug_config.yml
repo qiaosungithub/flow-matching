@@ -34,7 +34,7 @@ dataset:
 aug: 
     use_edm_aug: False # NOTE: if you want to turn on this, also turn on model.use_aug_label
 fid:
-    eval_only: False
+    eval_only: True
     fid_per_epoch: 50
     num_samples: 50000
     cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
