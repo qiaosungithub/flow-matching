@@ -23,7 +23,7 @@ model:
     embedding_type: positional # FM
 
     # experiments
-    exp: disturb # option: disturb, predict, joint
+    exp: predict # option: disturb, predict, joint
     disturb: 0.01
 dataset:
     name: cifar10
