@@ -384,6 +384,8 @@ class SimDDPM(nn.Module):
     # beta_end=0.02,
     # num_diffusion_timesteps=1000,
     exp=None,
+    disturb=None, 
+    t_predictor=None,
     **kwargs
   ):
     self.image_size = image_size
@@ -406,6 +408,8 @@ class SimDDPM(nn.Module):
     self.rngs = rngs
     self.embedding_type = embedding_type
     self.exp = exp
+    self.disturb = disturb
+    self.t_predictor = t_predictor
     # self.beta_schedule = beta_schedule
     # self.beta_start = beta_start
     # self.beta_end = beta_end
@@ -455,7 +459,9 @@ class SimDDPM(nn.Module):
     if self.exp == "joint":
       assert self.no_condition_t == False
       self.t_net = sqa_t_ver1(rngs=rngs)
-
+    elif self.exp == "predict":
+      assert self.no_condition_t == False
+      assert self.t_predictor is not None
 
   def get_visualization(self, list_imgs):
     vis = jnp.concatenate(list_imgs, axis=1)
@@ -766,7 +772,6 @@ class SimDDPM(nn.Module):
     # sample t step
     t = t_batch
     t = t * (1 - self.eps) + self.eps
-    # TODO: 这个太唐了，必须移到外面去
 
     # create v target
     v_target = x_data - x_prior
@@ -776,8 +781,17 @@ class SimDDPM(nn.Module):
     z = batch_mul(t, x_data) + batch_mul(1 - t, x_prior)
 
     # forward network
-    u_pred = self.forward_flow_pred_function(z, t)
-
+    if self.exp == "disturb":
+      in_t = t + self.disturb * jax.random.normal(self.rngs.train(), t.shape)
+      in_t = jnp.clip(in_t, 1e-3, 1)
+    elif self.exp == "predict":
+      in_t = 1 - self.t_predictor.forward(z).squeeze(-1)
+      # stop gradient
+      in_t = jax.lax.stop_gradient(in_t)
+    else: in_t = t
+    error = jnp.mean((in_t-t)**2)
+    jax.debug.print('error: {e}', e=error)
+    u_pred = self.forward_flow_pred_function(z, in_t)
 
     # loss
     loss = (v_target - u_pred)**2

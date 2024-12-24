@@ -217,21 +217,21 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, model_c
   noise_batch = jax.random.normal(rngs.train(), images.shape)
   t_batch = jax.random.uniform(rngs.train(), (b1, b2))
 
-  # for debug
-  # print(f"before exp: {t_batch[0][:5]}", flush=True)
+  # # for debug
+  # # print(f"before exp: {t_batch[0][:5]}", flush=True)
 
-  if model_config.get("exp", None) == "disturb":
-    disturb = model_config.get("disturb", None)
-    assert disturb is not None
-    t_batch += disturb * jax.random.normal(rngs.train(), (b1, b2))
-  elif model_config.get("exp", None) == "predict":
-    assert t_predictor is not None
-    t = t_batch * (1-1e-3)+1e-3
-    t = t.reshape((b1, b2, 1, 1, 1))
-    noisy_images = t * images + (1-t) * noise_batch
-    t_batch = 1. - t_predictor.forward(noisy_images.reshape(-1, *images.shape[2:])).reshape(b1, b2) # this is tang
+  # if model_config.get("exp", None) == "disturb":
+  #   disturb = model_config.get("disturb", None)
+  #   assert disturb is not None
+  #   t_batch += disturb * jax.random.normal(rngs.train(), (b1, b2))
+  # elif model_config.get("exp", None) == "predict":
+  #   assert t_predictor is not None
+  #   t = t_batch * (1-1e-3)+1e-3
+  #   t = t.reshape((b1, b2, 1, 1, 1))
+  #   noisy_images = t * images + (1-t) * noise_batch
+  #   t_batch = 1. - t_predictor.forward(noisy_images.reshape(-1, *images.shape[2:])).reshape(b1, b2) # this is tang
 
-  # print(f"after exp: {t_batch[0][:5]}", flush=True)
+  # # print(f"after exp: {t_batch[0][:5]}", flush=True)
 
   new_state, metrics, images = train_step_compute_fn(state, batch, noise_batch, t_batch)
 
@@ -598,17 +598,17 @@ def train_and_evaluate(
   # log_for_0('eval_steps: {}'.format(val_steps))
 
   ########### Create Model ###########
-  model_cls = models_ddpm.SimDDPM
-  rngs = nn.Rngs(config.seed, params=config.seed + 114, dropout=config.seed + 514, train=config.seed + 1919)
-  dtype = get_dtype(config.half_precision)
-  model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype)
-  model = model_init_fn(rngs=rngs, **model_config)
-  show_dict(f'number of model parameters:{count_params(model)}')
-
   if model_config.get("exp", None) == "predict":
     t_state = init_t_network(debug=True)
     t_predictor = nn.merge(t_state.graphdef, t_state.params, t_state.rng_states, t_state.batch_stats, t_state.useless_variable_state)
   else: t_predictor = None
+
+  model_cls = models_ddpm.SimDDPM
+  rngs = nn.Rngs(config.seed, params=config.seed + 114, dropout=config.seed + 514, train=config.seed + 1919)
+  dtype = get_dtype(config.half_precision)
+  model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype, t_predictor=t_predictor)
+  model = model_init_fn(rngs=rngs, **model_config)
+  show_dict(f'number of model parameters:{count_params(model)}')
 
   ########### Create LR FN ###########
   base_lr = config.learning_rate
@@ -673,15 +673,17 @@ def train_and_evaluate(
     def run_p_sample_step(p_sample_step, state, sample_idx, verbose=False):
       """
       state: train state
+      verbose: we do not support now
       """
-      # redefine the interface
-      if verbose:
-        images, nfe, all_t = p_sample_step(state, sample_idx=sample_idx)
-        # print("all_t.shape: ", all_t.shape)
-        # all_t = jnp.mean(all_t, axis=0)
-      else:
-        images, nfe = p_sample_step(state, sample_idx=sample_idx)
-      # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
+      # # redefine the interface
+      # if verbose:
+      #   images, nfe, all_t = p_sample_step(state, sample_idx=sample_idx)
+      #   # print("all_t.shape: ", all_t.shape)
+      #   # all_t = jnp.mean(all_t, axis=0)
+      # else:
+      #   images, nfe = p_sample_step(state, sample_idx=sample_idx)
+      # # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
+      images, nfe = p_sample_step(state, sample_idx=sample_idx)
       jax.random.normal(random.key(0), ()).block_until_ready()
       nfe = nfe.mean() if nfe is not None else None
       if verbose:
