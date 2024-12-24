@@ -862,15 +862,7 @@ def train_and_evaluate(
       # sync batch statistics across replicas
       eval_state = sync_batch_stats(state)
       eval_state = eval_state.replace(params=model_avg)
-      vis, _, all_t = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx, verbose=True)
-      print("all_t.shape: ", all_t.shape)
-      all_t = jnp.mean(all_t, axis=0)
-      if config.wandb and index == 0:
-        for ep in range(1, all_t.shape[0]):
-          wandb.log({
-            't': all_t[ep],
-            # 'iter': ep
-            })
+      vis, _ = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx, verbose=True)
         
       vis = make_grid_visualization(vis)
       vis = jax.device_get(vis) # np.ndarray
