@@ -686,10 +686,11 @@ def train_and_evaluate(
       images, nfe = p_sample_step(state, sample_idx=sample_idx)
       jax.random.normal(random.key(0), ()).block_until_ready()
       nfe = nfe.mean() if nfe is not None else None
-      if verbose:
-        return images[0], nfe, all_t[0]
-      else:
-        return images[0], nfe  # images have been all gathered
+      # if verbose:
+      #   return images[0], nfe, all_t[0]
+      # else:
+      #   return images[0], nfe  # images have been all gathered
+      return images[0], nfe
     
   elif config.model.ode_solver == 'scipy':
     raise DeprecationWarning('其实用这个')
