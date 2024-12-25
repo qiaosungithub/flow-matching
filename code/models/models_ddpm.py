@@ -789,6 +789,7 @@ class SimDDPM(nn.Module):
       in_t = 1 - self.t_predictor.forward(z).squeeze(-1)
       # stop gradient
       in_t = jax.lax.stop_gradient(in_t)
+      in_t = jnp.clip(in_t, 1e-3, 1)
     else: in_t = t
     # error = jnp.mean((in_t-t)**2)
     # jax.debug.print('error: {e}', e=error)
