@@ -228,7 +228,7 @@ def sample_step(state, sample_idx, model, rng_init, device_batch_size, MEAN_RGB=
   if model.ode_solver == 'O':
     images, nfe = images
 
-  images_all = lax.all_gather(images, axis_name='batch')  # each device has a copy  
+  images_all = lax.all_gather(images, axis_name='batch')  # each device has a copy
   images_all = images_all.reshape(-1, *images_all.shape[2:])
 
   # The images should be [-1, 1], which is correct
@@ -629,10 +629,10 @@ def train_and_evaluate(
       state: train state
       """
       # redefine the interface
-      images = p_sample_step(state, sample_idx=sample_idx)
-      images, nfe = images
+      images, nfe = p_sample_step(state, sample_idx=sample_idx)
       # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
       jax.random.normal(random.key(0), ()).block_until_ready()
+      nfe = nfe.mean() if nfe is not None else None
       return images[0], nfe  # images have been all gathered
     
   elif config.model.ode_solver == 'scipy':
@@ -734,7 +734,6 @@ def train_and_evaluate(
       # continue
 
       state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute, model_config)
-      # raise LookupError('看这里！')
       if epoch == epoch_offset and n_batch == 0:
         log_for_0('p_train_step compiled in {}s'.format(time.time() - train_metrics_last_t))
         log_for_0('Initial compilation completed. Reset timer.')
@@ -1037,8 +1036,8 @@ def just_evaluate(
 
   if rank == 0 and config.wandb:
     nfe = config.model.n_T
-    if config.model.ode_solver == 'scipy': nfe=100 # TODO: show the rk45 nfe
-    elif config.model.sampler not in ['euler', "DDIM"]: nfe*=2
+    if config.model.ode_solver == 'scipy': raise LookupError('Not implemented')
+    elif config.model.sampler not in ['euler', "DDIM", "adaptive"]: nfe*=2
     if config.model.ode_solver != 'O':
       wandb.log({'NFE': nfe})
 

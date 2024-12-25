@@ -204,9 +204,6 @@ def generate(state: NNXTrainState, model, rng, n_sample):
     t_steps = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
     x_i = x_prior * t_steps[0]
 
-    # import jax.random as random
-    # x = random.normal(rng, x_shape, dtype=model.dtype)
-
     def step_fn(i, inputs):
       x_i, rng = inputs
       rng_this_step = jax.random.fold_in(rng, i)
@@ -223,65 +220,6 @@ def generate(state: NNXTrainState, model, rng, n_sample):
     outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
     images = outputs[0]
     return images
-    # # for debug
-    # all_x = []
-    # denoised = []
-    # for i in range(num_steps):
-    #   D = step_fn(i, (x_i, rng))
-    #   x_i, rng = D[0]
-    #   denoised.append(D[1])
-    #   all_x.append(x_i)
-    # images = jnp.stack(all_x, axis=0)
-    # denoised = jnp.stack(denoised, axis=0)
-    # return images, denoised
-  # elif model.sampler == 'DDIM':
-  #   skip = model.num_diffusion_timesteps // num_steps
-  #   # skip = 1
-  #   seq = range(0, model.num_timesteps, skip)
-  #   T = len(seq)
-  #   seq_next = [-1] + list(seq[:-1])
-  #   seq_reversed = jnp.array(list(reversed(seq)))
-  #   seq_next_reversed = jnp.array(list(reversed(seq_next)))
-  #   eta = 0.0 # control the noise level added every step, 0 -> ODE sampler TODO: implement eta > 0.0
-  #   n = x_prior.shape[0]
-  #   x0_preds = []
-  #   xs = [x_prior]
-
-  #   x_i = x_prior
-
-  #   def step_fn(i, inputs):
-  #     x_i, rng = inputs
-
-  #     _i = seq_reversed[i]
-  #     _j = seq_next_reversed[i]
-
-  #     t = jnp.ones(n) * _i
-  #     next_t = jnp.ones(n) * _j
-
-  #     rng_this_step = jax.random.fold_in(rng, i)
-  #     rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
-
-  #     merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-  #     x_i = merged_model.sample_one_step_DDIM(x_i, rng_z, t, next_t)
-  #     # x_i, denoised = merged_model.sample_one_step_DDIM(x_i, rng_z, t, next_t) # for debug
-
-  #     outputs = (x_i, rng)
-  #     return outputs
-  #     # return outputs, denoised # for debug
-
-  #   outputs = jax.lax.fori_loop(0, T, step_fn, (x_i, rng))
-  #   images = outputs[0]
-  #   return images
-  #   # all_x = []
-  #   # denoised = []
-  #   # for i in range(T):
-  #   #   D = step_fn(i, (x_i, rng))
-  #   #   x_i, rng = D[0]
-  #   #   denoised.append(D[1])
-  #   #   all_x.append(x_i)
-  #   # images = jnp.stack(all_x, axis=0)
-  #   # denoised = jnp.stack(denoised, axis=0)
-  #   # return images, denoised # for debug
 
   else:
     raise NotImplementedError
@@ -333,20 +271,6 @@ class SimDDPM(nn.Module):
     self.ode_solver = ode_solver
     self.no_condition_t = no_condition_t
     self.rngs = rngs
-    # self.beta_schedule = beta_schedule
-    # self.beta_start = beta_start
-    # self.beta_end = beta_end
-    # self.num_diffusion_timesteps = num_diffusion_timesteps
-
-    # sde = sde_lib.KVESDE(
-    #   t_min=0.002,
-    #   t_max=80.0,
-    #   N=18,  # config.model.num_scales
-    #   rho=7.0,
-    #   data_std=0.5,
-    # )
-    # self.sde = sde
-    # This is not used in flow matching
 
     if self.net_type == 'context':
       raise NotImplementedError
@@ -394,16 +318,6 @@ class SimDDPM(nn.Module):
     )
     t = t**rho
     return t
-
-  # def compute_alpha(self, t):
-  #   """
-  #   DDIM util function
-  #   """
-  #   betas = get_beta_schedule(self.beta_schedule, beta_start=self.beta_start, beta_end=self.beta_end, num_diffusion_timesteps=self.num_diffusion_timesteps)
-  #   alpha = jnp.cumprod(1 - betas, axis=0)
-  #   alpha = jnp.concatenate([jnp.ones((1,)), alpha], axis=0)
-  #   a = jnp.take(alpha, t + 1).reshape(-1, 1, 1, 1)
-  #   return a
     
   def compute_losses(self, pred, gt):
     assert pred.shape == gt.shape
@@ -562,26 +476,27 @@ class SimDDPM(nn.Module):
     # return x_next, denoised # for debug
     return x_next
 
-  # def sample_one_step_DDIM(self, x_i, rng, t, next_t):
-  #   """
-  #   rng here is useless, if we set eta = 0
-  #   """
-  #   # we only implement 'generalized' here
-  #   # we only implement 'skip_type=uniform' here
-  #   at = self.compute_alpha(t.astype(jnp.int32))
-  #   at_next = self.compute_alpha(next_t.astype(jnp.int32))
+  def sample_one_step_DDIM(self, x_i, rng, t, next_t):
+    """
+    rng here is useless, if we set eta = 0
+    """
+    raise NotImplementedError
+    # we only implement 'generalized' here
+    # we only implement 'skip_type=uniform' here
+    at = self.compute_alpha(t.astype(jnp.int32))
+    at_next = self.compute_alpha(next_t.astype(jnp.int32))
 
-  #   eps = self.forward_DDIM_pred_function(x_i, t, train=False)
-  #   # x0_t = (x_i - eps * jnp.sqrt(1 - at)) / jnp.sqrt(at)
-  #   x0_t = batch_mul(x_i - batch_mul(eps, jnp.sqrt(1 - at)), 1. / jnp.sqrt(at))  # when eta=0, no need to add noise
-  #   # when eta=0, no need to add noise
-  #   c2 = jnp.sqrt(1 - at_next)
-  #   # x_next = jnp.sqrt(at_next) * x0_t + c2 * eps
-  #   x_next = batch_mul(x0_t, jnp.sqrt(at_next)) + batch_mul(eps, c2)
-  #   return x_next
-  #   # x_next = x0_t = x_i
-  #   # print(at, at_next) # debug
-  #   # return x_next, x0_t # debug
+    eps = self.forward_DDIM_pred_function(x_i, t, train=False)
+    # x0_t = (x_i - eps * jnp.sqrt(1 - at)) / jnp.sqrt(at)
+    x0_t = batch_mul(x_i - batch_mul(eps, jnp.sqrt(1 - at)), 1. / jnp.sqrt(at))  # when eta=0, no need to add noise
+    # when eta=0, no need to add noise
+    c2 = jnp.sqrt(1 - at_next)
+    # x_next = jnp.sqrt(at_next) * x0_t + c2 * eps
+    x_next = batch_mul(x0_t, jnp.sqrt(at_next)) + batch_mul(eps, c2)
+    return x_next
+    # x_next = x0_t = x_i
+    # print(at, at_next) # debug
+    # return x_next, x0_t # debug
 
   def forward_consistency_function(self, x, t, pred_t=None):
     raise NotImplementedError
