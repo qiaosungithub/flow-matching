@@ -59,6 +59,8 @@ def get_config():
 
   model.no_condition_t = False
 
+  model.target = "eps"
+
   # Classifier model  
   config.classifier_model = classifier_model = ml_collections.ConfigDict()
   classifier_model.image_size = 32
@@ -148,6 +150,8 @@ def get_config():
   evalu = config.evalu = ml_collections.ConfigDict()
   evalu.ema = True
   evalu.sample = False # sample before testing fid
+
+  config.train_classifier = False
 
   ################ WARNING ################
   # DO NOT DIRECTLY MODIFY THIS FILE, IN  #

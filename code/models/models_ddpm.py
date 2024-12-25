@@ -358,7 +358,7 @@ def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o,label_type=
     # images = jnp.stack(all_x, axis=0)
     # denoised = jnp.stack(denoised, axis=0)
     # return images, denoised
-  elif model.sampler in ['ddpm']:
+  elif model.sampler in ['ddpm'] and model.target == 'eps':
     x_i = x_prior
     # o = create_zhh_SAMPLING_diffusion_schedule(config)
     o = zhh_o
@@ -416,6 +416,30 @@ def generate(state: NNXTrainState, model, rng, n_sample,config,zhh_o,label_type=
   
     return images
     # return (y / 5 - 1).reshape(-1,1,1,1).repeat(32, axis=1).repeat(32, axis=2).repeat(3, axis=3).astype(jnp.float32)
+  elif model.sampler in ['ddpm'] and model.target == 'x':
+    # sqa exp
+    x_i = x_prior
+    o = zhh_o
+    t_steps = o['sample_ts']
+    sqrt_recip_alphas_cumprod_steps = o['sample_sqrt_recip_alphas_cumprod']
+    sqrt_recipm1_alphas_cumprod_steps = o['sample_sqrt_recipm1_alphas_cumprod']
+    posterior_mean_coef1_steps = o['sample_posterior_mean_coef1']
+    posterior_mean_coef2_steps = o['sample_posterior_mean_coef2']
+    log_model_variance_steps = o['sample_log_model_variance']
+
+    def step_fn(i, inputs):
+      x_i, rng = inputs
+      rng_this_step = jax.random.fold_in(rng, i)
+      rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
+
+      merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
+      x_i = merged_model.sample_one_step_ddpm_sqa(x_i, rng_z, i, t_steps=t_steps, sqrt_recip_alphas_cumprod_steps=sqrt_recip_alphas_cumprod_steps, sqrt_recipm1_alphas_cumprod_steps=sqrt_recipm1_alphas_cumprod_steps, posterior_mean_coef1_steps=posterior_mean_coef1_steps, posterior_mean_coef2_steps=posterior_mean_coef2_steps, log_model_variance_steps=log_model_variance_steps)
+      outputs = (x_i, rng)
+      return outputs
+    
+    outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
+    images = outputs[0]
+    return images
   
   else:
     raise NotImplementedError
@@ -483,6 +507,7 @@ class SimDDPM(nn.Module):
     rngs=None,
     learn_var=False,
     class_conditional=False,
+    target = "eps",
     **kwargs
   ):
     self.image_size = image_size
@@ -508,6 +533,8 @@ class SimDDPM(nn.Module):
     self.rngs = rngs
     self.sample_clip_denoised = sample_clip_denoised
     self.class_conditional = class_conditional
+    self.target = target
+    assert target in ['eps', 'x']
 
     # sde = sde_lib.KVESDE(
     #   t_min=0.002,
@@ -729,7 +756,17 @@ class SimDDPM(nn.Module):
   def sample_one_step_ddpm(self, x_i, rng, i, t_steps, sqrt_recip_alphas_cumprod_steps, sqrt_recipm1_alphas_cumprod_steps, posterior_mean_coef1_steps, posterior_mean_coef2_steps,log_model_variance_steps,posterior_log_variance_clipped_steps, beta_steps,y=None,classifier_grad_fn=None,classifier_scale=None):
       """
       DDPM
+      ---
+      t_steps: 注意我们的 sample 步数不一定是最多的, 这是一个等差数列
+      sqrt_recip_alphas_cumprod: 系数 A
+      sqrt_recipm1_alphas_cumprod: 系数 B
+      s.t. x_data = A * x_i - B * eps
+      posterior_mean_coef1: 系数 C
+      posterior_mean_coef2: 系数 D
+      s.t. x = C * x_data + D * x_i
+      posterior_log_variance_clipped: noise level added
       """
+      assert self.target == 'eps'
       if (y is not None) and (not self.class_conditional):
         assert classifier_grad_fn is not None, 'We assume that you are doing conditional generation for an unconditional model, so you must use classifier guidance'
       
@@ -778,6 +815,50 @@ class SimDDPM(nn.Module):
       # return x_start
       return sample
 
+  def sample_one_step_ddpm_sqa(self, x_i, rng, i, t_steps, sqrt_recip_alphas_cumprod_steps, sqrt_recipm1_alphas_cumprod_steps, posterior_mean_coef1_steps, posterior_mean_coef2_steps,log_model_variance_steps):
+      """
+      DDPM
+      ---
+      t_steps: 注意我们的 sample 步数不一定是最多的, 这是一个等差数列
+      sqrt_recip_alphas_cumprod: 系数 A
+      sqrt_recipm1_alphas_cumprod: 系数 B
+      s.t. x_data = A * x_i - B * eps
+      posterior_mean_coef1: 系数 C
+      posterior_mean_coef2: 系数 D
+      s.t. x = C * x_data + D * x_i
+      posterior_log_variance_clipped: noise level added
+      """
+      assert self.target == 'x'
+      
+      b = x_i.shape[0]
+      t = batch_t(t_steps[i],b)
+      sqrt_recip_alphas_cumprod = batch_t(sqrt_recip_alphas_cumprod_steps[i],b)
+      sqrt_recipm1_alphas_cumprod = batch_t(sqrt_recipm1_alphas_cumprod_steps[i],b)
+      posterior_mean_coef1 = batch_t(posterior_mean_coef1_steps[i],b)
+      posterior_mean_coef2 = batch_t(posterior_mean_coef2_steps[i],b)
+      
+      x_pred = self.forward_flow_pred_function(x_i, t, train=False)
+      log_model_variance = batch_t(log_model_variance_steps[i],b)
+      
+      # get x_start from eps
+      x_start = x_pred
+      
+      if self.sample_clip_denoised:
+          x_start = jnp.clip(x_start, -1, 1)
+          
+      model_mean = batch_mul(posterior_mean_coef1, x_start) + batch_mul(posterior_mean_coef2, x_i) # 这里写错了就高兴
+      
+      #### END ####
+
+      noise = jax.random.normal(rng, x_i.shape)
+
+      nonzero_mask = jnp.where(t > 0.5, 1, 0) # no noise when t == 0
+      sample = model_mean + batch_mul(batch_mul(nonzero_mask, noise) , jnp.exp(0.5 * log_model_variance))
+
+      # return sample, x_start # for debug
+      # return x_start
+      return sample
+
 
   def forward_consistency_function(self, x, t, pred_t=None):
     raise NotImplementedError
@@ -801,7 +882,7 @@ class SimDDPM(nn.Module):
 
     return denoiser
 
-  def forward_flow_pred_function(self, z, t, augment_label=None,y=None, train: bool = True):  # EDM
+  def forward_flow_pred_function(self, z, t, augment_label=None, y=None, train: bool = True):  # EDM
 
     # t_cond = jnp.zeros_like(t) if self.no_condition_t else jnp.log(t * 999)
     if not self.class_conditional:
@@ -836,8 +917,6 @@ class SimDDPM(nn.Module):
     You should first sample the noise and t and input them
     """
     
-    # TODO: write here
-    
     imgs = imgs.astype(self.dtype)
     gt = imgs
     x = imgs
@@ -849,7 +928,7 @@ class SimDDPM(nn.Module):
     # t_batch = t_batch.reshape(bz, 1, 1, 1)
 
     # -----------------------------------------------------------------
-    #  diffusion alpha, betas
+    # diffusion alpha, betas
     betas = beta_batch
     assert betas.shape == t_batch.shape, 'betas shape: {s}, t_batch shape: {t}'.format(s=betas.shape, t=t_batch.shape)
     alphas = 1.0 - betas
@@ -872,15 +951,16 @@ class SimDDPM(nn.Module):
     t = t_batch
 
     # create v target
-    v_target = x_prior
+    v_target = x_prior if self.target == 'eps' else x_data
     # v_target = jnp.ones_like(x_data)  # dummy
 
 
     # forward network
     if self.learn_var:
-      u_pred, model_var_output = self.forward_flow_pred_function(x_mixtue, t,y=labels)
+      assert self.target == 'eps'
+      u_pred, model_var_output = self.forward_flow_pred_function(x_mixtue, t, y=labels)
     else:
-      u_pred = self.forward_flow_pred_function(x_mixtue, t,y=labels)
+      u_pred = self.forward_flow_pred_function(x_mixtue, t, y=labels)
 
     # loss
     loss = (v_target - u_pred)**2
@@ -962,15 +1042,15 @@ class SimDDPM(nn.Module):
     x_data_pred = batch_mul(sqrt_recip_alphas_cumprod, x_mixtue) - batch_mul(sqrt_recipm1_alphas_cumprod, u_pred)
     # x_data_sanity = batch_mul(sqrt_recip_alphas_cumprod, x_mixtue) - batch_mul(sqrt_recipm1_alphas_cumprod, v_target)
     
+    vis = [gt,        # image (from dataset)
+          v_target,  # target of network (known)
+          u_pred,    # prediction of network
+          x_mixtue,         # input to network (noisy image)
+          x_data_pred, # prediction of clean image, reparameterized by the network
+          # x_data_sanity, # sanity check, this should be the same as `gt`
+          ] if self.target == 'eps' else [gt, u_pred, x_mixtue]
 
-    images = self.get_visualization(
-      [gt,        # image (from dataset)
-       v_target,  # target of network (known)
-       u_pred,    # prediction of network
-       x_mixtue,         # input to network (noisy image)
-       x_data_pred, # prediction of clean image, reparameterized by the network
-      # x_data_sanity, # sanity check, this should be the same as `gt`
-      ])
+    images = self.get_visualization(vis)
 
     return loss_train, dict_losses, images
 
