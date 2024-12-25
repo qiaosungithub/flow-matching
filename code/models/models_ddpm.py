@@ -673,26 +673,27 @@ class SimDDPM(nn.Module):
     # return x_next, denoised # for debug
     return x_next
 
-  # def sample_one_step_DDIM(self, x_i, rng, t, next_t):
-  #   """
-  #   rng here is useless, if we set eta = 0
-  #   """
-  #   # we only implement 'generalized' here
-  #   # we only implement 'skip_type=uniform' here
-  #   at = self.compute_alpha(t.astype(jnp.int32))
-  #   at_next = self.compute_alpha(next_t.astype(jnp.int32))
+  def sample_one_step_DDIM(self, x_i, rng, t, next_t):
+    """
+    rng here is useless, if we set eta = 0
+    """
+    raise NotImplementedError
+    # we only implement 'generalized' here
+    # we only implement 'skip_type=uniform' here
+    at = self.compute_alpha(t.astype(jnp.int32))
+    at_next = self.compute_alpha(next_t.astype(jnp.int32))
 
-  #   eps = self.forward_DDIM_pred_function(x_i, t, train=False)
-  #   # x0_t = (x_i - eps * jnp.sqrt(1 - at)) / jnp.sqrt(at)
-  #   x0_t = batch_mul(x_i - batch_mul(eps, jnp.sqrt(1 - at)), 1. / jnp.sqrt(at))  # when eta=0, no need to add noise
-  #   # when eta=0, no need to add noise
-  #   c2 = jnp.sqrt(1 - at_next)
-  #   # x_next = jnp.sqrt(at_next) * x0_t + c2 * eps
-  #   x_next = batch_mul(x0_t, jnp.sqrt(at_next)) + batch_mul(eps, c2)
-  #   return x_next
-  #   # x_next = x0_t = x_i
-  #   # print(at, at_next) # debug
-  #   # return x_next, x0_t # debug
+    eps = self.forward_DDIM_pred_function(x_i, t, train=False)
+    # x0_t = (x_i - eps * jnp.sqrt(1 - at)) / jnp.sqrt(at)
+    x0_t = batch_mul(x_i - batch_mul(eps, jnp.sqrt(1 - at)), 1. / jnp.sqrt(at))  # when eta=0, no need to add noise
+    # when eta=0, no need to add noise
+    c2 = jnp.sqrt(1 - at_next)
+    # x_next = jnp.sqrt(at_next) * x0_t + c2 * eps
+    x_next = batch_mul(x0_t, jnp.sqrt(at_next)) + batch_mul(eps, c2)
+    return x_next
+    # x_next = x0_t = x_i
+    # print(at, at_next) # debug
+    # return x_next, x0_t # debug
 
   def forward_consistency_function(self, x, t, pred_t=None):
     raise NotImplementedError

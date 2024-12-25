@@ -45,7 +45,7 @@ batch_size: 2048
 num_epochs: 2000
 learning_rate: 0.0008 # FM
 lr_schedule: const
-weight_decay: 0.0
+weight_decay: 0
 optimizer: adamw
 adam_b2: 0.95
 grad_clip: 0.0

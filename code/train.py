@@ -670,27 +670,16 @@ def train_and_evaluate(
       axis_name='batch'
     )
 
-    def run_p_sample_step(p_sample_step, state, sample_idx, verbose=False):
+    def run_p_sample_step(p_sample_step, state, sample_idx):
       """
       state: train state
-      verbose: we do not support now
       """
-      # # redefine the interface
-      # if verbose:
-      #   images, nfe, all_t = p_sample_step(state, sample_idx=sample_idx)
-      #   # print("all_t.shape: ", all_t.shape)
-      #   # all_t = jnp.mean(all_t, axis=0)
-      # else:
-      #   images, nfe = p_sample_step(state, sample_idx=sample_idx)
-      # # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
+      # redefine the interface
       images, nfe = p_sample_step(state, sample_idx=sample_idx)
+      # print("In function run_p_sample_step; images.shape: ", images.shape, flush=True)
       jax.random.normal(random.key(0), ()).block_until_ready()
       nfe = nfe.mean() if nfe is not None else None
-      # if verbose:
-      #   return images[0], nfe, all_t[0]
-      # else:
-      #   return images[0], nfe  # images have been all gathered
-      return images[0], nfe
+      return images[0], nfe  # images have been all gathered
     
   elif config.model.ode_solver == 'scipy':
     raise DeprecationWarning('其实用这个')
@@ -862,8 +851,7 @@ def train_and_evaluate(
       # sync batch statistics across replicas
       eval_state = sync_batch_stats(state)
       eval_state = eval_state.replace(params=model_avg)
-      vis, _ = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx, verbose=True)
-        
+      vis, _ = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx)
       vis = make_grid_visualization(vis)
       vis = jax.device_get(vis) # np.ndarray
       vis = vis[0]
