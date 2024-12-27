@@ -7,7 +7,7 @@ model:
     # learn_var: True # default: False
     n_T: 500 # num of sample steps, matches "diffusion_nT"
     use_aug_label: False
-    dropout: 0.2
+    dropout: 0.15
     net_type: ncsnppedm
     average_loss: True # use average or sum for loss
 
@@ -19,7 +19,7 @@ model:
     ode_solver: jax
     # ode_solver: scipy # rk45
     
-    no_condition_t: False
+    no_condition_t: True
     class_conditional: False
     # t_condition_method: not # for No T experiments
     t_condition_method: direct # default: log999
