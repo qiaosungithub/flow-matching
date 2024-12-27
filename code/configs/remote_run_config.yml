@@ -19,7 +19,7 @@ model:
     ode_solver: jax
     # ode_solver: scipy # rk45
     
-    no_condition_t: True
+    no_condition_t: False # do not change this
     class_conditional: False
     # t_condition_method: not # for No T experiments
     t_condition_method: direct # default: log999
