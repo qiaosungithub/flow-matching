@@ -42,7 +42,7 @@ evalu:
     ema: True
     sample: True
 batch_size: 2048
-num_epochs: 2000
+num_epochs: 4000
 learning_rate: 0.0008
 lr_schedule: const
 # lr_schedule: classifier_specific
