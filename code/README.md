@@ -61,6 +61,8 @@ FM with no t baseline: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/2024121
 
 DDIM: `/kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241209_004559_gihhxu_kmh-tpuvm-v2-32-1__b_lr_ep_eval/checkpoint_194000`
 
+DDIM w/o t: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241210_185646_e19l8l_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_145500`
+
 ## datasets
 
 We now use pytorch dataset. To use tfds, switch to the `FM-nnx-tfds` branch.

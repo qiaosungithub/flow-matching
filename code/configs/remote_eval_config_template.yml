@@ -5,30 +5,27 @@ continue_training: False # this is for resuming training
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241210_003420_srefmk_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/best_fid # ADM model (w/ t)
 # load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241210_003719_b663n5_kmh-tpuvm-v2-32-7__b_lr_ep_eval/best_fid # ADM class-conditional model (w/ t)
 # load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241209_004559_gihhxu_kmh-tpuvm-v2-32-1__b_lr_ep_eval/checkpoint_194000 # DDIM model (w/ t); diffusion schedule is "linear"
-# load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241211_185022_1p9khj_kmh-tpuvm-v2-32-7__b_lr_ep_eval # EDM model (w/ t)
-load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241210_185646_e19l8l_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_145500 # DDIM model (w/o t)
+load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241211_185022_1p9khj_kmh-tpuvm-v2-32-7__b_lr_ep_eval # EDM model (w/ t)
+# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241210_185646_e19l8l_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_145500 # DDIM model (w/o t)
 ############################################
 #     Normal Training Configuration        #
 ############################################
 model:
     ##### T-conditioning #####
-    # t_condition_method: dot25log # options: [direct, log999, dot25log, not (i.e. no t)] # note: edm must use "dot25log"
-    t_condition_method: not
+    t_condition_method: dot25log # options: [direct, log999, dot25log, not (i.e. no t)] # note: edm must use "dot25log"
     
     ##### Common Configs (rarely changes) #####
     image_size: 32
     out_channels: 3
     base_width: 128
-    use_aug_label: False
+    use_aug_label: True
     net_type: ncsnppedm
     average_loss: False # use average or sum for loss
 
     ##### Common Configs (may changes) #####
     dropout: 0.15
-    # embedding_type: fourier # options: [positional, fourier]
-    embedding_type: positional
-    # task: EDM # options: [FM, Diffusion, EDM]
-    task: Diffusion
+    embedding_type: fourier # options: [positional, fourier]
+    task: EDM # options: [FM, Diffusion, EDM]
 
     ##### FM-specific configs #####
 
@@ -39,20 +36,20 @@ model:
     class_conditional: False
 
     ##### Sampling Configs #####
-    n_T: 1000 # num of sample steps, matches "diffusion_nT"
+    n_T: 18 # num of sample steps, matches "diffusion_nT"
     
-    # # --- Flow Matching / EDM --- #
-    # # sampler: euler
-    # # sampler: heun
-    # sampler: edm
-    # # sampler: edm-sde
-    # ode_solver: jax
-    # # ode_solver: O
+    # --- Flow Matching / EDM --- #
+    # sampler: euler
+    # sampler: heun
+    sampler: edm
+    # sampler: edm-sde
+    ode_solver: jax
+    # ode_solver: O
 
     # --- Diffusion --- #
     # sampler: ddpm
-    sampler: DDIM
-    sample_clip_denoised: True
+    # sampler: DDIM
+    # sample_clip_denoised: True
 
 diffusion:
     diffusion_nT: 1000
@@ -66,7 +63,7 @@ dataset:
     cache: True
 
 aug: 
-    use_edm_aug: False # NOTE: if you want to turn on this, you must also turn on model.use_aug_label
+    use_edm_aug: True # NOTE: if you want to turn on this, you must also turn on model.use_aug_label
 
 fid:
     eval_only: False
