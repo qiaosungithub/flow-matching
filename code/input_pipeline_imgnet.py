@@ -70,6 +70,7 @@ def prepare_batch_data(batch, batch_size=None):
 
 
 def worker_init_fn(worker_id, rank):
+    # seed = worker_id + 114 + rank * 1000 # this is for sanity check
     seed = worker_id + rank * 1000
     torch.manual_seed(seed)
     random.seed(seed)

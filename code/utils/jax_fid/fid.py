@@ -118,8 +118,8 @@ def compute_frechet_distance(mu1, mu2, sigma1, sigma2, eps=1e-6):
     sigma1 = np.atleast_1d(sigma1)
     sigma2 = np.atleast_1d(sigma2)
 
-    assert mu1.shape == mu2.shape
-    assert sigma1.shape == sigma2.shape
+    assert mu1.shape == mu2.shape, f'mu1.shape: {mu1.shape}, mu2.shape: {mu2.shape}'
+    assert sigma1.shape == sigma2.shape, f'sigma1.shape: {sigma1.shape}, sigma2.shape: {sigma2.shape}'
 
     diff = mu1 - mu2
 

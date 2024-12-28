@@ -42,6 +42,7 @@ from utils.metric_utils import tang_reduce
 from utils.display_utils import show_dict, display_model, count_params
 import utils.fid_util as fid_util
 import utils.sample_util as sample_util
+# import utils.vis_util as vis_util
 
 import models.models_ddpm as models_ddpm
 from models.models_ddpm import generate, edm_ema_scales_schedules
@@ -614,8 +615,8 @@ def train_and_evaluate(
   log_for_0('config.batch_size: {}'.format(config.batch_size))
 
   ########### Calculate FID cache ###########
-  inception_net = fid_util.build_jax_inception(batch_size=512)
-  get_imagenet_ref(dataset_config, inception_net, fid_config.cache_ref, num_samples=fid_config.num_samples)
+  # inception_net = fid_util.build_jax_inception(batch_size=512)
+  # get_imagenet_ref(dataset_config, inception_net, fid_config.cache_ref, num_samples=fid_config.num_samples)
 
   ###########################################
 
@@ -801,6 +802,7 @@ def train_and_evaluate(
 
   p_update_model_avg = jax.pmap(_update_model_avg, axis_name='batch')
 
+  # 'CACHE REF SANITY CHECK'; samples_for_fid = []
   for epoch in range(epoch_offset, config.num_epochs):
 
     ########### Train ###########
@@ -864,6 +866,20 @@ def train_and_evaluate(
       #   exit(114514)
       # continue
 
+      # 'CACHE REF SANITY CHECK'
+      # img = batch['image'].reshape(-1, 32, 32, 3)
+      # # float to uint8
+      # img = vis_util.float_to_uint8(img)
+      # log_for_0(f'img.shape: {img.shape}')
+      # samples_for_fid.append(jax.device_get(img))
+      # log_for_0(f'n batch: {n_batch}')
+
+      # if sum([c.shape[0] for c in samples_for_fid]) >= config.fid.num_samples:
+      #   break
+# 
+      # continue
+      # 'END OF CACHE REF SANITY CHECK'
+
       state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute, model_config)
       
       if epoch == epoch_offset and n_batch == 0:
@@ -892,7 +908,7 @@ def train_and_evaluate(
       # EMA
       model_avg = p_update_model_avg(model_avg, state.params, ema_decay=ema_scales_fn(step)[0].repeat(jax.local_device_count()))
 
-      # break
+    # 'CACHE REF SANITY CHECK'; break
     ########### Save Checkpt ###########
     # we first save checkpoint, then do eval. Reasons: 1. if eval emits an error, then we still have our model; 2. avoid the program exits before the checkpointer finishes its job.
     # NOTE: when saving checkpoint, should sync batch stats first.
@@ -979,6 +995,28 @@ def train_and_evaluate(
       canvas = Image.fromarray(vis)
       if config.wandb and index == 0:
         wandb.log({'gen_fid': wandb.Image(canvas)})
+
+  # ########### Cache ref sanity check ###########
+  # samples_all = np.concatenate(samples_for_fid)
+  # log_for_0(f'final samples_all.shape: {samples_all.shape}, stats: max={samples_all.max()}, min={samples_all.min()}, dtype={samples_all.dtype}') # [5000, 32, 32, 3]
+  # samples_all = samples_all[:config.fid.num_samples]
+  # mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
+  # fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
+  # log_for_0(f'Sanity check: FID at {samples_all.shape[0]} samples: {fid_score}')
+
+  # vis = make_grid_visualization(samples_all[:64], to_uint8=False)
+  # vis = jax.device_get(vis)
+  # log_for_0(f'final vis.shape: {vis.shape}')
+  # vis = vis[0]
+  # # assert False, f'final vis.shape: {vis.shape}'
+  # canvas = Image.fromarray(vis)
+  # if config.wandb and index == 0:
+  #   wandb.log({'gen_fid': wandb.Image(canvas)})
+  # elif index == 0:
+  #   canvas.save(os.path.join(workdir, 'fid_gen.png'))
+
+  # assert False, 'Sanity check done!'
+  # ########### Check Done ###########
 
   # Wait until computations are done before exiting
   jax.random.normal(jax.random.key(0), ()).block_until_ready()

@@ -74,8 +74,9 @@ def get_reference(cache_path, inception_net, batch_size=200, num_samples=50000):
         os.system('md5sum ' + cache_path)
         # e33f43d9e68c76396d322d4a8942f904: cifar10_jax_stats.npz
         # 0a87a113394cae12e0f1f75d9070d842: cifar10_jax_stats_20240820.npz
-        # d764f83ab3b145a538259aaecadc4031  /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet32_train_jax_stats_20241228.npz
-        # 7d01ec005dfb6db00dc3197707b30bfc  /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet64_train_jax_stats_20241228.npz 
+        # 5c3040fd438728bce3e4ede51393e1a6  /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet32_train_jax_stats_20241228.npz
+        # 0e2197d1c55e96ed8c921b9fca0e4bae  /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet64_train_jax_stats_20241228.npz
+
         with np.load(cache_path) as data:
             if "ref_mu" in data:
                 ref_mu, ref_sigma = data["ref_mu"], data["ref_sigma"]
