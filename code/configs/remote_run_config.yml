@@ -67,8 +67,8 @@ fid:
 evalu:
     ema: True
     sample: False
-wandb: False
-batch_size: 1024
+# wandb: False
+batch_size: 2048
 num_epochs: 200
 learning_rate: 0.0004 # FM
 lr_schedule: const
@@ -80,7 +80,7 @@ warmup_epochs: 16
 log_per_step: 100
 visualize_per_epoch: 10
 eval_per_epoch: 20
-checkpoint_per_epoch: 100
+checkpoint_per_epoch: 50
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241202_214940_zd8s4j_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_48500
 
 # # Here is for IMAGENET32x32:
