@@ -58,28 +58,28 @@ dataset:
 aug: 
     use_edm_aug: False
 fid:
-    on_use: False
+    # on_use: False
     eval_only: False
     fid_per_epoch: 50
-    num_samples: 50000
-    # cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
+    num_samples: 1281167
+    cache_ref: /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet32_train_jax_stats_20241228.npz # pytorch
 evalu:
     ema: True
     sample: False
-# wandb: False
-batch_size: 512
-num_epochs: 2000
-learning_rate: 0.0008 # FM
+wandb: False
+batch_size: 1024
+num_epochs: 200
+learning_rate: 0.0004 # FM
 lr_schedule: const
 weight_decay: 0.0
 optimizer: adamw
 adam_b2: 0.95
 grad_clip: 0.0
-warmup_epochs: 200
+warmup_epochs: 16
 log_per_step: 100
-visualize_per_epoch: 50
-eval_per_epoch: 80
-checkpoint_per_epoch: 500
+visualize_per_epoch: 10
+eval_per_epoch: 20
+checkpoint_per_epoch: 100
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241202_214940_zd8s4j_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_48500
 
 # # Here is for IMAGENET32x32:
