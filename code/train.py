@@ -49,7 +49,7 @@ from models.models_ddpm import generate, edm_ema_scales_schedules
 NUM_CLASSES = 10
 
 def get_input_pipeline(dataset_config):
-    if dataset_config.name == 'imagenet2012:5.*.*':
+    if dataset_config.name in ['imagenet2012:5.*.*', 'imagenet']:
         import input_pipeline_imgnet as input_pipeline
         return input_pipeline
     elif dataset_config.name == 'cifar10':
@@ -437,9 +437,16 @@ def prepare_batch_data(batch, config, batch_size=None):
       label: shape (b1, b2)
     batch_size = expected batch_size of this node, for eval's drop_last=False only
   """
-  image, label = batch["image"], batch["label"]
+  image, label = batch
+  local_device_count = jax.local_device_count()
+  image = image.permute(0, 2, 3, 1)
+  image = image.reshape((local_device_count, -1) + image.shape[1:]).numpy()
+  label = label.reshape(local_device_count, -1).numpy()
+  
+  # image, label = batch["image"], batch["label"]
   # print("In prepare_batch_data, image.shape: ", image.shape) # (8, 64, 32, 32, 3)
   # print("In prepare_batch_data, label.shape: ", label.shape) # (8, 64)
+
 
   if config.aug.use_edm_aug:
     raise NotImplementedError
@@ -542,21 +549,28 @@ def train_and_evaluate(
 
   input_pipeline = get_input_pipeline(dataset_config)
   input_type = tf.bfloat16 if config.half_precision else tf.float32
-  dataset_builder = tfds.builder(dataset_config.name)
+  # dataset_builder = tfds.builder(dataset_config.name)
   assert config.batch_size % jax.process_count() == 0, ValueError('Batch size must be divisible by the number of devices')
   local_batch_size = config.batch_size // jax.process_count()
   assert local_batch_size % jax.local_device_count() == 0, ValueError('Local batch size must be divisible by the number of local devices')
   log_for_0('local_batch_size: {}'.format(local_batch_size))
   log_for_0('jax.local_device_count: {}'.format(jax.local_device_count()))
   log_for_0('global batch_size: {}'.format(config.batch_size))
+  # train_loader, steps_per_epoch, yierbayiyiliuqi = input_pipeline.create_split(
+  #   dataset_builder,
+  #   dataset_config=dataset_config,
+  #   training_config=config,
+  #   local_batch_size=local_batch_size,
+  #   input_type=input_type,
+  #   train=False if dataset_config.fake_data else True
+  # )
+
   train_loader, steps_per_epoch, yierbayiyiliuqi = input_pipeline.create_split(
-    dataset_builder,
-    dataset_config=dataset_config,
-    training_config=config,
-    local_batch_size=local_batch_size,
-    input_type=input_type,
-    train=False if dataset_config.fake_data else True
+    config.dataset,
+    local_batch_size,
+    split='train',
   )
+
   # val_loader, val_steps, _ = create_split(
   #   dataset_builder,
   #   dataset_config=dataset_config,

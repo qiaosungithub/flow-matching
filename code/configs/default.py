@@ -77,7 +77,7 @@ def get_config():
   # Dataset
   config.dataset = dataset = ml_collections.ConfigDict()
   dataset.name = 'MNIST'
-  dataset.root = '/kmh-nfs-ssd-eu-mount/code/qiao/data/MNIST/'
+  dataset.root = '没成功传进去'
   dataset.num_workers = 4
   dataset.prefetch_factor = 2
   dataset.pin_memory = False
@@ -85,6 +85,7 @@ def get_config():
   dataset.fake_data = False
   dataset.out_channels = 0  # from model
   dataset.steps_per_epoch = -1
+  dataset.image_size = 32
 
   # Eval fid
   config.fid = fid = ml_collections.ConfigDict()
