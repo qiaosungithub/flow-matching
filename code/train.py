@@ -485,6 +485,103 @@ def prepare_batch_data(batch, config, batch_size=None):
 def _update_model_avg(model_avg, state_params, ema_decay):
   return jax.tree_util.tree_map(lambda x, y: ema_decay * x + (1.0 - ema_decay) * y, model_avg, state_params)
 
+import torchvision
+import os
+from torchvision.datasets.folder import pil_loader
+from utils.jax_fid import resize
+def loader(path: str):
+    return pil_loader(path)
+def get_imagenet_ref(dataset_cfg, inception_net_dict, cache_path, num_samples=None):
+  import os
+  assert not os.path.exists(cache_path), ValueError(f'cache_path {cache_path} already exists')
+  inception_fn = inception_net_dict["fn"]
+  inception_params = inception_net_dict["params"]
+
+  IMAGE_SIZE = 224
+  CROP_PADDING = 32
+  logging.info("Computing ref_mu and ref_sigma...")
+  # transforms = torchvision.transforms.PILToTensor()
+  transforms = torchvision.transforms.Compose([
+        # transforms.RandomResizedCrop(IMAGE_SIZE, interpolation=3),
+        torchvision.transforms.Resize(IMAGE_SIZE + CROP_PADDING, interpolation=3),
+        torchvision.transforms.CenterCrop(IMAGE_SIZE),
+        torchvision.transforms.Resize(dataset_cfg.image_size, interpolation=3),
+        torchvision.transforms.RandomHorizontalFlip(),
+        torchvision.transforms.PILToTensor(), # shape: [3, 32, 32]
+        torchvision.transforms.Lambda(lambda x: np.array(x).transpose(1,2,0)), # shape: [32, 32, 3]
+        torchvision.transforms.ToTensor(), # [3, 32, 32]; range: [0, 1]
+        torchvision.transforms.Lambda(lambda x: x * 255),
+        # torchvision.transforms.Normalize(mean=MEAN_RGB, std=STDDEV_RGB),
+      ])
+  print('dataset_cfg.root: ', dataset_cfg.root)
+  train_ds = torchvision.datasets.ImageFolder(os.path.join(dataset_cfg.root, 'train'), loader=loader, transform=transforms)
+  if num_samples is None:
+    num_samples = len(train_ds)
+  train_dataloader = torch.utils.data.DataLoader(
+      train_ds,
+      batch_size=512,
+      shuffle=False,
+      drop_last=False,
+      num_workers=64,
+  )
+
+  l_feats = []
+  # self_transforms =  torchvision.transforms.ToTensor()
+  for i,x in enumerate(train_dataloader):
+      x = x[0]
+      if i % 50 == 0:
+        logging.info(f"Evaluating {i} / {len(train_dataloader)}: {list(x.shape)}")
+      if i == 0:
+        log_for_0(f'x.stats: {x.max()}, {x.min()}, {x.shape}, {x.dtype}, x is: {type(x)}')
+
+      # x.shape: [B, 3, 32, 32]
+      x = resize.forward(x)
+
+      x = x.numpy().transpose(0,2,3,1)
+
+      # save the resized images
+      # from PIL import Image
+      # for j in range(32):
+      #   img = (x[j]+1)/2
+      #   img = np.clip(img, 0, 1)
+      #   img = (img*255).astype(np.uint8)
+
+      #   print('image range: ', img.min(), img.max())
+      #   img = Image.fromarray(img)
+      #   img.save(f'/kmh-nfs-ssd-eu-mount/logs/sqa/wan/{i}_{j}.png')
+      # assert False, 'tmp saved'
+
+      # pad
+      pad = 512 - x.shape[0]
+      ori_shape = x.shape[0]
+      if pad > 0:
+        x = np.concatenate([x, np.zeros((pad, *x.shape[1:]), dtype=np.uint8)])
+
+      pred = inception_fn(inception_params, jax.lax.stop_gradient(x))
+      pred = pred.squeeze(axis=1).squeeze(axis=1)
+      l_feats.append(jax.device_get(pred[:ori_shape]))
+
+      log_for_0(f'pred.shape: {pred[:ori_shape].shape}')
+
+      if sum([len(l) for l in l_feats]) >= num_samples:
+        log_for_0(f'already collected {sum([len(l) for l in l_feats])} samples')
+        break
+
+  np_feats = np.concatenate(l_feats)
+  log_for_0(f'np_feats.shape: {np_feats.shape}')
+  np_feats = np_feats[:num_samples]
+
+  np_feats = np.concatenate(np_feats)
+
+  ref_mu = np.mean(np_feats, axis=0)
+  ref_sigma = np.cov(np_feats, rowvar=False)
+  if jax.process_index() == 0:
+    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+    np.savez(cache_path, ref_mu=ref_mu, ref_sigma=ref_sigma)
+  logging.info(f"Saved ref_mu and ref_sigma to {cache_path}")
+  os.system('md5sum ' + cache_path)
+  assert False, 'Done!!!!!!!'
+
 def train_and_evaluate(
   config: ml_collections.ConfigDict, workdir: str
 ) -> NNXTrainState:
@@ -505,7 +602,7 @@ def train_and_evaluate(
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='LMCI', dir=workdir)
+    wandb.init(project='LMCI', dir=workdir, tags=['ImageNet'])
     # wandb.init(project='sqa_FM_compare', dir=workdir)
     wandb.config.update(config.to_dict())
   global_seed(config.seed)
@@ -513,6 +610,12 @@ def train_and_evaluate(
   image_size = model_config.image_size
 
   log_for_0('config.batch_size: {}'.format(config.batch_size))
+
+  ########### Calculate FID cache ###########
+  # inception_net = fid_util.build_jax_inception(batch_size=512)
+  # get_imagenet_ref(dataset_config, inception_net, fid_config.cache_ref, num_samples=fid_config.num_samples)
+
+  ###########################################
 
   # # print("save dir: ", sampling_config.save_dir)
   # if sampling_config.save_dir is None:

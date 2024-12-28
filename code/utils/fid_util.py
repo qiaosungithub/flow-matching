@@ -44,6 +44,7 @@ def build_jax_inception(batch_size=200):
 def get_reference(cache_path, inception_net, batch_size=200, num_samples=50000):
     # Save ref_mu and ref_sigma to npz file
     if not os.path.exists(cache_path):
+        raise NotImplementedError('we not only use CIFAR')
         logging.info("Computing ref_mu and ref_sigma...")
         transforms = torchvision.transforms.PILToTensor()
         train_ds = CIFAR10('~/cache', train=True, download=True, transform=transforms)
@@ -73,6 +74,8 @@ def get_reference(cache_path, inception_net, batch_size=200, num_samples=50000):
         os.system('md5sum ' + cache_path)
         # e33f43d9e68c76396d322d4a8942f904: cifar10_jax_stats.npz
         # 0a87a113394cae12e0f1f75d9070d842: cifar10_jax_stats_20240820.npz
+        # d764f83ab3b145a538259aaecadc4031  /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet32_train_jax_stats_20241228.npz
+        # 7d01ec005dfb6db00dc3197707b30bfc  /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet64_train_jax_stats_20241228.npz 
         with np.load(cache_path) as data:
             if "ref_mu" in data:
                 ref_mu, ref_sigma = data["ref_mu"], data["ref_sigma"]
@@ -141,7 +144,7 @@ class ResizeDataset(torch.utils.data.Dataset):
         self.fdir = fdir
         self.transforms = torchvision.transforms.ToTensor()
         self.size = size
-        self.fn_resize = build_resizer(mode)
+        self.fn_resize = build_resizer(mode) # this is identity fn
         self.custom_image_tranform = lambda x: x
 
     def __len__(self):
