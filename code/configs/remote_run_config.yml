@@ -54,16 +54,16 @@ dataset:
     prefetch_factor: 2
     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
     cache: True
-    image_size: 32 # imagenet resized to 32x32
+    image_size: 64 # imagenet resized to 32x32
 aug: 
     use_edm_aug: False
 fid:
     # on_use: False
     eval_only: False
     fid_per_epoch: 50
-    num_samples: 50000
-    cache_ref: /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet32_train_jax_stats_20241228.npz # pytorch
-    # cache_ref: /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet64_train_jax_stats_20241228.npz # pytorch
+    num_samples: 1281167
+    # cache_ref: /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet32_train_jax_stats_20241228.npz # pytorch
+    cache_ref: /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet64_train_jax_stats_20241228.npz # pytorch
 evalu:
     ema: True
     sample: False

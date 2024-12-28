@@ -571,10 +571,12 @@ def get_imagenet_ref(dataset_cfg, inception_net_dict, cache_path, num_samples=No
   log_for_0(f'np_feats.shape: {np_feats.shape}')
   np_feats = np_feats[:num_samples]
 
-  np_feats = np.concatenate(np_feats)
+  # np_feats = np.concatenate(np_feats)
 
+  # log_for_0(f'np_feats.shape[2]: {np_feats.shape}')
   ref_mu = np.mean(np_feats, axis=0)
   ref_sigma = np.cov(np_feats, rowvar=False)
+  log_for_0(f'ref_mu.shape: {ref_mu.shape}, ref_sigma.shape: {ref_sigma.shape}')
   if jax.process_index() == 0:
     os.makedirs(os.path.dirname(cache_path), exist_ok=True)
     np.savez(cache_path, ref_mu=ref_mu, ref_sigma=ref_sigma)
@@ -612,8 +614,8 @@ def train_and_evaluate(
   log_for_0('config.batch_size: {}'.format(config.batch_size))
 
   ########### Calculate FID cache ###########
-  # inception_net = fid_util.build_jax_inception(batch_size=512)
-  # get_imagenet_ref(dataset_config, inception_net, fid_config.cache_ref, num_samples=fid_config.num_samples)
+  inception_net = fid_util.build_jax_inception(batch_size=512)
+  get_imagenet_ref(dataset_config, inception_net, fid_config.cache_ref, num_samples=fid_config.num_samples)
 
   ###########################################
 
