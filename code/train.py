@@ -1028,6 +1028,7 @@ def train_and_evaluate(
 def just_evaluate(
     config: ml_collections.ConfigDict, workdir: str
   ):
+  log_for_0('We use just_evaluate!!')
   # assert the version of orbax-checkpoint is 0.4.4
   assert ocp.__version__ == '0.6.4', ValueError(f'orbax-checkpoint version must be 0.6.4, but got {ocp.__version__}')
   ########### Initialize ###########
@@ -1171,6 +1172,9 @@ def just_evaluate(
     canvas = Image.fromarray(vis)
     if config.wandb and index == 0:
       wandb.log({'gen': wandb.Image(canvas)})
+    else:
+      canvas.save(os.path.join(workdir, 'gen.png'))
+      log_for_0('gen saved to {}'.format(os.path.join(workdir, 'gen.png')))
     # sample_step(eval_state, image_size, sampling_config, epoch, use_wandb=config.wandb)
   ########### FID ###########
   if config.fid.on_use:
