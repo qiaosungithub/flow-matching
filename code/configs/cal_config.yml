@@ -15,6 +15,8 @@ aug:
 cal:
     gap: 0.01
     num_points: 21 # must be odd
+    nn: 5 # num of noisy images to eval
+    sde: flow # option: [flow, VP, VE]
 batch_size: 512
 log_per_step: 100
 visualize_per_epoch: 80

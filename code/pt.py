@@ -34,6 +34,7 @@ import tensorflow as tf
 import tensorflow_datasets as tfds
 from PIL import Image
 from torch.utils.data import DataLoader
+from math import sqrt
 
 from utils.info_util import print_params
 from utils.vis_util import make_grid_visualization, visualize_cifar_batch
@@ -524,6 +525,7 @@ def train_and_evaluate(
 
   log_for_0('config.batch_size: {}'.format(config.batch_size))
 
+  rngs = nn.Rngs(config.seed)
   ########### Create DataLoaders ###########
 
   input_pipeline = get_input_pipeline(dataset_config)
@@ -567,192 +569,88 @@ def train_and_evaluate(
 
   # eval points
   time = [0.5]
+  gap = config.cal.gap
+  n_p = config.cal.num_points
+  n_n = config.cal.nn # number of noisy images to eval
+  sde = config.cal.sde
 
-  for epoch in range(0, config.num_epochs):
+  assert n_p % 2 == 1
 
-    ########### Train ###########
-    # timer = Timer()
-    # log_for_0('epoch {}...'.format(epoch))
-    # timer.reset()
+  ########### prepare noisy image ###########
+  log_for_0('start preparing noisy images')
+  for n_batch, batch in zip(range(steps_per_epoch), train_loader):
+    batch = prepare_batch_data(batch, config)
+    data = batch['image']
+    break
+  noisy_images = []
+  ind=0
+  for t in time:
+    data_this = data[ind:ind+n_n]
+    ind += n_n
+    noise = jax.random.normal(rngs(), data_this.shape)
+    if sde == "flow": noisy = (1-t) * data_this + t * noise
+    elif sde == "VP": noisy = sqrt(1-t) * data_this + sqrt(t) * noise
+    else: raise NotImplementedError
+    noisy_images.append(noisy)
+
+  log_for_0('finish preparing noisy images')
+
+  # # logging visualizations
+  # vis = visualize_cifar_batch(vis)
+  # # print("vis.shape: ", vis.shape) # (8, 160, 256, 3)
+  # vis = jax.device_get(vis)
+  # vis = vis[0]
+  # canvas = Image.fromarray(vis)
+  # if config.wandb and index == 0:
+  #   wandb.log({'visualize': wandb.Image(canvas)})
+
+  ########### calculate ###########
+  for t in time:
+    # p(t|z)=\sum p(t|z, x)p(x|z)=\sum p(eps=(z-(1-t)x)/t)p(x|z)
+    eval_time = jnp.arrange(n_p) * gap - gap * (n_p // 2) + t # eval time steps
+    assert jnp.all(eval_time >= 1e-4) and jnp.all(eval_time <= 1-1e-4) # check
+    eval_time = eval_time.reshape(-1, 1, 1, 1)
+    sum = jnp.zeros((n_p, n_n))
+    noisy = noisy_images.pop(0)
+    assert noisy.shape == (n_n, 32, 32, 3)
+    noisy = noisy.reshape(1, 1, n_n, 32*32*3).repeat(n_p, axis=0) # (n_p, 1, n_n, 3096)
+    log_for_0(f'start calculating for t={t}')
     for n_batch, batch in zip(range(steps_per_epoch), train_loader):
-
-      step = epoch * steps_per_epoch + n_batch
-      assert config.aug.use_edm_aug == False, "we don't support edm aug for now"
       batch = prepare_batch_data(batch, config)
-      ep = step * config.batch_size / yierbayiyiliuqi
-
-      # img = batch['image']
-      # print(f"img.shape: {img.shape}")
-      # print(f'image max: {jnp.max(img)}, min: {jnp.min(img)}') # [-1, 1]
-      # img = img * (jnp.array(input_pipeline.STDDEV_RGB)/255.).reshape(1,1,1,3) + (jnp.array(input_pipeline.MEAN_RGB)/255.).reshape(1,1,1,3)
-      # print(f"after process, img max: {jnp.max(img)}, min: {jnp.min(img)}")
-      # exit(114514)
-      # # print("images.shape: ", images.shape)
-      # arg_batch, t_batch, target_batch = prepare_batch(batch, rngs, config)
-
-      # print("batch['image'].shape:", batch['image'].shape)
-      # assert False
-
-      # # here is code for us to visualize the images
-      # import matplotlib.pyplot as plt
-      # import numpy as np
-      # import os
-      # images = batch["image"]
-      # print(f"images.shape: {images.shape}", flush=True)
-
-      # from input_pipeline import MEAN_RGB, STDDEV_RGB
-
-      # # save batch["image"] to ./images/{epoch}/i.png
-      # rank = jax.process_index()
-
-      # # if os.path.exists(f"/kmh-nfs-us-mount/staging/sqa/images/{n_batch}/{rank}") == False:
-      # #   os.makedirs(f"/kmh-nfs-us-mount/staging/sqa/images/{n_batch}/{rank}")
-      # path = f"/kmh-nfs-ssd-eu-mount/logs/sqa/flow-matching/sqa_flow-matching/dataset_images/{n_batch}/{rank}"
-      # if os.path.exists(path) == False:
-      #   os.makedirs(path)
-      # for i in range(images[0].shape[0]):
-      #   # print the max and min of the image
-      #   # print(f"max: {np.max(images[0][i])}, min: {np.min(images[0][i])}")
-      #   # img_test = images[0][:100]
-      #   # save_img(img_test, f"/kmh-nfs-ssd-eu-mount/code/qiao/flow-matching/sqa_flow-matching/dataset_images/{n_batch}/{rank}", im_name=f"{i}.png", grid=(10, 10))
-      #   # break
-      #   # use the max and min to normalize the image to [0, 1]
-      #   img = images[0][i]
-      #   img = img * (jnp.array(STDDEV_RGB)/255.).reshape(1,1,3) + (jnp.array(MEAN_RGB)/255.).reshape(1,1,3)
-      #   # print(f"max: {np.max(img)}, min: {np.min(img)}")
-      #   img = jnp.clip(img, 0, 1)
-      #   # img = (img - np.min(img)) / (np.max(img) - np.min(img))
-      #   # img = img.squeeze(-1)
-      #   plt.imsave(path+f"/{i}.png", img) # if MNIST, add cmap='gray'
-      #   # if i>6: break
-
-      # print(f"saving images for n_batch {n_batch}, done.")
-      # if n_batch > 0:
-      #   exit(114514)
-      # continue
-
-      state, metrics, vis = train_step_sqa(state, batch, rngs, p_train_step_compute)
-      
-      if epoch == epoch_offset and n_batch == 0:
-        log_for_0('p_train_step compiled in {}s'.format(time.time() - train_metrics_last_t))
-        log_for_0('Initial compilation completed. Reset timer.')
-
-      if config.get('log_per_step'):
-        train_metrics_buffer.append(metrics)
-        if (step + 1) % config.log_per_step == 0:
-          train_metrics = common_utils.get_metrics(train_metrics_buffer)
-          tang_reduce(train_metrics) # do an average
-          step_per_sec = config.log_per_step / timer.elapse_with_reset()
-          loss_to_display = train_metrics['loss_train']
-          if config.wandb and index == 0:
-            wandb.log({
-              'ema_decay': train_metrics['ema_decay'],
-              'ep:': ep, 
-              'loss_train': loss_to_display, 
-              'lr': train_metrics['lr'], 
-              'step': step, 
-              'step_per_sec': step_per_sec})
-          # log_for_0('epoch: {} step: {} loss: {}, step_per_sec: {}'.format(ep, step, loss_to_display, step_per_sec))
-          log_for_0(f'step: {step}, loss: {loss_to_display}, step_per_sec: {step_per_sec}')
-          train_metrics_buffer = []
-
-      # EMA
-      model_avg = p_update_model_avg(model_avg, state.params, ema_decay=ema_scales_fn(step)[0].repeat(jax.local_device_count()))
-
-      # break
-    ########### Save Checkpt ###########
-    # we first save checkpoint, then do eval. Reasons: 1. if eval emits an error, then we still have our model; 2. avoid the program exits before the checkpointer finishes its job.
-    # NOTE: when saving checkpoint, should sync batch stats first.
-
-    # zhh's checkpointer
-    if (
-      (epoch + 1) % config.checkpoint_per_epoch == 0
-      or epoch == config.num_epochs
-      or epoch == 0  # saving at the first epoch for sanity check
-      ):
-      # pass
-      # if index == 0:
-      state = sync_batch_stats(state)
-      save_checkpoint(state, workdir, model_avg)
-    if epoch == config.num_epochs - 1:
-      state = state.replace(params=model_avg)
-
-    # # Kaiming's checkpointer
-    # if (
-    #   (epoch + 1) % config.checkpoint_per_epoch == 0
-    #   or epoch == config.num_epochs
-    #   or epoch == 0  # saving at the first epoch for sanity check
-    # ):
-    #   state = sync_batch_stats(state)
-    #   # TODO{km}: suppress the annoying warning.
-    #   save_checkpoint(state, workdir)
-    #   log_for_0(f'Work dir: {workdir}')  # for monitoring
-
-    # logging visualizations
-    if (epoch + 1) % config.visualize_per_epoch == 0:
-      vis = visualize_cifar_batch(vis)
-      # print("vis.shape: ", vis.shape) # (8, 160, 256, 3)
-      vis = jax.device_get(vis)
-      vis = vis[0]
-      canvas = Image.fromarray(vis)
-      if config.wandb and index == 0:
-        wandb.log({'visualize': wandb.Image(canvas)})
-
-    ########### Sampling ###########
-    if (epoch + 1) % config.eval_per_epoch == 0:
-      log_for_0(f'Sample epoch {epoch}...')
-      # sync batch statistics across replicas
-      eval_state = sync_batch_stats(state)
-      eval_state = eval_state.replace(params=model_avg)
-      vis = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx)
-      vis = make_grid_visualization(vis)
-      vis = jax.device_get(vis) # np.ndarray
-      vis = vis[0]
-      # print(vis.shape)
-      # exit("王广廷")
-      canvas = Image.fromarray(vis)
-      if config.wandb and index == 0:
-        wandb.log({'gen': wandb.Image(canvas)})
-      # sample_step(eval_state, image_size, sampling_config, epoch, use_wandb=config.wandb)
-
-    ########### FID ###########
-    if config.fid.on_use and (
-      (epoch + 1) % config.fid.fid_per_epoch == 0
-      or epoch == config.num_epochs
-      # or epoch == 0
-    ):
-      samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step)
-      mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
-      fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
-      log_for_0(f'w/o ema: FID at {samples_all.shape[0]} samples: {fid_score}')
-
-      # ema results are much better
-      eval_state = sync_batch_stats(state)
-      eval_state = eval_state.replace(params=model_avg)
-      samples_all = sample_util.generate_samples_for_fid_eval(eval_state, workdir, config, p_sample_step, run_p_sample_step)
-      mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
-      fid_score_ema = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
-      log_for_0(f'w/ ema: FID at {samples_all.shape[0]} samples: {fid_score_ema}')
-
-      if config.wandb and rank == 0:
-        wandb.log({
-          'FID': fid_score,
-          'FID_ema': fid_score_ema
+      data = batch['image']
+      b = data.shape[0]
+      assert data.shape == (b, 32, 32, 3)
+      data = data.reshape(1, b, 1, 32*32*3).repeat(n_p, axis=0) # (n_p, b, 1, 3096)
+      # we hope to get shape (n_p, b, n_n, 3096)
+      if sde == "flow": noise = (noisy - (1 - eval_time * data)) / eval_time # (n_p, b, n_n, 3096)
+      else: raise NotImplementedError("我写了")
+      # calculate the pr of noise
+      norm = jnp.sum(noise ** 2, axis=-1) # (n_p, b, n_n)
+      sum += jnp.sum(jnp.exp(-0.5 * norm) / jnp.sqrt(2 * jnp.pi), axis=1) # (n_p, n_n)
+    sum = sum / 50000
+    sum = sum.mean(axis=1)
+    # log
+    for i in len(eval_time):
+      et = eval_time[i]
+      s = sum[i]
+      log_for_0(f'eval_time: {et}, sum: {s}')
+      wandb.log({
+        'eval_time': et,
+        'sum': s,
         })
 
-      vis = make_grid_visualization(samples_all, to_uint8=False)
-      vis = jax.device_get(vis)
-      vis = vis[0]
-      canvas = Image.fromarray(vis)
-      if config.wandb and index == 0:
-        wandb.log({'gen_fid': wandb.Image(canvas)})
+  # log the line plot
+  wandb.log({
+      "eval_time_vs_sum": wandb.plot.line_series(
+          xs=eval_time.flatten(),
+          ys=sum.flatten(),
+          keys=["sum"],
+          title="Sum vs Eval Time",
+          xname="Eval Time"
+      )
+  })
 
-  # Wait until computations are done before exiting
-  jax.random.normal(jax.random.key(0), ()).block_until_ready()
-  if index == 0 and config.wandb:
-    wandb.finish()
-
-  return state
+  return 0
 
 def just_evaluate(
     config: ml_collections.ConfigDict, workdir: str

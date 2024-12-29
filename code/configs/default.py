@@ -132,6 +132,9 @@ def get_config():
   evalu.ema = True
   evalu.sample = False # sample before testing fid
 
+  # cal
+  cal = config.cal = ml_collections.ConfigDict()
+
   ################ WARNING ################
   # DO NOT DIRECTLY MODIFY THIS FILE, IN  #
   # ANY WAY. USE EXP_CONFIG.YML TO SET    #
