@@ -618,10 +618,12 @@ def train_and_evaluate(
       else: raise NotImplementedError("我写了")
       # calculate the pr of noise
       norm = jnp.sum(noise ** 2, axis=-1) # (n_p, b, n_n)
+      # print("norm: ", jnp.mean(norm))
       # cast to float64
       norm = jnp.array(norm, dtype=jnp.float64)
-      sum += jnp.sum(jnp.exp(-0.5 * norm) / jnp.sqrt(2 * jnp.pi), axis=1) # (n_p, n_n)
-    sum = sum / 50000
+      norm = norm - 32 * 32 * 3 # remember to divide by exp(-1/2 * 32*32*3)
+      sum += jnp.sum(jnp.exp(-0.5 * norm), axis=1) # (n_p, n_n) # remember to divide by (\sqrt(2\pi))^d
+    # sum = sum / 50000 # remember to divide by 50000
     sum = sum.mean(axis=1)
     # log
     for i in range(len(eval_time)):
