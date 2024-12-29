@@ -50,9 +50,10 @@ model:
     # # ode_solver: O
 
     # --- Diffusion --- #
-    # sampler: ddpm
-    sampler: DDIM
+    sampler: ddpm
+    # sampler: DDIM
     sample_clip_denoised: True
+    use_posterior_variance: True
 
 diffusion:
     diffusion_nT: 1000

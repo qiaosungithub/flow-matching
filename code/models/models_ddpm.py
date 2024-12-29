@@ -595,6 +595,7 @@ class SimDDPM(nn.Module):
     # h_init=0.035,
     sampler='euler',
     sample_clip_denoised=True,
+    use_posterior_variance=False,
     ode_solver='jax',
     # no_condition_t=False,
     t_condition_method = 'log999',
@@ -644,6 +645,9 @@ class SimDDPM(nn.Module):
     # self.beta_end = beta_end
     # self.num_diffusion_timesteps = num_diffusion_timesteps
     self.sample_clip_denoised = sample_clip_denoised
+    self.use_posterior_variance = use_posterior_variance
+    if self.use_posterior_variance:
+      assert ((self.sampler in ['DDPM', 'ddpm']) and not self.learn_var), 'posterior variance is only used in naive DDPM'
     self.class_conditional = class_conditional
 
     # sde = sde_lib.KVESDE(
@@ -918,6 +922,9 @@ class SimDDPM(nn.Module):
         max_log = jnp.log(betas)
         frac = (model_var_values + 1) / 2 # shape as x
         log_model_variance = batch_mul(frac, max_log)+ batch_mul((1 - frac), min_log)
+      elif self.use_posterior_variance:
+        eps_pred = self.forward_prediction_function(x_i, t, train=False,y=y)
+        log_model_variance = posterior_log_variance_clipped
       else:
         eps_pred = self.forward_prediction_function(x_i, t, train=False,y=y)
         log_model_variance = batch_t(log_model_variance_steps[i],b)
@@ -970,9 +977,15 @@ class SimDDPM(nn.Module):
     # # sqa try, change this back
     # eps = jax.random.normal(rng, x_i.shape)
     
-    c2 = jnp.sqrt(1 - at_next)
+    # sigma_t = jnp.sqrt((1- at_next) / (1-at) * (1- at/at_next)) # for debug
+    sigma_t = batch_t(jnp.array(0.0),b)
+    
+    c2 = jnp.sqrt(1 - at_next - sigma_t**2)
     # x_next = jnp.sqrt(at_next) * x0_t + c2 * eps
-    x_next = batch_mul(x0_t, jnp.sqrt(at_next)) + batch_mul(eps, c2)
+    别传进去 = rng
+    只能用一次, 别传进去 = jax.random.split(别传进去)
+    # x_next = batch_mul(x0_t, jnp.sqrt(at_next)) + batch_mul(eps, c2) + sigma_t  * jax.random.normal(只能用一次, x_i.shape)
+    x_next = batch_mul(x0_t, jnp.sqrt(at_next)) + batch_mul(eps, c2) + batch_mul(sigma_t , jax.random.normal(只能用一次, x_i.shape))
     return x_next
     # x_next = x0_t = x_i
     # print(at, at_next) # debug
