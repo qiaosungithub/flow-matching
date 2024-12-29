@@ -33,7 +33,8 @@
 model:
     image_size: 32
     out_channels: 3
-    base_width: 128
+    base_width: 96
+    more_layers: True
     n_T: 100
     use_aug_label: False
     dropout: 0.15 # FM
@@ -54,7 +55,7 @@ dataset:
     prefetch_factor: 2
     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
     cache: True
-    image_size: 32 # imagenet resized to 32x32
+    image_size: 64 # imagenet resized to 32x32
 aug: 
     use_edm_aug: False
 fid:
@@ -62,21 +63,21 @@ fid:
     eval_only: False
     fid_per_epoch: 50
     num_samples: 50000
-    cache_ref: /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet32_train_jax_stats_20241228.npz # pytorch
-    # cache_ref: /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet64_train_jax_stats_20241228.npz # pytorch
+    # cache_ref: /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet32_train_jax_stats_20241228.npz # pytorch
+    cache_ref: /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet64_train_jax_stats_20241228.npz # pytorch
 evalu:
     ema: True
     sample: False
 # wandb: False
-batch_size: 2048
-num_epochs: 200
+batch_size: 512
+num_epochs: 250
 learning_rate: 0.0004 # FM
 lr_schedule: const
 weight_decay: 0.0
 optimizer: adamw
 adam_b2: 0.95
 grad_clip: 0.0
-warmup_epochs: 16
+warmup_epochs: 2 # no warmup
 log_per_step: 100
 visualize_per_epoch: 10
 eval_per_epoch: 20
