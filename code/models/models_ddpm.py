@@ -64,6 +64,7 @@ class NNXTrainState(FlaxTrainState):
 
 
 def ct_ema_scales_schedules(step, config, steps_per_epoch):
+  raise NotImplementedError
   start_ema = float(config.ct.start_ema)
   start_scales = int(config.ct.start_scales)
   end_scales = int(config.ct.end_scales)
