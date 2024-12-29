@@ -20,7 +20,6 @@
 from absl import logging
 from typing import Any, Sequence
 
-# from flax import linen as nn
 import flax.nnx as nn
 import jax
 import jax.numpy as jnp
@@ -28,54 +27,11 @@ import numpy as np
 import optax
 import math
 from flax.training.train_state import TrainState as FlaxTrainState
-
 from functools import partial
 
 # from models.models_unet import ContextUnet
 from models.models_ncsnpp_edm import NCSNpp as NCSNppEDM, NCSNppClassifier as NCSNppEDMClassifier
-# from models.models_ncsnpp import NCSNpp
-# import models.jcm.sde_lib as sde_lib
 from models.jcm.sde_lib import batch_mul
-
-
-
-ModuleDef = Any
-
-# def get_beta_schedule(beta_schedule, *, beta_start, beta_end, num_diffusion_timesteps):
-#     """
-#     DDIM util function
-#     """
-#     def sigmoid(x):
-#         return 1 / (jnp.exp(-x) + 1)
-
-#     if beta_schedule == "quad":
-#         betas = (
-#             jnp.linspace(
-#                 beta_start ** 0.5,
-#                 beta_end ** 0.5,
-#                 num_diffusion_timesteps,
-#                 dtype=np.float64,
-#             )
-#             ** 2
-#         )
-#     elif beta_schedule == "linear":
-#         betas = jnp.linspace(
-#             beta_start, beta_end, num_diffusion_timesteps, dtype=np.float64
-#         )
-#     elif beta_schedule == "const":
-#         betas = beta_end * jnp.ones(num_diffusion_timesteps, dtype=np.float64)
-#     elif beta_schedule == "jsd":  # 1/T, 1/(T-1), 1/(T-2), ..., 1
-#         betas = 1.0 / jnp.linspace(
-#             num_diffusion_timesteps, 1, num_diffusion_timesteps, dtype=np.float64
-#         )
-#     elif beta_schedule == "sigmoid":
-#         betas = jnp.linspace(-6, 6, num_diffusion_timesteps)
-#         betas = sigmoid(betas) * (beta_end - beta_start) + beta_start
-#     else:
-#         raise NotImplementedError(beta_schedule)
-#     assert betas.shape == (num_diffusion_timesteps,)
-#     return betas
-
 
 class NNXTrainState(FlaxTrainState):
   batch_stats: Any
@@ -400,9 +356,6 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
     t_steps = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
     x_i = x_prior * t_steps[0]
 
-    # import jax.random as random
-    # x = random.normal(rng, x_shape, dtype=model.dtype)
-
     def step_fn(i, inputs):
       x_i, rng = inputs
       rng_this_step = jax.random.fold_in(rng, i)
@@ -650,16 +603,6 @@ class SimDDPM(nn.Module):
       assert ((self.sampler in ['DDPM', 'ddpm']) and not self.learn_var), 'posterior variance is only used in naive DDPM'
     self.class_conditional = class_conditional
 
-    # sde = sde_lib.KVESDE(
-    #   t_min=0.002,
-    #   t_max=80.0,
-    #   N=18,  # config.model.num_scales
-    #   rho=7.0,
-    #   data_std=0.5,
-    # )
-    # self.sde = sde
-    # This is not used in flow matching
-
     if self.net_type == 'context':
       raise NotImplementedError
       net_fn = partial(ContextUnet,
@@ -708,9 +651,6 @@ class SimDDPM(nn.Module):
     else:
       raise ValueError(f'Unknown net type: {self.net_type}')
 
-    # # declare two networks
-    # self.net = net_fn(name='net')
-    # self.net_ema = net_fn(name='net_ema')
     # self.num_timesteps = num_diffusion_timesteps
     self.net = net_fn()
     
@@ -972,7 +912,6 @@ class SimDDPM(nn.Module):
     # when eta=0, no need to add noise
     if self.sample_clip_denoised:
       x0_t = jnp.clip(x0_t, -1, 1)
-
 
     # # sqa try, change this back
     # eps = jax.random.normal(rng, x_i.shape)
