@@ -516,7 +516,7 @@ def train_and_evaluate(
   dataset_config = config.dataset
   if rank == 0 and config.wandb:
     # wandb.init(project='sqa_FM_kaiming_copied_nnx', dir=workdir)
-    wandb.init(project='LMCI-eval', dir=workdir, tag=["SQA-pt"])
+    wandb.init(project='LMCI-eval', dir=workdir, tags=["SQA-pt"])
     # wandb.init(project='sqa_FM_compare', dir=workdir)
     wandb.config.update(config.to_dict())
   global_seed(config.seed)
@@ -558,15 +558,6 @@ def train_and_evaluate(
   log_for_0('steps_per_epoch: {}'.format(steps_per_epoch))
   log_for_0('eval_steps: {}'.format(val_steps))
 
-
-  ########### Training Loop ###########
-  # sample_step(state, image_size, sampling_config, epoch_offset, use_wandb=config.wandb, dtype=dtype)
-  train_metrics_buffer = []
-  train_metrics_last_t = time.time()
-  log_for_0('Initial compilation, this might take some minutes...')
-
-  p_update_model_avg = jax.pmap(_update_model_avg, axis_name='batch')
-
   # eval points
   time = [0.5]
   gap = config.cal.gap
@@ -580,7 +571,7 @@ def train_and_evaluate(
   log_for_0('start preparing noisy images')
   for n_batch, batch in zip(range(steps_per_epoch), train_loader):
     batch = prepare_batch_data(batch, config)
-    data = batch['image']
+    data = batch['image'].reshape(-1, 32, 32, 3)
     break
   noisy_images = []
   ind=0
@@ -607,10 +598,10 @@ def train_and_evaluate(
   ########### calculate ###########
   for t in time:
     # p(t|z)=\sum p(t|z, x)p(x|z)=\sum p(eps=(z-(1-t)x)/t)p(x|z)
-    eval_time = jnp.arrange(n_p) * gap - gap * (n_p // 2) + t # eval time steps
+    eval_time = jnp.arange(n_p) * gap - gap * (n_p // 2) + t # eval time steps
     assert jnp.all(eval_time >= 1e-4) and jnp.all(eval_time <= 1-1e-4) # check
     eval_time = eval_time.reshape(-1, 1, 1, 1)
-    sum = jnp.zeros((n_p, n_n))
+    sum = jnp.zeros((n_p, n_n), dtype=jnp.float64)
     noisy = noisy_images.pop(0)
     assert noisy.shape == (n_n, 32, 32, 3)
     noisy = noisy.reshape(1, 1, n_n, 32*32*3).repeat(n_p, axis=0) # (n_p, 1, n_n, 3096)
@@ -618,6 +609,7 @@ def train_and_evaluate(
     for n_batch, batch in zip(range(steps_per_epoch), train_loader):
       batch = prepare_batch_data(batch, config)
       data = batch['image']
+      data = data.reshape(-1, 32, 32, 3)
       b = data.shape[0]
       assert data.shape == (b, 32, 32, 3)
       data = data.reshape(1, b, 1, 32*32*3).repeat(n_p, axis=0) # (n_p, b, 1, 3096)
@@ -626,29 +618,33 @@ def train_and_evaluate(
       else: raise NotImplementedError("我写了")
       # calculate the pr of noise
       norm = jnp.sum(noise ** 2, axis=-1) # (n_p, b, n_n)
+      # cast to float64
+      norm = jnp.array(norm, dtype=jnp.float64)
       sum += jnp.sum(jnp.exp(-0.5 * norm) / jnp.sqrt(2 * jnp.pi), axis=1) # (n_p, n_n)
     sum = sum / 50000
     sum = sum.mean(axis=1)
     # log
-    for i in len(eval_time):
+    for i in range(len(eval_time)):
       et = eval_time[i]
       s = sum[i]
       log_for_0(f'eval_time: {et}, sum: {s}')
-      wandb.log({
-        'eval_time': et,
-        'sum': s,
-        })
+      if config.wandb and index == 0:
+        wandb.log({
+          'eval_time': et,
+          'sum': s,
+          })
 
-  # log the line plot
-  wandb.log({
-      "eval_time_vs_sum": wandb.plot.line_series(
-          xs=eval_time.flatten(),
-          ys=sum.flatten(),
-          keys=["sum"],
-          title="Sum vs Eval Time",
-          xname="Eval Time"
-      )
-  })
+  # # log the line plot
+  # if config.wandb and index == 0:
+  #   wandb.log({
+  #       "eval_time_vs_sum": wandb.plot.line_series(
+  #           xs=eval_time.flatten(),
+  #           ys=sum.flatten(),
+  #           keys=["sum"],
+  #           title="Sum vs Eval Time",
+  #           xname="Eval Time"
+  #       )
+  #   })
 
   return 0
 

@@ -20,6 +20,7 @@ cal:
 batch_size: 512
 log_per_step: 100
 visualize_per_epoch: 80
+wandb: True
 
 # # Here is for IMAGENET32x32:
 
