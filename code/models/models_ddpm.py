@@ -965,6 +965,10 @@ class SimDDPM(nn.Module):
     # when eta=0, no need to add noise
     if self.sample_clip_denoised:
       x0_t = jnp.clip(x0_t, -1, 1)
+
+
+    # # sqa try, change this back
+    # eps = jax.random.normal(rng, x_i.shape)
     
     c2 = jnp.sqrt(1 - at_next)
     # x_next = jnp.sqrt(at_next) * x0_t + c2 * eps
