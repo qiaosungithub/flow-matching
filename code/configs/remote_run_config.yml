@@ -61,7 +61,7 @@ aug:
 fid:
     # on_use: False
     eval_only: False
-    fid_per_epoch: 50
+    fid_per_epoch: 5
     num_samples: 50000
     # cache_ref: /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet32_train_jax_stats_20241228.npz # pytorch
     cache_ref: /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet64_train_jax_stats_20241228.npz # pytorch
@@ -79,8 +79,8 @@ adam_b2: 0.95
 grad_clip: 0.0
 warmup_epochs: 2 # no warmup
 log_per_step: 100
-visualize_per_epoch: 10
-eval_per_epoch: 20
+visualize_per_epoch: 1
+eval_per_epoch: 2
 checkpoint_per_epoch: 50
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241228_161814_e5x9es_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval
 
