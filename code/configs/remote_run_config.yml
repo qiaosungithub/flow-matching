@@ -29,9 +29,9 @@
 #     eval_only: True
 #     fid_per_epoch: 10
 
-# Here is for CIFAR10:
+# Here is for imagenet64x64:
 model:
-    image_size: 32
+    image_size: 64
     out_channels: 3
     base_width: 96
     more_layers: True
@@ -51,7 +51,7 @@ model:
     no_condition_t: False
 dataset:
     name: imagenet
-    # root: CIFAR # pytorch
+    root: /kmh-nfs-us-mount/data/imagenet
     prefetch_factor: 2
     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
     cache: True
@@ -71,7 +71,7 @@ evalu:
 # wandb: False
 batch_size: 512
 num_epochs: 250
-learning_rate: 0.0004 # FM
+learning_rate: 0.0001 # FM
 lr_schedule: const
 weight_decay: 0.0
 optimizer: adamw

@@ -526,9 +526,9 @@ class NCSNpp(nn.Module):
 # # test
 
 # rngs = nn.Rngs(0, params=114, dropout=514, train=1919)
-# model = NCSNpp(base_width=16, rngs=rngs)
+# model = NCSNpp(base_width=16, image_size=64, rngs=rngs, ch_mult = (1, 2, 3, 4), attn_resolutions=(32, 16))
 # from jax import random
-# inputs = random.normal(rngs.train(), (2, 32, 32, 3))
+# inputs = random.normal(rngs.train(), (2, 64, 64, 3))
 # time_cond = jnp.log(jnp.array([1, 0.1]))
 # output = model(inputs, time_cond, train=True, verbose=True)
 # print(output.shape)
