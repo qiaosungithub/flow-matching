@@ -603,7 +603,7 @@ def train_and_evaluate(
     eval_time = eval_time.reshape(-1, 1, 1, 1)
     log_coeff = jnp.log(eval_time) * (-32*32*3)
     log_coeff = log_coeff.reshape(n_p, 1, 1)
-    max_log_prob = jnp.ones((n_p, n_n), dtype=jnp.float64) * (-jnp.inf)
+    total_log_prob = []
     noisy = noisy_images.pop(0)
     assert noisy.shape == (n_n, 32, 32, 3)
     noisy = noisy.reshape(1, 1, n_n, 32*32*3).repeat(n_p, axis=0) # (n_p, 1, n_n, 3096)
@@ -617,6 +617,7 @@ def train_and_evaluate(
       data = data.reshape(1, b, 1, 32*32*3).repeat(n_p, axis=0) # (n_p, b, 1, 3096)
       # we hope to get shape (n_p, b, n_n, 3096)
       if sde == "flow": noise = (noisy - ((1 - eval_time) * data)) / eval_time # (n_p, b, n_n, 3096)
+      elif sde == "VP": noise = (noisy - (sqrt(1 - eval_time) * data)) / sqrt(eval_time) # (n_p, b, n_n, 3096)
       else: raise NotImplementedError("我写了")
       # calculate the pr of noise
       norm = jnp.sum(noise ** 2, axis=-1) # (n_p, b, n_n)
@@ -625,9 +626,13 @@ def train_and_evaluate(
       # norm = jnp.array(norm, dtype=jnp.float64)
       # norm = norm - 32 * 32 * 3 # remember to divide by exp(-1/2 * 32*32*3)
       log_prob = -0.5 * norm + log_coeff
-      log_prob = jnp.max(log_prob, axis=1) # (n_p, n_n)
+      log_prob = jax.nn.logsumexp(log_prob, axis=1) # (n_p, n_n)
       # print("log_prob: ", log_prob)
-      max_log_prob = jnp.maximum(max_log_prob, log_prob)
+      total_log_prob.append(log_prob)
+    # gather total_log_prob to a (N, n_p, n_n) array
+    total_log_prob = jnp.stack(total_log_prob, axis=0)
+    total_log_prob = jax.nn.logsumexp(total_log_prob, axis=0) # (n_p, n_n)
+
     # sum = sum / 50000 # remember to divide by 50000
     # log
     assert config.wandb
@@ -638,15 +643,15 @@ def train_and_evaluate(
         dic = {}
         dic['eval_time'] = et
         for j in range(n_n):
-          dic[f'mlp{j}'] = max_log_prob[i, j]
+          dic[f'tlp{j}'] = total_log_prob[i, j]
         wandb.log(dic)
 
 
     for j in range(n_n):
       log_for_0(f'results for n={j}')
-      mlp = max_log_prob[:, j]
+      tlp = total_log_prob[:, j]
       for i in range(n_p):
-        s = mlp[i]
+        s = tlp[i]
         log_for_0(f'eval_time: {eval_time[i]}, mlp: {s}')
         # if config.wandb and index == 0:
         #   wandb.log({
