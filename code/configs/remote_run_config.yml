@@ -1,40 +1,62 @@
-# Put your `run_remote.sh` configs in this YAML file
-
-# # Here is for MNIST:
-# training:
-#     learning_rate: 0.0005
-#     scheduler: poly # constant
-#     warmup_steps: 20000
-#     num_epochs: 500
-#     batch_size: 1024
-#     log_per_step: 20
-#     sigma_min: 0.0
-#     wandb: True
-#     checkpoint_per_epoch: 1000
-#     eval_per_epoch: 5
-#     # load_from: /kmh-nfs-us-mount/logs/sqa/sqa_NCSNv2/20241101_030317_2ml2nf_kmh-tpuvm-v2-32-1__b_lr_ep_torchvision_r50_eval/checkpoint_5684
+# # Here is for imagenet64x64:
 # model:
-#     name: UNet_for_mnist
+#     image_size: 64
+#     out_channels: 3
+#     base_width: 96
+#     more_layers: True
+#     n_T: 100
+#     use_aug_label: False
+#     dropout: 0.15 # FM
+#     net_type: ncsnppedm
+#     average_loss: True # use average or sum for loss
+
+#     sampler: euler
+#     # sampler: heun
+#     # sampler: edm
+#     # sampler: edm-sde
+#     # sampler: DDIM
+#     # ode_solver: scipy # rk45
+    
+#     no_condition_t: False
 # dataset:
-#     name: MNIST
-#     root: /kmh-nfs-ssd-eu-mount/code/qiao/data/MNIST/
-#     image_size: 28
+#     name: imagenet
+#     root: /kmh-nfs-us-mount/data/imagenet
 #     prefetch_factor: 2
 #     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
-# sampling:
-#     ema: True
-#     ema_decay: 0.999
-#     save_dir: null
+#     cache: True
+#     image_size: 64 # imagenet resized to 32x32
+# aug: 
+#     use_edm_aug: False
 # fid:
-#     eval_only: True
-#     fid_per_epoch: 10
+#     # on_use: False
+#     eval_only: False
+#     fid_per_epoch: 5
+#     num_samples: 50000
+#     cache_ref: /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet64_train_jax_stats_20241228.npz # pytorch
+# evalu:
+#     ema: True
+#     sample: False
+# # wandb: False
+# batch_size: 512
+# num_epochs: 250
+# learning_rate: 0.0001 # FM
+# lr_schedule: const
+# weight_decay: 0.0
+# optimizer: adamw
+# adam_b2: 0.95
+# grad_clip: 0.0
+# warmup_epochs: 2 # no warmup
+# log_per_step: 100
+# visualize_per_epoch: 1
+# eval_per_epoch: 2
+# checkpoint_per_epoch: 50
+# # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241228_161814_e5x9es_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval
 
-# Here is for imagenet64x64:
+# Here is for IMAGENET32x32:
 model:
-    image_size: 64
+    image_size: 32
     out_channels: 3
-    base_width: 96
-    more_layers: True
+    base_width: 128
     n_T: 100
     use_aug_label: False
     dropout: 0.15 # FM
@@ -51,67 +73,36 @@ model:
     no_condition_t: False
 dataset:
     name: imagenet
-    root: /kmh-nfs-us-mount/data/imagenet
+    # root: CIFAR # pytorch
     prefetch_factor: 2
     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
     cache: True
-    image_size: 64 # imagenet resized to 32x32
+    image_size: 32 # imagenet resized to 32x32
 aug: 
     use_edm_aug: False
 fid:
     # on_use: False
     eval_only: False
-    fid_per_epoch: 5
+    fid_per_epoch: 20
     num_samples: 50000
-    # cache_ref: /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet32_train_jax_stats_20241228.npz # pytorch
-    cache_ref: /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet64_train_jax_stats_20241228.npz # pytorch
+    cache_ref: /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet32_train_jax_stats_20241228.npz # pytorch
 evalu:
     ema: True
     sample: False
 # wandb: False
-batch_size: 512
-num_epochs: 250
-learning_rate: 0.0001 # FM
+batch_size: 2048
+num_epochs: 200
+learning_rate: 0.0004 # FM
 lr_schedule: const
 weight_decay: 0.0
 optimizer: adamw
 adam_b2: 0.95
 grad_clip: 0.0
-warmup_epochs: 2 # no warmup
+warmup_epochs: 16
 log_per_step: 100
-visualize_per_epoch: 1
-eval_per_epoch: 2
+visualize_per_epoch: 10
+eval_per_epoch: 20
 checkpoint_per_epoch: 50
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241228_161814_e5x9es_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval
-
-# # Here is for IMAGENET32x32:
-
-# training:
-#     learning_rate: 0.0001
-#     scheduler: poly # constant
-#     warmup_steps: 20000
-#     num_epochs: 200
-#     batch_size: 1024
-#     log_per_step: 20
-#     sigma_min: 0.0
-#     wandb: True
-#     checkpoint_per_epoch: 1000
-#     eval_per_epoch: 5
-#     # load_from: /kmh-nfs-us-mount/logs/sqa/sqa_NCSNv2/20241101_030317_2ml2nf_kmh-tpuvm-v2-32-1__b_lr_ep_torchvision_r50_eval/checkpoint_5684
-# model:
-#     name: UNet_for_32
-# dataset:
-#     name: imagenet2012:5.*.*
-#     # root: /kmh-nfs-ssd-eu-mount/code/qiao/data/MNIST/
-#     image_size: 32
-#     prefetch_factor: 2
-#     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
-# sampling:
-#     ema: True
-#     ema_decay: 0.999
-#     save_dir: null
-# fid:
-#     eval_only: True
-#     fid_per_epoch: 10
 
 # NOTE: you cannot add more hierarchy structure without modifying default.py and load_config.py
