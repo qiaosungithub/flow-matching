@@ -90,6 +90,13 @@ evalu:
     ema: True
     sample: False
 # wandb: False
+
+# ema
+ema_schedule: edm # ['edm', 'const']
+# ema_value: 0.999 # only useful for 'const'
+ema_halflife_kimg: 100000 # only useful for 'edm'
+ema_rampup_ratio: 0.135 # only useful for 'edm'
+
 batch_size: 2048
 num_epochs: 200
 learning_rate: 0.0002 # FM

@@ -45,7 +45,7 @@ import utils.sample_util as sample_util
 # import utils.vis_util as vis_util
 
 import models.models_ddpm as models_ddpm
-from models.models_ddpm import generate, edm_ema_scales_schedules
+from models.models_ddpm import generate, general_ema_scales_schedules
 
 NUM_CLASSES = 10
 
@@ -706,7 +706,7 @@ def train_and_evaluate(
     steps_per_epoch=steps_per_epoch,
   )
 
-  ema_scales_fn = partial(edm_ema_scales_schedules, steps_per_epoch=steps_per_epoch, config=config)
+  ema_scales_fn = partial(general_ema_scales_schedules(config.ema_schedule), steps_per_epoch=steps_per_epoch, config=config)
 
   ########### Create Train State ###########
   state = create_train_state(config, model, image_size, learning_rate_fn)
