@@ -559,7 +559,7 @@ def train_and_evaluate(
   log_for_0('eval_steps: {}'.format(val_steps))
 
   # eval points
-  time = [0.11]
+  time = [config.cal.eval_time]
   gap = config.cal.gap
   n_p = config.cal.num_points
   n_n = config.cal.nn # number of noisy images to eval
