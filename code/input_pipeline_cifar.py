@@ -166,7 +166,7 @@ def preprocess_for_train(image_bytes, image_size, dtype=tf.float32):
   """
   image = _decode_and_center_crop(image_bytes, image_size)
   image = tf.reshape(image, [image_size, image_size, 3])
-  image = tf.image.random_flip_left_right(image) # random horizontal flip
+  # image = tf.image.random_flip_left_right(image) # random horizontal flip
   image = normalize_image(image)
   image = tf.image.convert_image_dtype(image, dtype=dtype)
   return image

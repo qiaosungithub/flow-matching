@@ -559,7 +559,7 @@ def train_and_evaluate(
   log_for_0('eval_steps: {}'.format(val_steps))
 
   # eval points
-  time = [0.5]
+  time = [0.11]
   gap = config.cal.gap
   n_p = config.cal.num_points
   n_n = config.cal.nn # number of noisy images to eval
@@ -601,7 +601,9 @@ def train_and_evaluate(
     eval_time = jnp.arange(n_p) * gap - gap * (n_p // 2) + t # eval time steps
     assert jnp.all(eval_time >= 1e-4) and jnp.all(eval_time <= 1-1e-4) # check
     eval_time = eval_time.reshape(-1, 1, 1, 1)
-    sum = jnp.zeros((n_p, n_n), dtype=jnp.float64)
+    log_coeff = jnp.log(eval_time) * (-32*32*3)
+    log_coeff = log_coeff.reshape(n_p, 1, 1)
+    max_log_prob = jnp.ones((n_p, n_n), dtype=jnp.float64) * (-jnp.inf)
     noisy = noisy_images.pop(0)
     assert noisy.shape == (n_n, 32, 32, 3)
     noisy = noisy.reshape(1, 1, n_n, 32*32*3).repeat(n_p, axis=0) # (n_p, 1, n_n, 3096)
@@ -614,27 +616,49 @@ def train_and_evaluate(
       assert data.shape == (b, 32, 32, 3)
       data = data.reshape(1, b, 1, 32*32*3).repeat(n_p, axis=0) # (n_p, b, 1, 3096)
       # we hope to get shape (n_p, b, n_n, 3096)
-      if sde == "flow": noise = (noisy - (1 - eval_time * data)) / eval_time # (n_p, b, n_n, 3096)
+      if sde == "flow": noise = (noisy - ((1 - eval_time) * data)) / eval_time # (n_p, b, n_n, 3096)
       else: raise NotImplementedError("我写了")
       # calculate the pr of noise
       norm = jnp.sum(noise ** 2, axis=-1) # (n_p, b, n_n)
       # print("norm: ", jnp.mean(norm))
       # cast to float64
-      norm = jnp.array(norm, dtype=jnp.float64)
-      norm = norm - 32 * 32 * 3 # remember to divide by exp(-1/2 * 32*32*3)
-      sum += jnp.sum(jnp.exp(-0.5 * norm), axis=1) # (n_p, n_n) # remember to divide by (\sqrt(2\pi))^d
+      # norm = jnp.array(norm, dtype=jnp.float64)
+      # norm = norm - 32 * 32 * 3 # remember to divide by exp(-1/2 * 32*32*3)
+      log_prob = -0.5 * norm + log_coeff
+      log_prob = jnp.max(log_prob, axis=1) # (n_p, n_n)
+      # print("log_prob: ", log_prob)
+      max_log_prob = jnp.maximum(max_log_prob, log_prob)
     # sum = sum / 50000 # remember to divide by 50000
-    sum = sum.mean(axis=1)
     # log
-    for i in range(len(eval_time)):
-      et = eval_time[i]
-      s = sum[i]
-      log_for_0(f'eval_time: {et}, sum: {s}')
-      if config.wandb and index == 0:
-        wandb.log({
-          'eval_time': et,
-          'sum': s,
-          })
+    assert config.wandb
+    eval_time = eval_time.flatten()
+    if config.wandb and index == 0:
+      for i in range(n_p):
+        et = eval_time[i]
+        dic = {}
+        dic['eval_time'] = et
+        for j in range(n_n):
+          dic[f'mlp{j}'] = max_log_prob[i, j]
+        wandb.log(dic)
+
+
+    for j in range(n_n):
+      log_for_0(f'results for n={j}')
+      mlp = max_log_prob[:, j]
+      for i in range(n_p):
+        s = mlp[i]
+        log_for_0(f'eval_time: {eval_time[i]}, mlp: {s}')
+        # if config.wandb and index == 0:
+        #   wandb.log({
+        #     f'mlp{j}': s,
+        #     })
+    # if config.wandb and index == 0:
+    #   for i in range(n_p):
+    #     et = eval_time[i]
+    #     wandb.log({
+    #       'eval_time': et,
+    #       })
+      
 
   # # log the line plot
   # if config.wandb and index == 0:
