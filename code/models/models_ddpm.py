@@ -80,7 +80,7 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
 
 def edm_ema_scales_schedules(step, config, steps_per_epoch):
   # ema_halflife_kimg = 500  # from edm
-  ema_halflife_kimg = 50000  # log(0.5) / log(0.999999) * 128 / 1000 = 88722 kimg, from flow
+  ema_halflife_kimg = 20000  # log(0.5) / log(0.999999) * 128 / 1000 = 88722 kimg, from flow
   ema_halflife_nimg = ema_halflife_kimg * 1000
 
   ema_rampup_ratio = 0.05
