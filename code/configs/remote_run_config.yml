@@ -58,6 +58,7 @@ model:
     out_channels: 3
     base_width: 128
     n_T: 100
+    head: 4
     use_aug_label: False
     dropout: 0.0 # FM
     net_type: ncsnppedm

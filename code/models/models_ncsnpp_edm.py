@@ -55,6 +55,7 @@ class NCSNpp(nn.Module):
         fir_kernel = (1, 3, 3, 1),
         resblock_type = "biggan",
         fourier_scale = 16.0,
+        attn_heads=1,
         rngs = None,
         use_aug_label = False,
         aug_label_dim = None,
@@ -122,7 +123,7 @@ class NCSNpp(nn.Module):
         #################### Blocks ############################
         
         AttnBlock = partial(
-            layerspp.AttnBlockpp, init_scale=init_scale, skip_rescale=skip_rescale, rngs=rngs
+            layerspp.AttnBlockpp, init_scale=init_scale, skip_rescale=skip_rescale, attn_heads=attn_heads,rngs=rngs
         )
 
         Upsample = partial(

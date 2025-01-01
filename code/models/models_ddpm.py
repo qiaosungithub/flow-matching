@@ -264,6 +264,7 @@ class SimDDPM(nn.Module):
     base_width,
     more_layers=False,
     num_classes = 10,
+    head=4,
     out_channels = 1,
     P_std = 1.2,
     P_mean = -1.2,
@@ -337,6 +338,7 @@ class SimDDPM(nn.Module):
         image_size=self.image_size,
         out_channels=self.out_channels,
         dropout=self.dropout,
+        attn_heads=head,
         ch_mult = (2, 2, 2) if not more_layers else (1, 2, 3, 4),
         attn_resolutions = (16,) if not more_layers else (32, 16),
         rngs=self.rngs)

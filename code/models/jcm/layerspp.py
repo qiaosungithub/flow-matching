@@ -143,6 +143,7 @@ class AttnBlockpp(nn.Module):
         in_planes,
         skip_rescale = False, 
         init_scale = 0.0, 
+        attn_heads=1,
         rngs=None
     ):
         self.in_planes = in_planes
@@ -154,6 +155,7 @@ class AttnBlockpp(nn.Module):
         self.q_NIN = NIN(self.in_planes, rngs=self.rngs)
         self.k_NIN = NIN(self.in_planes, rngs=self.rngs)
         self.v_NIN = NIN(self.in_planes, rngs=self.rngs)
+        self.head = attn_heads
 
         self.final_NIN = NIN(self.in_planes, init_scale=init_scale, rngs=self.rngs)
 
@@ -161,15 +163,15 @@ class AttnBlockpp(nn.Module):
         B, H, W, C = x.shape
         assert C == self.in_planes
         h = self.group_norm(x)
-        q = self.q_NIN(h)
-        k = self.k_NIN(h)
-        v = self.v_NIN(h)
+        q = self.q_NIN(h).reshape((B, H, W, self.head, C // self.head))
+        k = self.k_NIN(h).reshape((B, H, W, self.head, C // self.head))
+        v = self.v_NIN(h).reshape((B, H, W, self.head, C // self.head))
 
-        w = jnp.einsum("bhwc,bHWc->bhwHW", q, k) * (int(C) ** (-0.5))
-        w = jnp.reshape(w, (B, H, W, H * W))
-        w = jax.nn.softmax(w, axis=-1)
-        w = jnp.reshape(w, (B, H, W, H, W))
-        h = jnp.einsum("bhwHW,bHWc->bhwc", w, v)
+        w = jnp.einsum("bhwnc,bHWnc->bhwHWn", q, k) * ((int(C)//self.head) ** (-0.5))
+        w = jnp.reshape(w, (B, H, W, H * W, self.head))
+        w = jax.nn.softmax(w, axis=-2)
+        w = jnp.reshape(w, (B, H, W, H, W, self.head))
+        h = jnp.einsum("bhwHWn,bHWnc->bhwnc", w, v).reshape((B, H, W, C))
         h = self.final_NIN(h)
         if not self.skip_rescale:
             return x + h
