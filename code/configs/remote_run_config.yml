@@ -15,7 +15,7 @@ model:
     # sampler: edm-sde
     # sampler: DDIM
     ode_solver: jax
-    # ode_solver: scipy # rk45
+    # ode_solver: O # rk45
     
     no_condition_t: True
     embedding_type: positional # FM

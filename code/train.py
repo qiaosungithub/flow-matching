@@ -51,7 +51,7 @@ from input_pipeline import prepare_batch_data
 NUM_CLASSES = 10
 
 def get_input_pipeline(dataset_config):
-    if dataset_config.name == 'imagenet2012:5.*.*':
+    if dataset_config.name in ['imagenet2012:5.*.*', 'imagenet']:
         import input_pipeline_imgnet as input_pipeline
         return input_pipeline
     elif dataset_config.name == 'cifar10':
@@ -804,7 +804,7 @@ def train_and_evaluate(
       log_for_0(f'Sample epoch {epoch}...')
       # sync batch statistics across replicas
       eval_state = sync_batch_stats(state)
-      eval_state = eval_state.replace(params=model_avg)
+      # eval_state = eval_state.replace(params=model_avg) # ZHH: we use this so we can debug faster
       vis, _ = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx)
       vis = make_grid_visualization(vis)
       vis = jax.device_get(vis) # np.ndarray
@@ -860,6 +860,7 @@ def train_and_evaluate(
 def just_evaluate(
     config: ml_collections.ConfigDict, workdir: str
   ):
+  log_for_0('We use just_evaluate!!')
   # assert the version of orbax-checkpoint is 0.4.4
   assert ocp.__version__ == '0.6.4', ValueError(f'orbax-checkpoint version must be 0.6.4, but got {ocp.__version__}')
   ########### Initialize ###########
@@ -1008,7 +1009,6 @@ def just_evaluate(
     if config.wandb and index == 0:
       wandb.log({'gen': wandb.Image(canvas)})
     log_for_0('Sample NFE: {}'.format(nfe))
-    # assert False, 'image saved!: {}'.format(nfe)
     # sample_step(eval_state, image_size, sampling_config, epoch, use_wandb=config.wandb)
   ########### FID ###########
   if config.fid.on_use:
