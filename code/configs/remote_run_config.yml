@@ -9,7 +9,7 @@ model:
     net_type: ncsnppedm
     average_loss: False
 
-    no_condition_t: False
+    no_condition_t: True
     # CT
     fourier_scale: 0.02 # CT
 
@@ -58,4 +58,4 @@ log_per_step: 100
 visualize_per_epoch: 50
 eval_per_epoch: 50
 checkpoint_per_epoch: 1000
-load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241222_153820_3moxe3_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_384000
+load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241229_065637_cccdaa_kmh-tpuvm-v2-32-6__b_lr_ep_eval/checkpoint_384000
