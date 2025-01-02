@@ -225,10 +225,6 @@ def sample_icm_t(
         (jnp.log(sigmas[:-1]) - mean) / (std * jnp.sqrt(2))
     ) # this one is consistent with ICM paper
   assert pdf.ndim == 1, 'pdf should be 1D'
-  # pdf = pdf / jnp.sum(pdf) # 多余的，没准反而高兴
-
-  # print(f"mean: {mean}")
-  # print(f"std: {std}")
 
   # print(f"sigmas: {sigmas}")
   # print(f"pdf: {pdf}")
@@ -247,22 +243,14 @@ class SimDDPM(nn.Module):
     base_width,
     num_classes = 10,
     out_channels = 1,
-    n_T = 18,  # inference steps
+    n_T = 1,  # inference steps
     net_type = 'ncsnpp',
     dropout = 0.0,
     dtype = jnp.float32,
     use_aug_label = False,
     average_loss = False,
-    eps=1e-3, # for FM use
-    h_init=0.035, # TODO: what is this? not in CT
-    sampler='euler',
-    ode_solver='jax',
     no_condition_t=False,
     rngs=None,
-    beta_schedule='linear', # DDIM
-    beta_start=1e-4, # DDIM
-    beta_end=0.02, # DDIM
-    num_diffusion_timesteps=1000, # DDIM
     ema_target=False, # CT
     weighting='uniform', # CT
     loss_type='l2', # CT
@@ -283,16 +271,8 @@ class SimDDPM(nn.Module):
     self.dtype = dtype
     self.use_aug_label = use_aug_label
     self.average_loss = average_loss
-    self.eps = eps
-    self.h_init = h_init
-    self.sampler = sampler
-    self.ode_solver = ode_solver
     self.no_condition_t = no_condition_t
     self.rngs = rngs
-    self.beta_schedule = beta_schedule
-    self.beta_start = beta_start
-    self.beta_end = beta_end
-    self.num_diffusion_timesteps = num_diffusion_timesteps
     self.ema_target = ema_target
     self.weighting = weighting
     self.loss_type = loss_type
@@ -347,7 +327,6 @@ class SimDDPM(nn.Module):
     # # declare two networks
     # self.net = net_fn(name='net')
     # self.net_ema = net_fn(name='net_ema')
-    self.num_timesteps = num_diffusion_timesteps
     self.net = net_fn()
 
 
