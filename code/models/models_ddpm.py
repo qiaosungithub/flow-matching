@@ -174,12 +174,12 @@ def generate(state: NNXTrainState, model, rng, n_sample):
 
   rng_z, 别传进去 = jax.random.split(rng, 2)
   merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-  outputs = merged_model.sample_one_step_CT(x_T, rng_z)
+  outputs = merged_model.sample_one_step_CT(x_T, rng_z, model.t_max)
 
   if model.n_T == 2:
     middle_t = 0.821
     noisy_x = outputs + jax.random.normal(rng, outputs.shape) * middle_t
-    outputs = merged_model.sample_one_step_CT(noisy_x, rng_z)
+    outputs = merged_model.sample_one_step_CT(noisy_x, rng_z, middle_t)
 
   return outputs
 
@@ -426,9 +426,9 @@ class SimDDPM(nn.Module):
     return x_next
     # return x_next, denoised 
 
-  def sample_one_step_CT(self, x_T, rng):
+  def sample_one_step_CT(self, x_T, rng, t):
 
-    t = jnp.zeros(1,) + self.t_max
+    t = jnp.zeros(1,) + t
     t = jnp.repeat(t, x_T.shape[0])
     denoised = self.forward_consistency_function(x_T, t, ema=False, train=False)  # ema handled outside
     
