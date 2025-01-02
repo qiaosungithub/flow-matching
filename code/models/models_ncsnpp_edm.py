@@ -92,7 +92,7 @@ class NCSNpp(nn.Module):
         
         assert progressive in ["none", "output_skip", "residual"]
         assert self.progressive_input in ["none", "input_skip", "residual"]
-        assert embedding_type in ["fourier", "positional"]
+        assert embedding_type in ["fourier", "positional", "zero"]
 
         ################ time embedding layer ################
         if embedding_type == "fourier":
@@ -103,10 +103,12 @@ class NCSNpp(nn.Module):
         elif embedding_type == "positional":
             # Sinusoidal positional embeddings.
             self.temb_layer = partial(layers.get_timestep_embedding, embedding_dim=nf)
+        elif embedding_type == "zero":
+            self.temb_layer = partial(layers.get_zero_embedding, embedding_dim=nf)
         else:
             raise NotImplementedError
             raise ValueError(f"embedding type {embedding_type} unknown.")
-        self.input_temb_dim = input_temb_dim = nf if embedding_type == "positional" else 2 * nf # NOTE: here, if use fourier embedding, the output dim is 2 * nf; for positional embedding, the output dim is nf. This is tang
+        self.input_temb_dim = input_temb_dim = nf if embedding_type in ["positional", "zero"] else 2 * nf # NOTE: here, if use fourier embedding, the output dim is 2 * nf; for positional embedding, the output dim is nf. This is tang
         #################### aug label ############################
         assert not use_aug_label
         if use_aug_label:

@@ -17,8 +17,8 @@ model:
     ode_solver: jax
     # ode_solver: scipy # rk45
 
-    no_condition_t: False
-    embedding_type: positional # FM
+    # embedding_type: positional # FM
+    embedding_type: zero # no t
 dataset:
     name: cifar10
     root: CIFAR # pytorch
@@ -49,7 +49,7 @@ visualize_per_epoch: 100
 eval_per_epoch: 100
 wandb: False
 checkpoint_per_epoch: 100
-load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241206_001843_i2wyhh_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_48000
+# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241206_001843_i2wyhh_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_48000
 
 
 # # Here is for IMAGENET32x32:
