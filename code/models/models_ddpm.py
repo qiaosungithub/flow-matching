@@ -121,7 +121,6 @@ def edm_ema_scales_schedules(step, config, steps_per_epoch):
   scales = jnp.ones((1,), dtype=jnp.int32)
   return ema_beta, scales
 
-
 def general_ema_scales_schedules(ema_schedule):
   if ema_schedule == 'const':
     return const_ema_scales_schedules
@@ -129,6 +128,54 @@ def general_ema_scales_schedules(ema_schedule):
     return edm_ema_scales_schedules
   else:
     raise NotImplementedError('Unknown ema_schedule: {}'.format(ema_schedule))
+
+# from jax.experimental import ode as O
+# import models.ode_pkg_repo as O
+import models.ode_pkg as O
+def solve_diffeq_by_O(init_x,state,see_steps:int=10,t_min:float=0.0):
+    def f(x, t):
+        # assert t.shape == (), ValueError(f't shape: {t.shape}')
+        creation = t.reshape(1,).repeat(x.shape[0],axis=0)
+        merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
+        u_pred = merged_model.forward_flow_pred_function(x, creation, train=False)
+        return u_pred
+    out = O.odeint(f, init_x, jnp.linspace(t_min,1.0,see_steps), rtol=1e-4, atol=1e-4) 
+    # out = O.odeint(f, init_x, jnp.linspace(t_min,1.0,see_steps), rtol=1e-5, atol=1e-5) 
+    return out
+    # return out, None
+  
+# NOTE: problem with diffrax is that it is imcompatible with JAX 0.4.27
+# import diffrax as D
+# def solve_diffeq_by_diffrax(init_x,state,see_steps:int=10,t_min:float=0.0):
+#     def f(t, x):
+#     # def f(x, t):
+#         # assert t.shape == (), ValueError(f't shape: {t.shape}')
+#         creation = t.reshape(1,).repeat(x.shape[0],axis=0)
+#         merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
+#         u_pred = merged_model.forward_flow_pred_function(x, creation, train=False)
+#         return u_pred
+#     term = D.ODETerm(f)
+#     solver = D.Dopri5()
+#     controller = D.PIDController(rtol=1e-5, atol=1e-5)
+#     out = D.diffeqsolve(term, solver, y0=init_x, t0=t_min,t1=1.0, stepsize_controller=controller) 
+#     # out = O.odeint(f, init_x, jnp.linspace(t_min,1,see_steps), rtol=1e-5, atol=1e-5) 
+#     return out
+
+def sample_by_diffeq(state: NNXTrainState, model, rng, n_sample,t_min:float=0.0):
+    别传进去 = rng
+    只能用一次, 别传进去 = jax.random.split(别传进去)
+    init_x = jax.random.normal(只能用一次, (n_sample, model.image_size, model.image_size, model.out_channels))    
+    # samples, nfe = solve_diffeq_by_O(init_x, state, see_steps=2, t_min=t_min) # [2, N, 32, 32, 3] # [1, N]
+    samples = solve_diffeq_by_O(init_x, state, see_steps=2, t_min=t_min)
+    # we extract nfe from samples
+    
+    images = samples[1]
+    nfes = samples[2].mean(axis=(1,2,3)).astype(jnp.int32)
+    # print('nfes :', nfes)
+    # print('average nfe:', nfes.mean())
+    # print('samples.shape:', samples_.shape)
+    # print('nfe.shape:', nfe.shape)
+    return images, nfes.mean()
 
 # move this out from model for JAX compilation
 def generate(state: NNXTrainState, model, rng, n_sample):
@@ -140,6 +187,8 @@ def generate(state: NNXTrainState, model, rng, n_sample):
   ---
   return shape: (n_sample, 32, 32, 3)
   """
+  if model.ode_solver == 'O':
+    return sample_by_diffeq(state,model,rng,n_sample, t_min=model.eps)
 
   # prepare schedule
   num_steps = model.n_T
@@ -173,9 +222,6 @@ def generate(state: NNXTrainState, model, rng, n_sample):
     t_steps = model.compute_t(jnp.arange(num_steps), num_steps)
     t_steps = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
     x_i = x_prior * t_steps[0]
-
-    # import jax.random as random
-    # x = random.normal(rng, x_shape, dtype=model.dtype)
 
     def step_fn(i, inputs):
       x_i, rng = inputs
