@@ -9,15 +9,13 @@ model:
     net_type: ncsnppedm
     average_loss: True # use average or sum for loss
 
-    # sampler: euler
-    # sampler: heun
-    # sampler: edm
-    # sampler: edm-sde
     sampler: DDIM
-    ode_solver: jax # rk45
-    # ode_solver: scipy # rk45
     
-    no_condition_t: True
+    no_condition_t: False
+
+    # experiments
+    exp: disturb # option: disturb, predict, joint
+    disturb: 10
 dataset:
     name: cifar10
     root: CIFAR # pytorch

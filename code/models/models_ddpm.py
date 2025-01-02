@@ -203,6 +203,8 @@ class SimDDPM(nn.Module):
     beta_start=1e-4,
     beta_end=0.02,
     num_diffusion_timesteps=1000,
+    exp=None,
+    disturb=None, 
     **kwargs
   ):
     self.image_size = image_size
@@ -223,6 +225,8 @@ class SimDDPM(nn.Module):
     self.ode_solver = ode_solver
     self.no_condition_t = no_condition_t
     self.rngs = rngs
+    self.exp = exp
+    self.disturb = disturb
     self.beta_schedule = beta_schedule
     self.beta_start = beta_start
     self.beta_end = beta_end
@@ -495,7 +499,7 @@ class SimDDPM(nn.Module):
     return denoiser
 
   def forward_flow_pred_function(self, z, t, augment_label=None, train: bool = True):  # EDM
-
+    raise NotImplementedError
     t_cond = jnp.zeros_like(t) if self.no_condition_t else jnp.log(t * 999)
     u_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
     return u_pred
@@ -548,8 +552,6 @@ class SimDDPM(nn.Module):
 
     # sample t step
     t = t_batch # in DDIM, t may be discrete
-    # eps = 1e-3
-    # t = t * (1 - eps) + eps
     ## DDIM
     betas = get_beta_schedule(self.beta_schedule, beta_start=self.beta_start, beta_end=self.beta_end, num_diffusion_timesteps=self.num_diffusion_timesteps)
     alpha = jnp.cumprod(1 - betas, axis=0)
@@ -563,7 +565,19 @@ class SimDDPM(nn.Module):
     z = batch_mul(jnp.sqrt(alphas), x_data) + batch_mul(jnp.sqrt(1-alphas), x_prior)
 
     # forward network
-    eps_pred = self.forward_DDIM_pred_function(z, t, augment_label=augment_label, train=train) # TODO: maybe we do t.float() here
+    if self.exp == "disturb":
+      in_t = t + self.disturb * jax.random.normal(self.rngs.train(), t.shape)
+      # in_t = jnp.clip(in_t, 1e-3, 1)
+    elif self.exp == "predict":
+      raise NotImplementedError
+      in_t = 1 - self.t_predictor.forward(z).squeeze(-1)
+      # stop gradient
+      in_t = jax.lax.stop_gradient(in_t)
+      in_t = jnp.clip(in_t, 1e-3, 1)
+    else: in_t = t
+    # error = jnp.mean((in_t-t)**2)
+    # jax.debug.print('error: {e}', e=error)
+    eps_pred = self.forward_DDIM_pred_function(z, in_t, augment_label=augment_label, train=train)
 
 
     # loss
