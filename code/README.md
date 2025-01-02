@@ -27,6 +27,10 @@ DDIM: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241202_214940_zd8s4j_k
 
 ICM: `/kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241209_173932_kkesfc_kmh-tpuvm-v2-32-6__b_lr_ep_eval/checkpoint_388000`
 
+ECM: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241222_153820_3moxe3_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_384000`
+
+ECM w/o t: `/kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241229_065637_cccdaa_kmh-tpuvm-v2-32-6__b_lr_ep_eval/checkpoint_384000`
+
 ## datasets
 
 We now use pytorch dataset. To use tfds, switch to the `FM-nnx-tfds` branch.
