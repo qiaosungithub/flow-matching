@@ -49,109 +49,115 @@
 # # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241202_214940_zd8s4j_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_48500
 
 
-# # Here is for IMAGENET32x32:
-# model:
-#     image_size: 32
-#     out_channels: 3
-#     base_width: 4
-#     n_T: 50
-#     use_aug_label: False
-#     dropout: 0.20
-#     net_type: ncsnppedm
-#     average_loss: True # use average or sum for loss
-#     sampler: euler
-#     # sampler: heun
-#     # sampler: edm
-#     # sampler: edm-sde
-#     # sampler: DDIM
-#     ode_solver: jax
-#     # ode_solver: scipy # rk45
-#     no_condition_t: False
-# dataset:
-#     name: imagenet2012:5.*.*
-#     # root: CIFAR # pytorch
-#     prefetch_factor: 2
-#     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
-#     cache: False
-# aug: 
-#     use_edm_aug: False # TODO: enable this and test
-# fid:
-#     eval_only: False
-#     fid_per_epoch: 100
-#     num_samples: 1000
-#     # cache_ref: /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet32_train_jax_stats_20241228.npz # pytorch
-#     cache_ref: /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet64_train_jax_stats_20241228.npz # pytorch
-# evalu:
-#     ema: True
-#     sample: True
-# batch_size: 512
-# num_epochs: 400
-# learning_rate: 0.0008
-# lr_schedule: const
-# weight_decay: 0
-# optimizer: adamw
-# adam_b2: 0.999
-# grad_clip: 1.0
-# warmup_epochs: 200
-# log_per_step: 30
-# visualize_per_epoch: 100
-# eval_per_epoch: 100
-# wandb: False
-# checkpoint_per_epoch: 100
-# # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241202_214940_zd8s4j_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_48500
-
-# Here is for ImageNet 64x64:
+# Here is for IMAGENET32x32:
 model:
-    image_size: 64
+    image_size: 32
     out_channels: 3
     base_width: 4
-    more_layers: True
-    n_T: 10
+    n_T: 50
+    head: 4
     use_aug_label: False
-    dropout: 0.15 # FM
-    net_type: ncsnppedm
+    dropout: 0.20
+    net_type: zhhshenyi
     average_loss: True # use average or sum for loss
-
     sampler: euler
     # sampler: heun
     # sampler: edm
     # sampler: edm-sde
     # sampler: DDIM
-    # ode_solver: scipy # rk45
-    
+    ode_solver: jax
+    # ode_solver: O # rk45
     no_condition_t: False
 dataset:
     name: imagenet
     root: /kmh-nfs-us-mount/data/imagenet
     prefetch_factor: 2
     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
-    cache: True
-    image_size: 64
+    cache: False
 aug: 
-    use_edm_aug: False
+    use_edm_aug: False # TODO: enable this and test
 fid:
-    # on_use: False
     eval_only: False
-    fid_per_epoch: 50
+    fid_per_epoch: 100
     num_samples: 1000
     # cache_ref: /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet32_train_jax_stats_20241228.npz # pytorch
     cache_ref: /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet64_train_jax_stats_20241228.npz # pytorch
 evalu:
     ema: True
-    sample: False
-# wandb: False
-batch_size: 512
-num_epochs: 10
-learning_rate: 0.0001 # FM
-lr_schedule: const
-weight_decay: 0.0
+    sample: True
+ema_schedule: edm # ['edm', 'const']
+ema_halflife_kimg: 100000 # only useful for 'edm'
+ema_rampup_ratio: 0.135 # only useful for 'edm'
+
+batch_size: 2048
+num_epochs: 4
+learning_rate: 0.0002
+lr_schedule: poly
+weight_decay: 0
 optimizer: adamw
-adam_b2: 0.95
-grad_clip: 0.0
-warmup_epochs: 2 # no warmup
-log_per_step: 100
-visualize_per_epoch: 10
-eval_per_epoch: 20
+adam_b2: 0.999
+grad_clip: 1.0
+warmup_steps: 40000 # for poly schedule
+# warmup_epochs: 200
+log_per_step: 30
+visualize_per_epoch: 100
+eval_per_epoch: 100
 wandb: False
-checkpoint_per_epoch: 50
-# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241228_161814_e5x9es_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval
+checkpoint_per_epoch: 100
+# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241202_214940_zd8s4j_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_48500
+
+# # Here is for ImageNet 64x64:
+# model:
+#     image_size: 64
+#     out_channels: 3
+#     base_width: 4
+#     more_layers: True
+#     n_T: 10
+#     use_aug_label: False
+#     dropout: 0.15 # FM
+#     net_type: ncsnppedm
+#     average_loss: True # use average or sum for loss
+
+#     sampler: euler
+#     # sampler: heun
+#     # sampler: edm
+#     # sampler: edm-sde
+#     # sampler: DDIM
+#     # ode_solver: scipy # rk45
+    
+#     no_condition_t: False
+# dataset:
+#     name: imagenet
+#     root: /kmh-nfs-us-mount/data/imagenet
+#     prefetch_factor: 2
+#     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
+#     cache: True
+#     image_size: 64
+# aug: 
+#     use_edm_aug: False
+# fid:
+#     # on_use: False
+#     eval_only: False
+#     fid_per_epoch: 50
+#     num_samples: 1000
+#     # cache_ref: /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet32_train_jax_stats_20241228.npz # pytorch
+#     cache_ref: /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet64_train_jax_stats_20241228.npz # pytorch
+# evalu:
+#     ema: True
+#     sample: False
+# # wandb: False
+# batch_size: 512
+# num_epochs: 10
+# learning_rate: 0.0001 # FM
+# lr_schedule: const
+# weight_decay: 0.0
+# optimizer: adamw
+# adam_b2: 0.95
+# grad_clip: 0.0
+# warmup_epochs: 2 # no warmup
+# log_per_step: 100
+# visualize_per_epoch: 10
+# eval_per_epoch: 20
+# wandb: False
+# checkpoint_per_epoch: 50
+# # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241228_161814_e5x9es_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval

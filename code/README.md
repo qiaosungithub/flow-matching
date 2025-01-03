@@ -29,6 +29,8 @@ DDIM: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241202_214940_zd8s4j_k
 
 FM on ImageNet 32x32: `/kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241229_005044_bctmck_kmh-tpuvm-v2-32-7__b_lr_ep_eval/checkpoint_125000` (this baseline is till Jan 2)
 
+FM on ImageNet 64x64: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241229_033537_p1p55u_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_625500` (this baseline is till Jan 3)
+
 ## datasets
 
 We now use pytorch dataset. To use tfds, switch to the `FM-nnx-tfds` branch.

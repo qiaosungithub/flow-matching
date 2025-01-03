@@ -5,6 +5,7 @@
 #     base_width: 96
 #     more_layers: True
 #     n_T: 100
+#     head: 1
 #     use_aug_label: False
 #     dropout: 0.15 # FM
 #     net_type: ncsnppedm
@@ -15,7 +16,7 @@
 #     # sampler: edm
 #     # sampler: edm-sde
 #     # sampler: DDIM
-#     # ode_solver: scipy # rk45
+#     ode_solver: O # rk45
     
 #     no_condition_t: False
 # dataset:
@@ -50,18 +51,18 @@
 # visualize_per_epoch: 1
 # eval_per_epoch: 2
 # checkpoint_per_epoch: 50
-# # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241228_161814_e5x9es_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval
+# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241229_033537_p1p55u_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_625500
 
 # Here is for IMAGENET32x32:
 model:
     image_size: 32
     out_channels: 3
-    base_width: 128
+    base_width: 256
     n_T: 100
-    head: 1
+    head: 4
     use_aug_label: False
-    dropout: 0.15 # FM
-    net_type: ncsnppedm
+    dropout: 0 # FM
+    net_type: zhhshenyi
     average_loss: True # use average or sum for loss
 
     # sampler: euler
@@ -74,7 +75,7 @@ model:
     no_condition_t: False
 dataset:
     name: imagenet
-    # root: CIFAR # pytorch
+    root: /kmh-nfs-us-mount/data/imagenet
     prefetch_factor: 2
     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
     cache: True
@@ -82,35 +83,34 @@ dataset:
 aug: 
     use_edm_aug: False
 fid:
-    on_use: False
+    # on_use: False
     eval_only: False
     fid_per_epoch: 25
     num_samples: 50000
     cache_ref: /kmh-nfs-ssd-eu-mount/data/cached/zhh/imagenet32_train_jax_stats_20241228.npz # pytorch
 evalu:
     ema: True
-    sample: True
+    sample: False
 # wandb: False
 
 # ema
 ema_schedule: edm # ['edm', 'const']
-# ema_value: 0.999 # only useful for 'const'
+# ema_value: 0.9999 # only useful for 'const'
 ema_halflife_kimg: 100000 # only useful for 'edm'
 ema_rampup_ratio: 0.135 # only useful for 'edm'
 
 batch_size: 2048
 num_epochs: 200
-learning_rate: 0.0002 # FM
-lr_schedule: const
+learning_rate: 0.0002
+lr_schedule: poly # options: ['const', 'poly']
 weight_decay: 0.0
 optimizer: adamw
 adam_b2: 0.95
 grad_clip: 0.0
-warmup_epochs: 64
+warmup_steps: 40000 # for poly schedule
+# warmup_epochs: 2 # for const schedule
 log_per_step: 100
 visualize_per_epoch: 10
 eval_per_epoch: 20
 checkpoint_per_epoch: 50
-load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241229_005044_bctmck_kmh-tpuvm-v2-32-7__b_lr_ep_eval/checkpoint_125000
-
-# NOTE: you cannot add more hierarchy structure without modifying default.py and load_config.py
+# load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241229_005044_bctmck_kmh-tpuvm-v2-32-7__b_lr_ep_eval/checkpoint_125000

@@ -106,12 +106,11 @@ def const_ema_scales_schedules(step, config, steps_per_epoch):
 def edm_ema_scales_schedules(step, config, steps_per_epoch):
   # ema_halflife_kimg = 500  # from edm
 
-
-  ema_halflife_kimg = config.get('ema_halflife_kimg',100000)  # log(0.5) / log(0.999999) * 128 / 1000 = 88722 kimg, from flow
+  ema_halflife_kimg = config.get('ema_halflife_kimg', 100000)  # log(0.5) / log(0.999999) * 128 / 1000 = 88722 kimg, from flow
   ema_halflife_nimg = ema_halflife_kimg * 1000
 
   # ema_rampup_ratio = 0.05
-  ema_rampup_ratio = config.get('ema_rampup_ratio',0.135)
+  ema_rampup_ratio = config.get('ema_rampup_ratio', 0.135)
   ema_halflife_nimg = jnp.minimum(ema_halflife_nimg, step * config.batch_size * ema_rampup_ratio)
 
   ema_beta = 0.5 ** (config.batch_size / jnp.maximum(ema_halflife_nimg, 1e-8))
@@ -188,7 +187,7 @@ def generate(state: NNXTrainState, model, rng, n_sample):
   return shape: (n_sample, 32, 32, 3)
   """
   if model.ode_solver == 'O':
-    return sample_by_diffeq(state,model,rng,n_sample, t_min=model.eps)
+    return sample_by_diffeq(state, model, rng, n_sample, t_min=model.eps)
 
   # prepare schedule
   num_steps = model.n_T
@@ -387,6 +386,17 @@ class SimDDPM(nn.Module):
         attn_heads=head,
         ch_mult = (2, 2, 2) if not more_layers else (1, 2, 3, 4),
         attn_resolutions = (16,) if not more_layers else (32, 16),
+        rngs=self.rngs)
+    elif self.net_type == "zhhshenyi":
+      net_fn = partial(NCSNppEDM,
+        base_width=self.base_width,
+        image_size=self.image_size,
+        out_channels=self.out_channels,
+        dropout=self.dropout,
+        attn_heads=head,
+        ch_mult = (1, 2, 2, 2),
+        attn_resolutions = (16, 8),
+        num_res_blocks=3,
         rngs=self.rngs)
     else:
       raise ValueError(f'Unknown net type: {self.net_type}')
@@ -629,6 +639,7 @@ class SimDDPM(nn.Module):
   def forward_flow_pred_function(self, z, t, augment_label=None, train: bool = True):  # EDM
 
     t_cond = jnp.zeros_like(t) if self.no_condition_t else jnp.log(t * 999)
+    # t_cond = jnp.zeros_like(t) if self.no_condition_t else t * 999
     u_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
     return u_pred
 

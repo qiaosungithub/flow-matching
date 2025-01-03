@@ -92,6 +92,7 @@ def create_learning_rate_fn(
   )
   if config.lr_schedule == 'poly':
     sched_fn = poly_decay_lr_fn(base_learning_rate, config.warmup_steps, config.num_epochs * steps_per_epoch)
+    return sched_fn
   elif config.lr_schedule in ['constant', 'const']:
     sched_fn = constant_lr_fn(base_learning_rate)
   elif config.lr_schedule in ['cosine', 'cos']:
