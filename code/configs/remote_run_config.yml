@@ -21,7 +21,7 @@ model:
 
     # experiments
     exp: disturb # option: disturb, predict, joint
-    disturb: 0.01
+    disturb: 0.02
 dataset:
     name: cifar10
     root: CIFAR # pytorch

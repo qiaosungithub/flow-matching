@@ -603,10 +603,13 @@ class SimDDPM(nn.Module):
 
     xn = x + batch_mul(noise_batch, sigma)
     if self.exp == "disturb":
-      s = self.data_std / (sigma + self.data_std)
-      s = s + self.disturb * jax.random.normal(self.rngs.train(), s.shape)
-      s = jnp.clip(s, 1e-3, 1-1e-3)
-      in_sigma = (self.data_std) / s - self.data_std
+      # s = self.data_std / (sigma + self.data_std)
+      # s = s + self.disturb * jax.random.normal(self.rngs.train(), s.shape)
+      # s = jnp.clip(s, 1e-3, 1-1e-3)
+      # in_sigma = (self.data_std) / s - self.data_std
+
+      in_sigma = sigma + jnp.clip(self.disturb * jax.random.normal(self.rngs.train(), sigma.shape), -0.2, 0.2) * sigma
+      # in_sigma = jnp.clip(in_sigma, 0.0002, 800)
     else: in_sigma = sigma
     D_xn = self.forward_edm_denoising_function(xn, in_sigma, augment_label)
 
