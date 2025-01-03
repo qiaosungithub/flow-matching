@@ -56,8 +56,9 @@
 model:
     image_size: 32
     out_channels: 3
-    base_width: 256
-    depth: 3
+    base_width: 128
+    # base_width: 192
+    # depth: 2
     n_T: 100
     head: 1
     use_aug_label: False
@@ -94,10 +95,11 @@ evalu:
 # wandb: False
 
 # ema
-ema_schedule: const # ['edm', 'const']
-ema_value: 0.999 # only useful for 'const'
-# ema_halflife_kimg: 100000 # only useful for 'edm'
-# ema_rampup_ratio: 0.135 # only useful for 'edm'
+# ema_schedule: const # ['edm', 'const']
+# ema_value: 0.9993 # only useful for 'const'
+ema_schedule: edm # ['edm', 'const']
+ema_halflife_kimg: 1145 # only useful for 'edm'
+ema_rampup_ratio: 0.08 # only useful for 'edm'
 
 batch_size: 2048
 num_epochs: 200
