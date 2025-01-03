@@ -16,8 +16,12 @@ model:
     # sampler: DDIM
     # ode_solver: scipy # rk45
     
-    no_condition_t: True
+    no_condition_t: False
     embedding_type: fourier
+
+    # experiments
+    exp: disturb # option: disturb, predict, joint
+    disturb: 0.01
 dataset:
     name: cifar10
     root: CIFAR # pytorch

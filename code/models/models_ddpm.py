@@ -262,6 +262,8 @@ class SimDDPM(nn.Module):
     # beta_start=1e-4,
     # beta_end=0.02,
     # num_diffusion_timesteps=1000,
+    exp=None,
+    disturb=None, 
     **kwargs
   ):
     self.image_size = image_size
@@ -285,6 +287,8 @@ class SimDDPM(nn.Module):
     # self.beta_start = beta_start
     # self.beta_end = beta_end
     # self.num_diffusion_timesteps = num_diffusion_timesteps
+    self.exp = exp
+    self.disturb = disturb
 
     if self.net_type == 'context':
       raise NotImplementedError
@@ -598,7 +602,13 @@ class SimDDPM(nn.Module):
     weight = (sigma ** 2 + self.data_std ** 2) / (sigma * self.data_std) ** 2
 
     xn = x + batch_mul(noise_batch, sigma)
-    D_xn = self.forward_edm_denoising_function(xn, sigma, augment_label)
+    if self.exp == "disturb":
+      s = self.data_std / (sigma + self.data_std)
+      s = s + self.disturb * jax.random.normal(self.rngs.train(), s.shape)
+      s = jnp.clip(s, 1e-3, 1-1e-3)
+      in_sigma = (self.data_std) / s - self.data_std
+    else: in_sigma = sigma
+    D_xn = self.forward_edm_denoising_function(xn, in_sigma, augment_label)
 
     # loss
     loss = (D_xn - gt)**2
