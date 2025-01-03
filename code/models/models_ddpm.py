@@ -574,6 +574,9 @@ class SimDDPM(nn.Module):
     in_x = batch_mul(x, c_in)
     c_noise = c_noise.reshape(c_noise.shape[0])
 
+    if self.exp == "disturb" and train:
+      c_noise = c_noise + self.disturb * jax.random.normal(self.rngs.train(), c_noise.shape)
+
     F_x = self.net(in_x, c_noise, augment_label=augment_label, train=train)
 
     D_x = batch_mul(x, c_skip) + batch_mul(F_x, c_out)
@@ -602,16 +605,16 @@ class SimDDPM(nn.Module):
     weight = (sigma ** 2 + self.data_std ** 2) / (sigma * self.data_std) ** 2
 
     xn = x + batch_mul(noise_batch, sigma)
-    if self.exp == "disturb":
-      # s = self.data_std / (sigma + self.data_std)
-      # s = s + self.disturb * jax.random.normal(self.rngs.train(), s.shape)
-      # s = jnp.clip(s, 1e-3, 1-1e-3)
-      # in_sigma = (self.data_std) / s - self.data_std
+    # if self.exp == "disturb":
+    #   # s = self.data_std / (sigma + self.data_std)
+    #   # s = s + self.disturb * jax.random.normal(self.rngs.train(), s.shape)
+    #   # s = jnp.clip(s, 1e-3, 1-1e-3)
+    #   # in_sigma = (self.data_std) / s - self.data_std
 
-      in_sigma = sigma + jnp.clip(self.disturb * jax.random.normal(self.rngs.train(), sigma.shape), -0.2, 0.2) * sigma
-      # in_sigma = jnp.clip(in_sigma, 0.0002, 800)
-    else: in_sigma = sigma
-    D_xn = self.forward_edm_denoising_function(xn, in_sigma, augment_label)
+    #   in_sigma = sigma + jnp.clip(self.disturb * jax.random.normal(self.rngs.train(), sigma.shape), -0.2, 0.2) * sigma
+    #   # in_sigma = jnp.clip(in_sigma, 0.0002, 800)
+    # else: in_sigma = sigma
+    D_xn = self.forward_edm_denoising_function(xn, sigma, augment_label)
 
     # loss
     loss = (D_xn - gt)**2
