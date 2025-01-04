@@ -722,6 +722,8 @@ class SimDDPM(nn.Module):
     if self.exp == "joint":
       t = 1 - self.t_net.forward(z).squeeze(-1)
     t_cond = jnp.zeros_like(t) if self.no_condition_t else jnp.log(t * 999)
+    if self.exp == "disturb" and train:
+      t_cond = t_cond + self.disturb * jax.random.normal(self.rngs.train(), t_cond.shape)
     u_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
     return u_pred
 
@@ -782,10 +784,7 @@ class SimDDPM(nn.Module):
     z = batch_mul(t, x_data) + batch_mul(1 - t, x_prior)
 
     # forward network
-    if self.exp == "disturb":
-      in_t = t + self.disturb * jax.random.normal(self.rngs.train(), t.shape)
-      in_t = jnp.clip(in_t, 1e-3, 1)
-    elif self.exp == "predict":
+    if self.exp == "predict":
       in_t = 1 - self.t_predictor.forward(z).squeeze(-1)
       # stop gradient
       in_t = jax.lax.stop_gradient(in_t)
