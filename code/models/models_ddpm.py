@@ -509,6 +509,8 @@ class SimDDPM(nn.Module):
     learn_var=False,
     class_conditional=False,
     target = "eps",
+    exp=None,
+    disturb=None, 
     **kwargs
   ):
     self.image_size = image_size
@@ -536,6 +538,8 @@ class SimDDPM(nn.Module):
     self.class_conditional = class_conditional
     self.target = target
     assert target in ['eps', 'x']
+    self.exp = exp
+    self.disturb = disturb
 
     # sde = sde_lib.KVESDE(
     #   t_min=0.002,
@@ -884,11 +888,15 @@ class SimDDPM(nn.Module):
     return denoiser
 
   def forward_flow_pred_function(self, z, t, augment_label=None, y=None, train: bool = True):  # EDM
-
+    """
+    I don't know why we call this flow forward, actually it is DDPM forward
+    """
     # t_cond = jnp.zeros_like(t) if self.no_condition_t else jnp.log(t * 999)
     if not self.class_conditional:
       y = None
     t_cond = self.t_preprocess_fn(t).astype(self.dtype)
+    if self.exp == "disturb" and train:
+      t_cond = t_cond + self.disturb * jax.random.normal(self.rngs.train(), t_cond.shape)
     u_pred = self.net(z, t_cond, augment_label=augment_label, train=train,y=y)
     if self.learn_var:
       return jnp.split(u_pred, 2, axis=-1)

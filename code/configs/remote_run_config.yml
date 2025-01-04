@@ -25,6 +25,10 @@ model:
     t_condition_method: direct # default: log999
     # classifier_model_depth: 3
     target: x # default: eps
+
+    # experiments
+    exp: disturb # option: disturb, predict, joint
+    disturb: 0.02
 dataset:
     name: cifar10
     root: CIFAR # pytorch

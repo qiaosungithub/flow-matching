@@ -19,6 +19,10 @@ model:
     class_conditional: False
     t_condition_method: direct # default: log999
     target: x # default: eps
+
+    # experiments
+    exp: disturb # option: disturb, predict, joint
+    disturb: 0.02
 dataset:
     name: cifar10
     root: CIFAR # pytorch
@@ -28,6 +32,7 @@ dataset:
 aug: 
     use_edm_aug: False # TODO: enable this and test
 fid:
+    on_use: False 
     eval_only: False
     fid_per_epoch: 1
     num_samples: 1000
