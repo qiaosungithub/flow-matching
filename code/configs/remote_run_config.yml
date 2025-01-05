@@ -72,7 +72,7 @@ model:
     # sampler: DDIM
     ode_solver: O # rk45
     
-    no_condition_t: False
+    no_condition_t: True
 dataset:
     name: imagenet
     root: /kmh-nfs-us-mount/data/imagenet
