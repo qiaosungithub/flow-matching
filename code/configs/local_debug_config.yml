@@ -19,8 +19,8 @@ model:
     ode_solver: jax
     # ode_solver: scipy # rk45
     
-    no_condition_t: False
-    embedding_type: positional # FM
+    # embedding_type: positional # FM
+    embedding_type: zero # no t
 
     # experiments
     exp: disturb # option: disturb, predict, joint
@@ -41,6 +41,7 @@ fid:
 evalu:
     ema: True
     sample: True
+t_schedule: lognorm # option: [uniform, lognorm]
 batch_size: 2048
 num_epochs: 2000
 learning_rate: 0.0008 # FM
@@ -48,7 +49,7 @@ lr_schedule: const
 weight_decay: 0
 optimizer: adamw
 adam_b2: 0.95
-grad_clip: 0.0
+grad_clip: 0.0 # TODO: enable this
 warmup_epochs: 200
 log_per_step: 100
 visualize_per_epoch: 1

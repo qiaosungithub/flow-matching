@@ -376,7 +376,6 @@ class SimDDPM(nn.Module):
     h_init=0.035,
     sampler='euler',
     ode_solver='jax',
-    no_condition_t=False,
     rngs=None,
     embedding_type='fourier',
     # beta_schedule='linear',
@@ -404,7 +403,6 @@ class SimDDPM(nn.Module):
     self.h_init = h_init
     self.sampler = sampler
     self.ode_solver = ode_solver
-    self.no_condition_t = no_condition_t
     self.rngs = rngs
     self.embedding_type = embedding_type
     self.exp = exp
@@ -414,16 +412,6 @@ class SimDDPM(nn.Module):
     # self.beta_start = beta_start
     # self.beta_end = beta_end
     # self.num_diffusion_timesteps = num_diffusion_timesteps
-
-    # sde = sde_lib.KVESDE(
-    #   t_min=0.002,
-    #   t_max=80.0,
-    #   N=18,  # config.model.num_scales
-    #   rho=7.0,
-    #   data_std=0.5,
-    # )
-    # self.sde = sde
-    # This is not used in flow matching
 
     if self.net_type == 'context':
       raise NotImplementedError
@@ -476,30 +464,6 @@ class SimDDPM(nn.Module):
     )
     t = t**rho
     return t
-
-  # def compute_alpha(self, t):
-  #   """
-  #   DDIM util function
-  #   """
-  #   betas = get_beta_schedule(self.beta_schedule, beta_start=self.beta_start, beta_end=self.beta_end, num_diffusion_timesteps=self.num_diffusion_timesteps)
-  #   alpha = jnp.cumprod(1 - betas, axis=0)
-  #   alpha = jnp.concatenate([jnp.ones((1,)), alpha], axis=0)
-  #   a = jnp.take(alpha, t + 1).reshape(-1, 1, 1, 1)
-  #   return a
-    
-  def compute_losses(self, pred, gt):
-    assert pred.shape == gt.shape
-
-    # simple l2 loss
-    loss_rec = jnp.mean((pred - gt)**2)
-    
-    loss_train = loss_rec
-
-    dict_losses = {
-      'loss_rec': loss_rec,
-      'loss_train': loss_train
-    }
-    return loss_train, dict_losses
 
   def sample_one_step(self, x_i, rng, i, t_state=None, verbose=False):
 
@@ -721,7 +685,7 @@ class SimDDPM(nn.Module):
 
     if self.exp == "joint":
       t = 1 - self.t_net.forward(z).squeeze(-1)
-    t_cond = jnp.zeros_like(t) if self.no_condition_t else jnp.log(t * 999)
+    t_cond = jnp.log(t * 999)
     if self.exp == "disturb" and train:
       t_cond = t_cond + self.disturb * jax.random.normal(self.rngs.train(), t_cond.shape)
     u_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
@@ -775,6 +739,7 @@ class SimDDPM(nn.Module):
     # sample t step
     t = t_batch
     t = t * (1 - self.eps) + self.eps
+    # TODO: 这个太唐了，必须移到外面去
 
     # create v target
     v_target = x_data - x_prior
@@ -826,6 +791,6 @@ class SimDDPM(nn.Module):
     # initialization only
     t = jnp.ones((imgs.shape[0],))
     augment_label = jnp.ones((imgs.shape[0], 9)) if self.use_aug_label else None  # fixed augment_dim # TODO: what is this?
-    out = self.net(imgs, t, augment_label) # TODO: whether to add train=train
+    out = self.net(imgs, t, augment_label)
     out_ema = None   # no need to initialize it here
     return out, out_ema

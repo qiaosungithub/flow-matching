@@ -644,6 +644,10 @@ def get_timestep_embedding(timesteps, embedding_dim, max_positions=10000):
     assert emb.shape == (timesteps.shape[0], embedding_dim)
     return emb
 
+def get_zero_embedding(timesteps, embedding_dim):
+    assert len(timesteps.shape) == 1  # and timesteps.dtype == tf.int32
+    emb = jnp.zeros((timesteps.shape[0], embedding_dim))
+    return emb
 
 # class NIN(nn.Module):
 #     num_units: int

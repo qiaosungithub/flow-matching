@@ -17,10 +17,10 @@ model:
     # sampler: ban
     # sampler: adaptive
     ode_solver: jax
-    # ode_solver: scipy # rk45
+    # ode_solver: O # rk45
     
-    no_condition_t: False
-    embedding_type: positional # FM
+    # embedding_type: positional # FM
+    embedding_type: zero # no t
 
     # experiments
     exp: disturb # option: disturb, predict, joint
@@ -41,6 +41,7 @@ fid:
 evalu:
     ema: True
     sample: True
+t_schedule: lognorm # option: [uniform, lognorm]
 batch_size: 2048
 num_epochs: 2000
 learning_rate: 0.0008 # FM

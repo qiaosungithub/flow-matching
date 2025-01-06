@@ -194,7 +194,7 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
   return new_state, metrics, images
 
 
-def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, model_config, t_predictor=None):
+def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, config, t_predictor=None):
   """
   Perform a single training step.
   We will pmap this function
@@ -215,7 +215,11 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, model_c
   # print("images.shape: ", images.shape) # (8, 64, 32, 32, 3)
   b1, b2 = images.shape[0], images.shape[1]
   noise_batch = jax.random.normal(rngs.train(), images.shape)
-  t_batch = jax.random.uniform(rngs.train(), (b1, b2))
+  if config.t_schedule == 'uniform':
+    t_batch = jax.random.uniform(rngs.train(), (b1, b2))
+  elif config.t_schedule == 'lognorm':
+    t_batch = jax.random.normal(rngs.train(), (b1, b2))
+    t_batch = jax.nn.sigmoid(t_batch)
 
   # # for debug
   # # print(f"before exp: {t_batch[0][:5]}", flush=True)
@@ -779,7 +783,7 @@ def train_and_evaluate(
       #   exit(114514)
       # continue
 
-      state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute, model_config, t_predictor=t_predictor)
+      state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute, config, t_predictor=t_predictor)
       if epoch == epoch_offset and n_batch == 0:
         log_for_0('p_train_step compiled in {}s'.format(time.time() - train_metrics_last_t))
         log_for_0('Initial compilation completed. Reset timer.')
