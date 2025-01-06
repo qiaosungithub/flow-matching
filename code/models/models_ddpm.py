@@ -503,7 +503,6 @@ class SimDDPM(nn.Module):
     sampler='euler',
     sample_clip_denoised=True,
     ode_solver='jax',
-    no_condition_t=False,
     t_condition_method = 'log999',
     rngs=None,
     learn_var=False,
@@ -530,8 +529,6 @@ class SimDDPM(nn.Module):
     self.sampler = sampler
     self.ode_solver = ode_solver
     self.learn_var = learn_var
-    # self.no_condition_t = no_condition_t
-    assert no_condition_t == False, 'This is deprecated'
     self.t_preprocess_fn = get_t_process_fn(t_condition_method)
     self.rngs = rngs
     self.sample_clip_denoised = sample_clip_denoised
