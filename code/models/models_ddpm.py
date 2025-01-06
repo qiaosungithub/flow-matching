@@ -316,27 +316,13 @@ class SimDDPM(nn.Module):
     )
     t = t**rho
     return t
-    
-  def compute_losses(self, pred, gt):
-    assert pred.shape == gt.shape
-
-    # simple l2 loss
-    loss_rec = jnp.mean((pred - gt)**2)
-    
-    loss_train = loss_rec
-
-    dict_losses = {
-      'loss_rec': loss_rec,
-      'loss_train': loss_train
-    }
-    return loss_train, dict_losses
 
   def sample_one_step(self, x_i, rng, i):
 
     if self.sampler == 'euler':
       x_next = self.sample_one_step_euler(x_i, i) 
     elif self.sampler == 'heun':
-      x_next = self.sample_one_step_heun(x_i, i) 
+      x_next = self.sample_one_step_heun(x_i, i)
     else:
       raise NotImplementedError
 
@@ -617,6 +603,6 @@ class SimDDPM(nn.Module):
     # initialization only
     t = jnp.ones((imgs.shape[0],))
     augment_label = jnp.ones((imgs.shape[0], 9)) if self.use_aug_label else None  # fixed augment_dim # TODO: what is this?
-    out = self.net(imgs, t, augment_label) # TODO: whether to add train=train
+    out = self.net(imgs, t, augment_label)
     out_ema = None   # no need to initialize it here
     return out, out_ema

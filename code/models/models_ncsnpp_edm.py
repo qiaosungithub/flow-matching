@@ -113,10 +113,9 @@ class NCSNpp(nn.Module):
         assert not use_aug_label
         if use_aug_label:
             assert aug_label_dim is not None
-            assert embedding_type == "positional" # in edm_jax, Kaiming only supports positional embedding
+            assert embedding_type in ["positional", "zero"] # in edm_jax, Kaiming only supports positional embedding
             self.augemb_layer = nn.Linear(aug_label_dim, input_temb_dim, kernel_init=default_initializer(), use_bias=False, rngs=rngs)
         #################### noise condition ############################
-        input_temb_dim = self.input_temb_dim
         self.cond_MLP = nn.Sequential(
             nn.Linear(input_temb_dim, nf * 4, kernel_init=default_initializer(), rngs=rngs),
             act,
@@ -161,7 +160,6 @@ class NCSNpp(nn.Module):
                 layerspp.Downsample, fir=fir, fir_kernel=fir_kernel, with_conv=False
             )
         elif progressive_input == "residual":
-            # TODO: what is in and out shape here?
             self.pyramid_downsample = partial(
                 layerspp.Downsample, fir=fir, fir_kernel=fir_kernel, with_conv=True, rngs=rngs
             )
