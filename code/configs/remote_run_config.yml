@@ -23,8 +23,8 @@ model:
     embedding_type: zero # no t
 
     # # experiments
-    # exp: disturb # option: disturb, predict, joint
-    # disturb: 0.02
+    exp: disturb # option: disturb, predict, joint
+    disturb: 0.02
 dataset:
     name: cifar10
     root: CIFAR # pytorch
