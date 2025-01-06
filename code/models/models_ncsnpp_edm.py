@@ -110,7 +110,6 @@ class NCSNpp(nn.Module):
             raise ValueError(f"embedding type {embedding_type} unknown.")
         self.input_temb_dim = input_temb_dim = nf if embedding_type in ["positional", "zero"] else 2 * nf # NOTE: here, if use fourier embedding, the output dim is 2 * nf; for positional embedding, the output dim is nf. This is tang
         #################### aug label ############################
-        assert not use_aug_label
         if use_aug_label:
             assert aug_label_dim is not None
             assert embedding_type in ["positional", "zero"] # in edm_jax, Kaiming only supports positional embedding
