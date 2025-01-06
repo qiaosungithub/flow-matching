@@ -22,9 +22,9 @@ model:
     # embedding_type: positional # FM
     embedding_type: zero # no t
 
-    # experiments
-    exp: disturb # option: disturb, predict, joint
-    disturb: 0.01
+    # # experiments
+    # exp: disturb # option: disturb, predict, joint
+    # disturb: 0.01
 dataset:
     name: cifar10
     root: CIFAR # pytorch
