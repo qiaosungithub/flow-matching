@@ -96,14 +96,14 @@ evalu:
 # ema
 ema_schedule: edm # ['edm', 'const']
 # ema_value: 0.9999 # only useful for 'const'
-ema_halflife_kimg: 100000 # only useful for 'edm'
+ema_halflife_kimg: 50000 # only useful for 'edm'
 ema_rampup_ratio: 0.135 # only useful for 'edm'
 
 batch_size: 2048
-num_epochs: 225
+num_epochs: 200
 learning_rate: 0.0002
-lr_schedule: sqa # options: ['const', 'poly', 'consine', 'sqa']
-middle_epochs: 200 # only for sqa
+lr_schedule: poly # options: ['const', 'poly', 'consine', 'sqa']
+# middle_epochs: 200 # only for sqa
 weight_decay: 0.0
 optimizer: adamw
 adam_b2: 0.95
