@@ -51,6 +51,8 @@ sudo chmod go+rw /kmh-nfs-ssd-eu-mount
 ls /kmh-nfs-ssd-eu-mount
 "
 
+# return 0
+
 if [[ $USE_CONDA == 1 ]]; then
     CONDA_PATH=$(which conda)
     CONDA_INIT_SH_PATH=$(dirname $CONDA_PATH)/../etc/profile.d/conda.sh

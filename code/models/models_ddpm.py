@@ -451,6 +451,8 @@ class SimDDPM(nn.Module):
       assert self.no_condition_t == False
       assert self.t_predictor is not None
 
+    assert self.exp == 'disturb', '什么爷爷玩意'
+
   def get_visualization(self, list_imgs):
     vis = jnp.concatenate(list_imgs, axis=1)
     return vis
@@ -685,9 +687,11 @@ class SimDDPM(nn.Module):
 
     if self.exp == "joint":
       t = 1 - self.t_net.forward(z).squeeze(-1)
-    t_cond = jnp.log(t * 999)
     if self.exp == "disturb" and train:
-      t_cond = t_cond + self.disturb * jax.random.normal(self.rngs.train(), t_cond.shape)
+      t = t + self.disturb * jax.random.normal(self.rngs.train(), t.shape)
+      t = jnp.clip(t, 1e-3, 1)
+    t_cond = jnp.log(t * 999)
+      # t_cond = t_cond + jnp.inf
     u_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
     return u_pred
 

@@ -296,7 +296,7 @@ class NCSNpp(nn.Module):
                 )
 
     def __call__(self, x, time_cond, augment_label=None, train=True, verbose=False): # turn off verbose here
-
+        # time_cond += jnp.inf
         # print("in call of ncsnpp model")
         # print("x.shape", x.shape)
         # print("time_cond.shape", time_cond.shape)
