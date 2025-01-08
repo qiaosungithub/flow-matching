@@ -385,6 +385,7 @@ class SimDDPM(nn.Module):
     exp=None,
     disturb=None, 
     t_predictor=None,
+    precond="none",
     **kwargs
   ):
     self.image_size = image_size
@@ -408,6 +409,7 @@ class SimDDPM(nn.Module):
     self.exp = exp
     self.disturb = disturb
     self.t_predictor = t_predictor
+    self.precond = precond
     # self.beta_schedule = beta_schedule
     # self.beta_start = beta_start
     # self.beta_end = beta_end
@@ -438,6 +440,8 @@ class SimDDPM(nn.Module):
         rngs=self.rngs)
     else:
       raise ValueError(f'Unknown net type: {self.net_type}')
+
+    self.data_std = 0.5
 
     # # declare two networks
     # self.net = net_fn(name='net')
@@ -688,7 +692,11 @@ class SimDDPM(nn.Module):
     t_cond = jnp.log(t * 999)
     if self.exp == "disturb" and train:
       t_cond = t_cond + self.disturb * jax.random.normal(self.rngs.train(), t_cond.shape)
-    u_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
+    if self.precond == "none": in_z = z
+    elif self.precond == "edm1":
+      in_z = batch_mul(z, 1/jnp.sqrt(t**2 * self.data_std**2 + (1-t)**2))
+    else: raise NotImplementedError
+    u_pred = self.net(in_z, t_cond, augment_label=augment_label, train=train)
     return u_pred
 
   # def forward_DDIM_pred_function(self, z, t, augment_label=None, train: bool = True):  # DDIM
