@@ -72,7 +72,7 @@ model:
     # sampler: DDIM
     ode_solver: O # rk45
     
-    no_condition_t: True
+    no_condition_t: False
 dataset:
     name: imagenet
     root: /kmh-nfs-us-mount/data/imagenet
@@ -100,9 +100,10 @@ ema_halflife_kimg: 100000 # only useful for 'edm'
 ema_rampup_ratio: 0.135 # only useful for 'edm'
 
 batch_size: 2048
-num_epochs: 200
+num_epochs: 225
 learning_rate: 0.0002
-lr_schedule: poly # options: ['const', 'poly']
+lr_schedule: sqa # options: ['const', 'poly', 'consine', 'sqa']
+middle_epochs: 200 # only for sqa
 weight_decay: 0.0
 optimizer: adamw
 adam_b2: 0.95

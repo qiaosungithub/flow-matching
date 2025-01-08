@@ -79,6 +79,16 @@ def poly_decay_lr_fn(base_learning_rate, warmup_steps, total_steps):
   decay_fn = optax.polynomial_schedule(init_value=base_learning_rate, end_value=1e-8, power=1, transition_steps=total_steps-warmup_steps)
   return optax.join_schedules([warmup_fn, decay_fn], boundaries=[warmup_steps])
 
+def sqa_lr_fn(base_learning_rate, warmup_steps, total_steps, middle_steps):
+  warmup_fn = optax.linear_schedule(
+    init_value=1e-8,
+    end_value=base_learning_rate,
+    transition_steps=warmup_steps,
+  )
+  decay_fn = optax.polynomial_schedule(init_value=base_learning_rate, end_value=2e-5, power=1, transition_steps=middle_steps-warmup_steps)
+  final_fn = optax.constant_schedule(2e-5)
+  return optax.join_schedules([warmup_fn, decay_fn, final_fn], boundaries=[warmup_steps, middle_steps])
+
 def create_learning_rate_fn(
   config: ml_collections.ConfigDict,
   base_learning_rate: float,
@@ -100,6 +110,8 @@ def create_learning_rate_fn(
     sched_fn = optax.cosine_decay_schedule(
       init_value=base_learning_rate, decay_steps=cosine_epochs * steps_per_epoch
     )
+  elif config.lr_schedule in ['sqa']:
+    sched_fn = sqa_lr_fn(base_learning_rate, config.warmup_steps, config.num_epochs * steps_per_epoch, config.middle_epochs * steps_per_epoch)
   else:
     raise ValueError('Unknown learning rate scheduler {}'.format(config.lr_schedule))
   schedule_fn = optax.join_schedules(
