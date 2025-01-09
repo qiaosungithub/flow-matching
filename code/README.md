@@ -27,7 +27,9 @@ FM with no t baseline: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/2024113
 
 DDIM: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241202_214940_zd8s4j_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_48500`
 
-FM on ImageNet 32x32: `/kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241229_005044_bctmck_kmh-tpuvm-v2-32-7__b_lr_ep_eval/checkpoint_125000` (this baseline is till Jan 2)
+FM on ImageNet 32x32: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20250103_053645_jh39cu_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_125000` (this baseline is till Jan 9)
+
+FM on ImageNet 32x32 w/o t: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20250106_115626_dsijpp_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_125000`
 
 FM on ImageNet 64x64: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241229_033537_p1p55u_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_625500` (this baseline is till Jan 3)
 
