@@ -258,6 +258,7 @@ class SimDDPM(nn.Module):
     ode_solver='jax',
     no_condition_t=False,
     rngs=None,
+    label_dim=0, # class conditional
     # beta_schedule='linear',
     # beta_start=1e-4,
     # beta_end=0.02,
@@ -281,6 +282,7 @@ class SimDDPM(nn.Module):
     self.ode_solver = ode_solver
     self.no_condition_t = no_condition_t
     self.rngs = rngs
+    self.label_dim = label_dim
     # self.beta_schedule = beta_schedule
     # self.beta_start = beta_start
     # self.beta_end = beta_end
@@ -307,7 +309,9 @@ class SimDDPM(nn.Module):
         dropout=self.dropout,
         use_aug_label=self.use_aug_label,
         aug_label_dim=9,
-        rngs=self.rngs)
+        rngs=self.rngs,
+        label_dim=self.label_dim,
+      )
     else:
       raise ValueError(f'Unknown net type: {self.net_type}')
 
@@ -540,7 +544,7 @@ class SimDDPM(nn.Module):
     eps_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
     return eps_pred
   
-  def forward_edm_denoising_function(self, x, sigma, augment_label=None, train: bool = True):  # EDM
+  def forward_edm_denoising_function(self, x, sigma, labels=None, augment_label=None, train: bool = True):  # EDM
     """
     code from edm
     ---
@@ -548,6 +552,11 @@ class SimDDPM(nn.Module):
     We hope this function operates D(x+sigma*noise) = x
     our network has F((1-t)x + t*noise) = x - noise
     """
+    if self.label_dim == 0: labels = None
+    elif labels is None:
+      labels = jnp.zeros([1, self.label_dim], device=x.device) 
+    else:
+      labels = jnp.asarray(labels, dtype=jnp.float32).reshape(-1, self.label_dim)
 
     # # use FM network to denoise
     # c_in = 1 / (sigma + 1)
