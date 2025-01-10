@@ -16,7 +16,7 @@ model:
     # sampler: DDIM
     # ode_solver: scipy # rk45
     
-    no_condition_t: True
+    no_condition_t: False
     embedding_type: fourier
 dataset:
     name: cifar10

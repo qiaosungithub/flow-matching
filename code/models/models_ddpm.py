@@ -561,9 +561,11 @@ class SimDDPM(nn.Module):
 
     # edm network
     c_skip = self.data_std ** 2 / (sigma ** 2 + self.data_std ** 2)
-    c_out = sigma * self.data_std / jnp.sqrt(sigma ** 2 + self.data_std ** 2)
+    # c_out = sigma * self.data_std / jnp.sqrt(sigma ** 2 + self.data_std ** 2)
+    c_out = jnp.ones_like(sigma) # Kaiming shenyi
 
-    c_in = 1 / jnp.sqrt(sigma ** 2 + self.data_std ** 2)
+    # c_in = 1 / jnp.sqrt(sigma ** 2 + self.data_std ** 2)
+    c_in = 1 / jnp.sqrt(sigma ** 2 + 1) # Kaiming shenyi
     c_noise = jnp.zeros_like(sigma) if self.no_condition_t else 0.25 * jnp.log(sigma)
 
     # forward network
