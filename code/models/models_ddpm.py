@@ -112,12 +112,13 @@ def edm_ema_scales_schedules(step, config, steps_per_epoch):
 
 
 # move this out from model for JAX compilation
-def generate(state: NNXTrainState, model, rng, n_sample):
+def generate(state: NNXTrainState, model, rng, n_sample, class_idx=None):
   """
   Generate samples from the model
 
   Here we tend to not use nnx.Rngs
-  state: maybe a train state
+  state: Train state
+  class_idx: if none, random sample labels; else a number in [0, NUM_CLASSES)
   ---
   return shape: (n_sample, 32, 32, 3)
   """
@@ -131,6 +132,12 @@ def generate(state: NNXTrainState, model, rng, n_sample):
   # sample from prior
   x_prior = jax.random.normal(rng_used, x_shape, dtype=model.dtype)
 
+  if model.label_dim:
+    只能用一次, rng = jax.random.split(rng, 2)
+    labels = jnp.eye(model.label_dim)[jax.random.randint(只能用一次, (n_sample,), 0, model.label_dim)]
+  if class_idx is not None:
+    labels[:, :] = 0
+    labels[:, class_idx] = 1
 
   if model.sampler in ['euler', 'heun']:
       
@@ -164,7 +171,7 @@ def generate(state: NNXTrainState, model, rng, n_sample):
       rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
 
       merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-      x_i = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps)
+      x_i = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps, labels=labels)
       # x_i, denoised = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps) # for debug
 
       outputs = (x_i, rng)
@@ -419,7 +426,7 @@ class SimDDPM(nn.Module):
 
     return x_next
   
-  def sample_one_step_edm_ode(self, x_i, i, t_steps):
+  def sample_one_step_edm_ode(self, x_i, i, t_steps, labels=None):
     """
     edm's second order ODE solver
     """
@@ -435,12 +442,12 @@ class SimDDPM(nn.Module):
     t_next = jnp.repeat(t_next, x_hat.shape[0])
     
     # Euler step.
-    denoised = self.forward_edm_denoising_function(x_hat, t_hat, train=False)
+    denoised = self.forward_edm_denoising_function(x_hat, t_hat, train=False, labels=labels)
     d_cur = batch_mul(x_hat - denoised, 1. / t_hat)
     x_next = x_hat + batch_mul(d_cur, t_next - t_hat)
 
     # Apply 2nd order correction
-    denoised = self.forward_edm_denoising_function(x_next, t_next, train=False)
+    denoised = self.forward_edm_denoising_function(x_next, t_next, train=False, labels=labels)
     d_prime = batch_mul(x_next - denoised, 1. / jnp.maximum(t_next, 1e-8))  # won't take effect if t_next is 0 (last step)
     x_next_ = x_hat + batch_mul(0.5 * d_cur + 0.5 * d_prime, t_next - t_hat)
 
