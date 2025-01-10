@@ -16,8 +16,11 @@ model:
     # sampler: DDIM
     # ode_solver: scipy # rk45
     
-    no_condition_t: True
+    no_condition_t: False
     embedding_type: fourier
+
+    cond: True
+    label_dropout: 0.0
 dataset:
     name: cifar10
     root: CIFAR # pytorch

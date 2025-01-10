@@ -36,6 +36,7 @@ CROP_PADDING = 32
 MEAN_RGB = [0.485, 0.456, 0.406]
 STDDEV_RGB = [0.229, 0.224, 0.225]
 
+NUM_CLASSES = 10
 
 def prepare_batch_data(batch, config, batch_size=None):
   """Reformat a input batch from PyTorch Dataloader.
@@ -69,6 +70,9 @@ def prepare_batch_data(batch, config, batch_size=None):
 
   image = image.numpy()
   label = label.numpy()
+
+  # make label one hot
+  label = np.eye(NUM_CLASSES)[label]
 
   if config.model.use_aug_label:
     assert config.aug.use_edm_aug

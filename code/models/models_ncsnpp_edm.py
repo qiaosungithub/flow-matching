@@ -59,6 +59,8 @@ class NCSNpp(nn.Module):
         rngs = None,
         use_aug_label = False,
         aug_label_dim = None,
+        label_dim=0,
+        label_dropout=0,
         **kwargs
     ):
 
@@ -76,6 +78,8 @@ class NCSNpp(nn.Module):
         self.rngs = rngs
         self.use_aug_label = use_aug_label
         self.aug_label_dim = aug_label_dim
+        self.label_dim = label_dim
+        self.label_dropout = label_dropout
 
         self.act = act = nn.swish
         self.init_scale = init_scale = 0.0
@@ -106,11 +110,14 @@ class NCSNpp(nn.Module):
         else:
             raise NotImplementedError
         
-        self.input_temb_dim = input_temb_dim = nf if embedding_type == "positional" else 2 * nf # NOTE: here, if use fourier embedding, the output dim is 2 * nf; for positional embedding, the output dim is nf. This is tang
+        self.input_temb_dim = input_temb_dim = nf
+        #################### class label ############################
+        if label_dim:
+            self.map_label = nn.Linear(label_dim, input_temb_dim, kernel_init=default_initializer(), use_bias=False, rngs=rngs)
         #################### aug label ############################
         if use_aug_label:
             assert aug_label_dim is not None
-            assert embedding_type == "fourier" # in edm_jax, only support fourier embedding
+            assert embedding_type == "fourier" # for edm, we use fourier!
             self.augemb_layer = nn.Linear(aug_label_dim, input_temb_dim, kernel_init=default_initializer(), use_bias=False, rngs=rngs)
         #################### noise condition ############################
         self.cond_MLP = nn.Sequential(
@@ -292,7 +299,7 @@ class NCSNpp(nn.Module):
                         conv3x3(in_c, out_channels, init_scale=init_scale, rngs=rngs)
                 )
 
-    def __call__(self, x, time_cond, augment_label=None, train=True, verbose=False): # turn off verbose here
+    def __call__(self, x, time_cond, augment_label=None, labels=None, train=True, verbose=False): # turn off verbose here
 
         # print("in call of ncsnpp model")
         # print("x.shape", x.shape)
@@ -324,6 +331,13 @@ class NCSNpp(nn.Module):
 
         # timestep/noise_level embedding; only for continuous training
         temb = self.temb_layer(time_cond)
+
+        if self.label_dim:
+            tmp = labels
+            # label dropout
+            if train and self.label_dropout:
+                tmp = tmp * (jax.random.uniform(self.rngs.train(),(x.shape[0], 1)).astype(tmp.dtype) >= self.label_dropout)
+            temb += self.map_label(tmp * jnp.sqrt(self.label_dim))
 
         if augment_label is not None:
             assert self.use_aug_label

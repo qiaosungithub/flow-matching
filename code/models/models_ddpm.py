@@ -258,7 +258,8 @@ class SimDDPM(nn.Module):
     ode_solver='jax',
     no_condition_t=False,
     rngs=None,
-    label_dim=0, # class conditional
+    cond=False, # class conditional
+    label_dropout=0,
     # beta_schedule='linear',
     # beta_start=1e-4,
     # beta_end=0.02,
@@ -282,7 +283,9 @@ class SimDDPM(nn.Module):
     self.ode_solver = ode_solver
     self.no_condition_t = no_condition_t
     self.rngs = rngs
-    self.label_dim = label_dim
+    self.cond = cond
+    self.label_dropout = label_dropout
+    self.label_dim = num_classes if cond else 0
     # self.beta_schedule = beta_schedule
     # self.beta_start = beta_start
     # self.beta_end = beta_end
@@ -311,6 +314,7 @@ class SimDDPM(nn.Module):
         aug_label_dim=9,
         rngs=self.rngs,
         label_dim=self.label_dim,
+        label_dropout=self.label_dropout,
       )
     else:
       raise ValueError(f'Unknown net type: {self.net_type}')
@@ -493,6 +497,7 @@ class SimDDPM(nn.Module):
     """
     rng here is useless, if we set eta = 0
     """
+    raise NotImplementedError
     # we only implement 'generalized' here
     # we only implement 'skip_type=uniform' here
     at = self.compute_alpha(t.astype(jnp.int32))
@@ -556,6 +561,7 @@ class SimDDPM(nn.Module):
     elif labels is None:
       labels = jnp.zeros([1, self.label_dim], device=x.device) 
     else:
+      assert labels.shape[1] == self.label_dim
       labels = jnp.asarray(labels, dtype=jnp.float32).reshape(-1, self.label_dim)
 
     # # use FM network to denoise
@@ -579,7 +585,7 @@ class SimDDPM(nn.Module):
     in_x = batch_mul(x, c_in)
     c_noise = c_noise.reshape(c_noise.shape[0])
 
-    F_x = self.net(in_x, c_noise, augment_label=augment_label, train=train)
+    F_x = self.net(in_x, c_noise, augment_label=augment_label, train=train, labels=labels)
 
     D_x = batch_mul(x, c_skip) + batch_mul(F_x, c_out)
     return D_x
@@ -607,7 +613,7 @@ class SimDDPM(nn.Module):
     weight = (sigma ** 2 + self.data_std ** 2) / (sigma * self.data_std) ** 2
 
     xn = x + batch_mul(noise_batch, sigma)
-    D_xn = self.forward_edm_denoising_function(xn, sigma, augment_label)
+    D_xn = self.forward_edm_denoising_function(xn, sigma, augment_label=augment_label, labels=labels)
 
     # loss
     loss = (D_xn - gt)**2
