@@ -76,6 +76,11 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
   scales = scales + 1
   return target_ema, scales
 
+def const_ema_scales_schedules(step, config, steps_per_epoch):
+  # ema_halflife_kimg = 500  # from edm
+  ema_beta = jnp.array(config.ema_value, dtype=jnp.float32)
+  scales = jnp.ones((1,), dtype=jnp.int32)
+  return ema_beta, scales
 
 def edm_ema_scales_schedules(step, config, steps_per_epoch):
   # ema_halflife_kimg = 500  # from edm
@@ -88,6 +93,14 @@ def edm_ema_scales_schedules(step, config, steps_per_epoch):
   ema_beta = 0.5 ** (config.batch_size / jnp.maximum(ema_halflife_nimg, 1e-8))
   scales = jnp.ones((1,), dtype=jnp.int32)
   return ema_beta, scales
+
+def get_ema_scales_schedules(config):
+  if config.ema_type == 'const':
+    return const_ema_scales_schedules
+  elif config.ema_type == 'edm':
+    return edm_ema_scales_schedules
+  else:
+    raise NotImplementedError(f'Unknown ema_type: {config.ema_type}')
 
 def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
     """

@@ -54,7 +54,7 @@ import utils.sample_util as sample_util
 # sed libera nos a malo.
 # Amen.
 import models.models_ddpm as models_ddpm
-from models.models_ddpm import generate, edm_ema_scales_schedules, diffusion_schedule_fn_some, create_zhh_SAMPLING_diffusion_schedule
+from models.models_ddpm import generate, get_ema_scales_schedules, diffusion_schedule_fn_some, create_zhh_SAMPLING_diffusion_schedule
 
 NUM_CLASSES = 10
 
@@ -513,7 +513,7 @@ def train_and_evaluate(
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='LMCI', dir=workdir, tags=['ADM'])
+    wandb.init(project='LMCI', dir=workdir, tags=['ADM_NEW'])
     # wandb.init(project='sqa_FM_compare', dir=workdir)
     wandb.config.update(config.to_dict())
   global_seed(config.seed)
@@ -598,7 +598,7 @@ def train_and_evaluate(
     steps_per_epoch=steps_per_epoch,
   )
 
-  ema_scales_fn = partial(edm_ema_scales_schedules, steps_per_epoch=steps_per_epoch, config=config)
+  ema_scales_fn = partial(get_ema_scales_schedules(config), steps_per_epoch=steps_per_epoch, config=config)
   diffusion_schedule_fn = partial(diffusion_schedule_fn_some, config=config)
 
   ########### Create Train State ###########
@@ -930,7 +930,7 @@ def just_evaluate(
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='LMCI-eval', dir=workdir, tags=['ADM'] if not model_config.class_conditional else ['ADM', 'Conditional'])
+    wandb.init(project='LMCI-eval', dir=workdir, tags=['ADM_NEW'] if not model_config.class_conditional else ['ADM_NEW', 'Conditional'])
     # wandb.init(project='sqa_edm_debug', dir=workdir)
     wandb.config.update(config.to_dict())
   # dtype = jnp.bfloat16 if model_config.half_precision else jnp.float32
