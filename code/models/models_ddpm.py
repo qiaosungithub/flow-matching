@@ -102,6 +102,18 @@ def edm_ema_scales_schedules(step, config, steps_per_epoch):
   scales = jnp.ones((1,), dtype=jnp.int32)
   return ema_beta, scales
 
+def meta_ema_scales_schedules(step, config, steps_per_epoch):
+  ema_val = config.ema_value
+  scales = jnp.ones((1,), dtype=jnp.int32)
+  return jnp.minimum(ema_val, (step + 1.0)/(step + 10.0)), scales
+
+def get_ema_scales_schedules(config):
+  if config.ema_schedule == 'meta':
+    return meta_ema_scales_schedules
+  elif config.ema_schedule == 'edm':
+    return edm_ema_scales_schedules
+  else:
+    raise NotImplementedError(f'Unknown ema_schedule: {config.ema_schedule}')
 # from jax.experimental import ode as O
 # import models.ode_pkg_repo as O
 import models.ode_pkg as O
@@ -226,6 +238,32 @@ def generate(state: NNXTrainState, model, rng, n_sample):
     # images = jnp.stack(all_x, axis=0)
     # denoised = jnp.stack(denoised, axis=0)
     # return images, denoised
+  elif model.sampler in ['meta']:
+    step_indices = jnp.arange(num_steps, dtype=jnp.float32)
+    sigma_min = 0.002
+    sigma_max = 80.0
+    rho = 7
+    sigma_vec = (
+        sigma_max ** (1 / rho)
+        + step_indices / (num_steps - 1) * (sigma_min ** (1 / rho) - sigma_max ** (1 / rho))
+    ) ** rho
+    sigma_vec = jnp.concatenate([sigma_vec, sigma_vec[:1]*0.0], axis=0)
+    time_vec = (sigma_vec / (1 + sigma_vec))
+    t_samples = 1.0 - jnp.clip(time_vec, min=0.0, max=1.0)
+    
+    def step_fn(i, inputs):
+      x_i, rng = inputs
+      rng_this_step = jax.random.fold_in(rng, i)
+
+      merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
+      x_i = merged_model.sample_one_step_custom_euler(x_i, i, t_samples)
+      outputs = (x_i, rng)
+      return outputs
+
+    outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_prior, rng))
+    images = outputs[0]
+    return images
+
   elif model.sampler in ['edm-euler']:
     t_steps = model.compute_t(jnp.arange(num_steps), num_steps)
     t_steps = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
@@ -277,6 +315,7 @@ class SimDDPM(nn.Module):
     embedding_type='fourier',
     double_temb=False,
     rho=7.0,
+    use_meta_tcond=False,
     # beta_schedule='linear',
     # beta_start=1e-4,
     # beta_end=0.02,
@@ -300,6 +339,7 @@ class SimDDPM(nn.Module):
     self.ode_solver = ode_solver
     self.rngs = rngs
     self.double_temb = double_temb
+    self.use_meta_tcond = use_meta_tcond
 
     if self.net_type == 'context':
       raise NotImplementedError
@@ -419,6 +459,24 @@ class SimDDPM(nn.Module):
     x_next = x_i + u_pred * dt
 
     return x_next
+  
+  def sample_one_step_custom_euler(self, x_i, i, t_steps):
+    # i: loop from 0 to self.n_T - 1
+    # t = i / self.n_T  # t start from 0 (t = 0 is noise here)
+    t_cur = t_steps[i]
+    t_next = t_steps[i + 1]
+    # t = t * (1 - self.eps) + self.eps
+    t = jnp.repeat(t_cur, x_i.shape[0])
+
+    u_pred = self.forward_flow_pred_function(x_i, t, train=False)
+
+    # move one step
+    # dt = 1. / self.n_T
+    dt = t_next - t_cur
+    x_next = x_i + u_pred * dt
+
+    return x_next
+  
   
   def sample_one_step_edm_ode(self, x_i, i, t_steps):
     """
@@ -563,7 +621,7 @@ class SimDDPM(nn.Module):
 
   def forward_flow_pred_function(self, z, t, augment_label=None, train: bool = True):  # EDM
 
-    t_cond = jnp.log(t * 999)
+    t_cond = jnp.log(t * 999) if not self.use_meta_tcond else t
     u_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
     return u_pred
 

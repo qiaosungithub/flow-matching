@@ -44,7 +44,7 @@ import utils.fid_util as fid_util
 import utils.sample_util as sample_util
 
 import models.models_ddpm as models_ddpm
-from models.models_ddpm import generate, edm_ema_scales_schedules
+from models.models_ddpm import generate, get_ema_scales_schedules
 import input_pipeline
 from input_pipeline import prepare_batch_data
 
@@ -210,7 +210,14 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, model_c
   # print("images.shape: ", images.shape) # (8, 64, 32, 32, 3)
   b1, b2 = images.shape[0], images.shape[1]
   noise_batch = jax.random.normal(rngs.train(), images.shape)
-  t_batch = jax.random.uniform(rngs.train(), (b1, b2))
+  if model_config.get('skew_timestep', False):
+    # t_batch = skewed_timestep_sample(b1*b2, device=images.device).reshape(b1, b2)
+    rnd_normal = jax.random.normal(rngs.train(), (b1, b2))
+    sigma = (rnd_normal * 1.2 - 1.2).exp()
+    t_batch = 1 / (1 + sigma)
+    t_batch = jnp.clip(t_batch, 0.0001, 1.0)
+  else:
+    t_batch = jax.random.uniform(rngs.train(), (b1, b2))
 
   new_state, metrics, images = train_step_compute_fn(state, batch, noise_batch, t_batch)
 
@@ -572,7 +579,8 @@ def train_and_evaluate(
     steps_per_epoch=steps_per_epoch,
   )
 
-  ema_scales_fn = partial(edm_ema_scales_schedules, steps_per_epoch=steps_per_epoch, config=config)
+  ema_scales_fn = partial(get_ema_scales_schedules(config), steps_per_epoch=steps_per_epoch, config=config)
+  # ema_scales_fn = partial(edm_ema_scales_schedules, steps_per_epoch=steps_per_epoch, config=config)
 
   ########### Create Train State ###########
   state = create_train_state(config, model, image_size, learning_rate_fn)

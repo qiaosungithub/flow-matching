@@ -9,9 +9,11 @@ model:
     net_type: ncsnppedm
     average_loss: True # use average or sum for loss
 
-    sampler: euler
+    # sampler: euler
     # sampler: heun
     # sampler: edm
+    sampler: meta
+
     # sampler: edm-sde
     # sampler: edm-euler
     ode_solver: jax
@@ -21,6 +23,12 @@ model:
 
     embedding_type: positional # FM
     # embedding_type: zero # no t
+
+    # meta's code
+    skew_timestep: True
+    eps: 0.0
+    use_meta_tcond: True
+
 dataset:
     name: cifar10
     root: CIFAR # pytorch
@@ -39,13 +47,16 @@ evalu:
     sample: False
 batch_size: 2048
 num_epochs: 2000
-learning_rate: 0.0008 # FM
+learning_rate: 0.0008 # since we have different batch size with meta, we have to tune this by ourself :(
+ema_schedule: meta # options: [meta, edm]
+ema_value: 0.999 # only useful for meta # since we have different batch size with meta, we have to tune this by ourself :(
+
 lr_schedule: const
 weight_decay: 0.0
 optimizer: adamw
 adam_b2: 0.95
 grad_clip: 0.0
-warmup_epochs: 200
+warmup_epochs: 1 # meta uses a constant LR
 log_per_step: 100
 visualize_per_epoch: 50
 eval_per_epoch: 80
