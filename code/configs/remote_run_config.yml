@@ -5,7 +5,7 @@ model:
     base_width: 128
     n_T: 100
     use_aug_label: False
-    dropout: 0.2 # FM 0.15
+    dropout: 0.25 # FM 0.15
     net_type: ncsnppedm
     average_loss: True # use average or sum for loss
 
@@ -43,7 +43,7 @@ fid:
 evalu:
     ema: True
     sample: True
-t_schedule: uniform # option: [uniform, lognorm]
+t_schedule: lognorm # option: [uniform, lognorm]
 batch_size: 2048
 num_epochs: 2000
 learning_rate: 0.0008 # FM
