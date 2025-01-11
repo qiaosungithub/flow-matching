@@ -17,28 +17,19 @@
 # See issue #620.
 # pytype: disable=wrong-arg-count
 
-from absl import logging
 from typing import Any, Sequence
 
-# from flax import linen as nn
 import flax.nnx as nn
 import jax
 import jax.numpy as jnp
 import numpy as np
-import optax
 from flax.training.train_state import TrainState as FlaxTrainState
 
 from functools import partial
 
 # from models.models_unet import ContextUnet
 from models.models_ncsnpp_edm import NCSNpp as NCSNppEDM
-# from models.models_ncsnpp import NCSNpp
-# import models.jcm.sde_lib as sde_lib
 from models.jcm.sde_lib import batch_mul
-
-
-
-ModuleDef = Any
 
 def get_beta_schedule(beta_schedule, *, beta_start, beta_end, num_diffusion_timesteps):
     """
@@ -133,7 +124,7 @@ def generate(state: NNXTrainState, model, rng, n_sample):
 
 
   if model.sampler in ['euler', 'heun']:
-      
+    raise NotImplementedError
     x_i = x_prior
 
     def step_fn(i, inputs):
@@ -185,7 +176,43 @@ def generate(state: NNXTrainState, model, rng, n_sample):
     # images = jnp.stack(all_x, axis=0)
     # denoised = jnp.stack(denoised, axis=0)
     # return images, denoised
+  elif model.sampler in ['edm-euler']:
+    t_steps = model.compute_t(jnp.arange(num_steps), num_steps)
+    t_steps = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
+    x_i = x_prior * t_steps[0]
+
+    # import jax.random as random
+    # x = random.normal(rng, x_shape, dtype=model.dtype)
+
+    def step_fn(i, inputs):
+      x_i, rng = inputs
+      rng_this_step = jax.random.fold_in(rng, i)
+      rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
+
+      merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
+      x_i = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps)
+      # x_i, denoised = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps) # for debug
+
+      outputs = (x_i, rng)
+      return outputs
+      # return outputs, denoised # for debug
+
+    outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
+    images = outputs[0]
+    return images
+    # # for debug
+    # all_x = []
+    # denoised = []
+    # for i in range(num_steps):
+    #   D = step_fn(i, (x_i, rng))
+    #   x_i, rng = D[0]
+    #   denoised.append(D[1])
+    #   all_x.append(x_i)
+    # images = jnp.stack(all_x, axis=0)
+    # denoised = jnp.stack(denoised, axis=0)
+    # return images, denoised
   elif model.sampler == 'DDIM':
+    raise NotImplementedError
     skip = model.num_diffusion_timesteps // num_steps
     # skip = 1
     seq = range(0, model.num_timesteps, skip)
@@ -361,6 +388,8 @@ class SimDDPM(nn.Module):
     elif self.sampler == 'edm-sde':
       x_next = self.sample_one_step_edm_sde(x_i, rng, i, t_steps)
       # x_next, denoised = self.sample_one_step_edm_sde(x_i, rng, i, t_steps) # for debug
+    elif self.sampler == 'edm-euler':
+      x_next = self.sample_one_step_edm_euler(x_i, i, t_steps)
     else:
       raise NotImplementedError
 
@@ -368,7 +397,7 @@ class SimDDPM(nn.Module):
     # return x_next, denoised 
 
   def sample_one_step_heun(self, x_i, i):
-
+    raise NotImplementedError
     x_cur = x_i
 
     t_cur = i / self.n_T  # t start from 0 (t = 0 is noise here)
@@ -398,6 +427,7 @@ class SimDDPM(nn.Module):
     return x_next
 
   def sample_one_step_euler(self, x_i, i):
+    raise NotImplementedError
     # i: loop from 0 to self.n_T - 1
     t = i / self.n_T  # t start from 0 (t = 0 is noise here)
     t = t * (1 - self.eps) + self.eps
@@ -485,10 +515,34 @@ class SimDDPM(nn.Module):
     # return x_next, denoised # for debug
     return x_next
 
+  def sample_one_step_edm_euler(self, x_i, i, t_steps):
+    """
+    edm's second order ODE solver
+    """
+
+    x_cur = x_i
+    t_cur = t_steps[i]
+    t_next = t_steps[i + 1]
+
+    t_hat = t_cur
+    x_hat = x_cur  # x_hat is always x_cur when gamma=0
+
+    t_hat = jnp.repeat(t_hat, x_hat.shape[0])
+    t_next = jnp.repeat(t_next, x_hat.shape[0])
+    
+    # Euler step.
+    denoised = self.forward_edm_denoising_function(x_hat, t_hat, train=False)
+    d_cur = batch_mul(x_hat - denoised, 1. / t_hat)
+    x_next = x_hat + batch_mul(d_cur, t_next - t_hat)
+
+    # return x_next, denoised # for debug
+    return x_next
+
   def sample_one_step_DDIM(self, x_i, rng, t, next_t):
     """
     rng here is useless, if we set eta = 0
     """
+    raise NotImplementedError
     # we only implement 'generalized' here
     # we only implement 'skip_type=uniform' here
     at = self.compute_alpha(t.astype(jnp.int32))
@@ -561,11 +615,11 @@ class SimDDPM(nn.Module):
 
     # edm network
     c_skip = self.data_std ** 2 / (sigma ** 2 + self.data_std ** 2)
-    # c_out = sigma * self.data_std / jnp.sqrt(sigma ** 2 + self.data_std ** 2)
-    c_out = jnp.ones_like(sigma) # Kaiming shenyi
+    c_out = sigma * self.data_std / jnp.sqrt(sigma ** 2 + self.data_std ** 2)
+    # c_out = jnp.ones_like(sigma) # Kaiming shenyi
 
-    # c_in = 1 / jnp.sqrt(sigma ** 2 + self.data_std ** 2)
-    c_in = 1 / jnp.sqrt(sigma ** 2 + 1) # Kaiming shenyi
+    c_in = 1 / jnp.sqrt(sigma ** 2 + self.data_std ** 2)
+    # c_in = 1 / jnp.sqrt(sigma ** 2 + 1) # Kaiming shenyi
     c_noise = jnp.zeros_like(sigma) if self.no_condition_t else 0.25 * jnp.log(sigma)
 
     # forward network

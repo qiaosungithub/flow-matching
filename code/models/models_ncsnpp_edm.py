@@ -106,11 +106,11 @@ class NCSNpp(nn.Module):
         else:
             raise NotImplementedError
         
-        self.input_temb_dim = input_temb_dim = nf if embedding_type == "positional" else 2 * nf # NOTE: here, if use fourier embedding, the output dim is 2 * nf; for positional embedding, the output dim is nf. This is tang
+        self.input_temb_dim = input_temb_dim = nf
         #################### aug label ############################
         if use_aug_label:
             assert aug_label_dim is not None
-            assert embedding_type == "fourier" # in edm_jax, only support fourier embedding
+            assert embedding_type == "fourier" # for edm, we use fourier!
             self.augemb_layer = nn.Linear(aug_label_dim, input_temb_dim, kernel_init=default_initializer(), use_bias=False, rngs=rngs)
         #################### noise condition ############################
         self.cond_MLP = nn.Sequential(

@@ -39,7 +39,9 @@ class GaussianFourierProjection(nn.Module):
         self.scale = scale
         self.rngs = rngs
 
-        self.freqs = nn.Embed(num_embeddings=1, features=self.embedding_size, embedding_init=jax.nn.initializers.normal(stddev=self.scale), rngs=rngs)
+        assert embedding_size % 2 == 0
+
+        self.freqs = nn.Embed(num_embeddings=1, features=self.embedding_size // 2, embedding_init=jax.nn.initializers.normal(stddev=self.scale), rngs=rngs)
 
     def __call__(self, x):
         freqs = jax.lax.stop_gradient(self.freqs(jnp.zeros(1, dtype=jnp.int32)))
