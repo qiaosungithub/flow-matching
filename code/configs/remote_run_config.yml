@@ -3,7 +3,7 @@ model:
     image_size: 32
     out_channels: 3
     base_width: 128
-    n_T: 18
+    n_T: 25
     use_aug_label: True
     dropout: 0.13 # EDM
     net_type: ncsnppedm
@@ -12,6 +12,8 @@ model:
     # sampler: edm-euler
     sampler: edm
     # sampler: edm-sde
+
+    rho: 10
     
     no_condition_t: True
     embedding_type: fourier

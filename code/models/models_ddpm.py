@@ -286,6 +286,7 @@ class SimDDPM(nn.Module):
     no_condition_t=False,
     rngs=None,
     double_temb=False,
+    rho=7.0,
     # beta_schedule='linear',
     # beta_start=1e-4,
     # beta_end=0.02,
@@ -348,7 +349,7 @@ class SimDDPM(nn.Module):
     self.data_std = 0.5
     self.t_min = 0.002
     self.t_max = 80.0
-    self.rho = 7.0
+    self.rho = rho
 
 
   def get_visualization(self, list_imgs):
