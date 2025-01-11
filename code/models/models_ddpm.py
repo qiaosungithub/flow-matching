@@ -368,10 +368,10 @@ class SimDDPM(nn.Module):
 
     return x_next
   
-  def sample_one_step_edm(self, x_i, rng, i, t_steps):
+  def sample_one_step_edm(self, x_i, rng, i, t_steps, labels=None):
 
     if self.sampler == 'edm':
-      x_next = self.sample_one_step_edm_ode(x_i, i, t_steps) 
+      x_next = self.sample_one_step_edm_ode(x_i, i, t_steps, labels=labels) 
       # x_next, denoised = self.sample_one_step_edm_ode(x_i, i, t_steps) # for debug
     elif self.sampler == 'edm-sde':
       x_next = self.sample_one_step_edm_sde(x_i, rng, i, t_steps)

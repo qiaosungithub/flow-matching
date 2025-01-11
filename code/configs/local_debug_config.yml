@@ -29,9 +29,9 @@ dataset:
 aug: 
     use_edm_aug: True
 fid:
-    on_use: False # we don't want to initialize InceptionV3
+    # on_use: False # we don't want to initialize InceptionV3
     eval_only: False
-    fid_per_epoch: 100
+    fid_per_epoch: 1
     num_samples: 1000
     cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
 evalu:
@@ -47,8 +47,8 @@ adam_b2: 0.999
 grad_clip: 0.0
 warmup_epochs: 200
 log_per_step: 30
-visualize_per_epoch: 100
-eval_per_epoch: 100
+visualize_per_epoch: 1
+eval_per_epoch: 1
 wandb: False
 checkpoint_per_epoch: 100
 # load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241206_202211_8ockg9_kmh-tpuvm-v2-32-7__b_lr_ep_eval/checkpoint_194000
