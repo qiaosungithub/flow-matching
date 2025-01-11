@@ -154,7 +154,7 @@ class AttnBlockpp(nn.Module):
         self.rngs = rngs
 
         if use_torch_init:
-            NIN = lambda ind,rngs,init_scale=1.0: torch_conv3x3(ind, ind, rngs,init_scale=init_scale)
+            NIN = lambda ind,rngs,init_scale=1.0: torch_conv1x1(ind, ind, rngs,init_scale=init_scale)
 
         assert self.in_planes // 4 >= 32, 'In planes is {}'.format(self.in_planes)
 

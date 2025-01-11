@@ -233,7 +233,7 @@ class NCSNpp(nn.Module):
         for i_level in range(num_resolutions):
             for i_block in range(num_res_blocks):
                 out_c = nf * ch_mult[i_level]
-                print('i level:', i_level, 'out_c:', out_c)
+                # print('i level:', i_level, 'out_c:', out_c)
                 in_c = out_c if i_block > 0 else (nf * (1 if i_level == 0 else ch_mult[i_level - 1]))
                 setattr(
                     self,
