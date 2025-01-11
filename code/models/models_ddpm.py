@@ -522,7 +522,7 @@ class SimDDPM(nn.Module):
 
   def sample_one_step_edm_euler(self, x_i, i, t_steps):
     """
-    edm's second order ODE solver
+    Euler with EDM t schedule
     """
 
     x_cur = x_i
