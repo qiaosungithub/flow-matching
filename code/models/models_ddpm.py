@@ -316,6 +316,7 @@ class SimDDPM(nn.Module):
     double_temb=False,
     rho=7.0,
     use_meta_tcond=False,
+    use_meta_model=False,
     # beta_schedule='linear',
     # beta_start=1e-4,
     # beta_end=0.02,
@@ -365,6 +366,7 @@ class SimDDPM(nn.Module):
         aug_label_dim=9,
         rngs=self.rngs,
         double_temb=double_temb,
+        use_meta_model = use_meta_model,
       )
     else:
       raise ValueError(f'Unknown net type: {self.net_type}')

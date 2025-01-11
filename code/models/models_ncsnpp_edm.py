@@ -15,7 +15,7 @@
 
 # pylint: skip-file
 
-from .jcm import layers, layerspp, normalization
+from .jcm import layers, layerspp, normalization, up_or_down_sampling
 # from jcm import layers, layerspp, normalization
 # import flax.linen as nn
 import flax.nnx as nn
@@ -40,6 +40,21 @@ get_act = layers.get_act # not used
 get_normalization = normalization.get_normalization
 default_initializer = layers.default_init
 
+# torch_weight_initializer = 
+import math
+torch_weight_initializer = nn.initializers.variance_scaling(scale=1/math.sqrt(3), mode='fan_in', distribution='uniform')
+# def torch_bias_initializer(in_size):
+#     scale = 1/math.sqrt(in_size)
+#     return lambda key, shape, dtype: jax.random.uniform(key, shape, dtype) * 2 * scale - scale
+torch_bias_initializer = layerspp.torch_bias_initializer
+
+def torch_linear(in_dim,out_dim,rngs):
+    return nn.Linear(in_dim, out_dim, kernel_init=torch_weight_initializer, bias_init=torch_bias_initializer(in_dim), rngs=rngs)
+
+# def torch_conv3x3(in_planes, out_planes, rngs):
+#     init = nn.initializers.variance_scaling(scale=1, mode='fan_in', distribution='uniform')
+#     return nn.Conv(in_planes, out_planes, (3, 3), (1, 1), kernel_init=init, bias_init=torch_bias_initializer(in_planes*9), rngs=rngs)
+torch_conv3x3 = layerspp.torch_conv3x3
 
 class NCSNpp(nn.Module):
     """NCSN++ model"""
@@ -60,6 +75,7 @@ class NCSNpp(nn.Module):
         use_aug_label = False,
         aug_label_dim = None,
         double_temb = False,
+        use_meta_model = False,
         **kwargs
     ):
 
@@ -85,6 +101,8 @@ class NCSNpp(nn.Module):
         self.resamp_with_conv = resamp_with_conv = True
         self.fir = fir = True
         self.double_heads = double_heads = False
+
+        self.use_meta_model = use_meta_model
 
         cur_size = image_size
         self.num_resolutions = num_resolutions = len(ch_mult)
@@ -126,11 +144,17 @@ class NCSNpp(nn.Module):
             nn.Linear(input_temb_dim, nf * 4, kernel_init=default_initializer(), rngs=rngs),
             act,
             nn.Linear(nf * 4, nf * 4, kernel_init=default_initializer(), rngs=rngs),
+        ) if not use_meta_model else nn.Sequential(
+            torch_linear(input_temb_dim, nf * 4, rngs=rngs),
+            act,
+            torch_linear(nf * 4, nf * 4, rngs=rngs),
         )
         #################### Blocks ############################
         
         AttnBlock = partial(
-            layerspp.AttnBlockpp, init_scale=init_scale, skip_rescale=skip_rescale, rngs=rngs
+            layerspp.AttnBlockpp, init_scale=init_scale, skip_rescale=skip_rescale if not use_meta_model else False,
+            use_torch_init=use_meta_model, 
+            rngs=rngs
         )
 
         Upsample = partial(
@@ -188,12 +212,19 @@ class NCSNpp(nn.Module):
                 fir=fir,
                 fir_kernel=fir_kernel,
                 init_scale=init_scale,
-                skip_rescale=skip_rescale,
+                skip_rescale=skip_rescale if not use_meta_model else False,
+                use_torch_conv3x3=use_meta_model,
+                use_scale_shift_norm=use_meta_model,
                 rngs=rngs,
             )
 
         else:
             raise ValueError(f"resblock type {resblock_type} unrecognized.")
+
+        # meta models
+        if use_meta_model:
+            conv3x3 = torch_conv3x3
+
         #################### blocks #########################
         c_list = []
         setattr(self, f'enc_{cur_size}x{cur_size}_conv', conv3x3(out_channels, nf, rngs=rngs))
@@ -202,6 +233,7 @@ class NCSNpp(nn.Module):
         for i_level in range(num_resolutions):
             for i_block in range(num_res_blocks):
                 out_c = nf * ch_mult[i_level]
+                print('i level:', i_level, 'out_c:', out_c)
                 in_c = out_c if i_block > 0 else (nf * (1 if i_level == 0 else ch_mult[i_level - 1]))
                 setattr(
                     self,
@@ -220,17 +252,24 @@ class NCSNpp(nn.Module):
                 if resblock_type == "ddpm":
                     raise NotImplementedError
                     setattr(self, f'enc_{cur_size}x{cur_size}_down', Downsample())
-                else:
+                elif not use_meta_model:
                     cur_size //= 2
                     setattr(
                         self,
                         f'enc_{cur_size}x{cur_size}_down',
                         ResnetBlock(out_c, down=True, temb_dim=4*nf),
                     )
+                else:
+                    cur_size //= 2
+                    setattr(
+                        self,
+                        f'enc_{cur_size}x{cur_size}_down',
+                        lambda x,t,train: up_or_down_sampling.naive_downsample_2d(x)
+                    )
 
                 if self.progressive_input == "input_skip":
                     raise NotImplementedError
-                elif self.progressive_input == "residual":
+                elif self.progressive_input == "residual" and (not use_meta_model):
                     in_dim = nf * ch_mult[i_level-1] if i_level > 0 else out_channels
                     setattr(
                         self,
@@ -264,7 +303,13 @@ class NCSNpp(nn.Module):
                     f'dec_{cur_size}x{cur_size}_block{i_block}',
                     ResnetBlock(in_c, out_ch=out_c, temb_dim=4 * nf),
                 )
-            if cur_size in attn_resolutions:
+                if use_meta_model and cur_size in attn_resolutions:
+                    setattr(
+                        self,
+                        f'dec_{cur_size}x{cur_size}_block{i_block}_attn',
+                        AttnBlock(out_c),
+                    )
+            if (not use_meta_model) and cur_size in attn_resolutions:
                 setattr(
                     self,
                     f'dec_{cur_size}x{cur_size}_block{i_block}_attn',
@@ -276,12 +321,19 @@ class NCSNpp(nn.Module):
                 if resblock_type == "ddpm":
                     raise NotImplementedError
                     setattr(self, f'dec_{cur_size}x{cur_size}_up', Upsample())
-                else:
+                elif not use_meta_model:
                     cur_size *= 2
                     setattr(
                         self,
                         f'dec_{cur_size}x{cur_size}_up',
                         ResnetBlock(out_c, up=True, temb_dim=4*nf),
+                    )
+                else:
+                    cur_size *= 2
+                    setattr(
+                        self,
+                        f'dec_{cur_size}x{cur_size}_up',
+                        lambda x,t,train: up_or_down_sampling.nearest_upsample_2d(x)
                     )
         assert not c_list
         # final
@@ -289,6 +341,7 @@ class NCSNpp(nn.Module):
             raise NotImplementedError
         else: 
             in_c = nf * ch_mult[0]
+            assert in_c > 128, f'Get in_c {in_c}'
             setattr(self, 
                     f'dec_{cur_size}x{cur_size}_aux_norm', 
                     nn.GroupNorm(num_features=in_c, num_groups=min(in_c // 4, 32), rngs=rngs)
@@ -348,6 +401,8 @@ class NCSNpp(nn.Module):
             output: number of parameters
             """
             layer = getattr(self, name)
+            if not isinstance(layer, nn.Module):
+                return 0
             tree = jax.tree.map(lambda x: np.prod(x.shape), nn.state(layer))
             return jax.tree_util.tree_reduce(lambda x, y: x + y, tree, initializer=0)
         ps = partial(pms, self)
@@ -396,7 +451,7 @@ class NCSNpp(nn.Module):
                     input_pyramid = pyramid_downsample()(input_pyramid)
                     h = combiner()(input_pyramid, h)
 
-                elif self.progressive_input == "residual":
+                elif self.progressive_input == "residual" and (not self.use_meta_model):
                     name = f'enc_{cur_size}x{cur_size}_aux_residual'
                     # print("input_pyramid.shape", input_pyramid.shape)
                     input_pyramid = getattr(self, name)(input_pyramid)
@@ -447,8 +502,13 @@ class NCSNpp(nn.Module):
                 )
                 logging_fn(f"{name}: params {ps(name)}, shape {h.shape}")
 
+                if self.use_meta_model and cur_size in attn_resolutions:
+                    name = f'dec_{cur_size}x{cur_size}_block{i_block}_attn'
+                    h = getattr(self, name)(h)
+                    logging_fn(f"{name}: params {ps(name)}, shape {h.shape}")
+
             assert h.shape[1] == cur_size
-            if h.shape[1] in attn_resolutions:
+            if (not self.use_meta_model) and h.shape[1] in attn_resolutions:
                 name = f'dec_{cur_size}x{cur_size}_block{i_block}_attn'
                 h = getattr(self, name)(h)
                 logging_fn(f"{name}: params {ps(name)}, shape {h.shape}")
@@ -527,7 +587,7 @@ class NCSNpp(nn.Module):
 # # test
 
 # rngs = nn.Rngs(0, params=114, dropout=514, train=1919)
-# model = NCSNpp(base_width=16, rngs=rngs)
+# model = NCSNpp(base_width=128, rngs=rngs,use_meta_model=True)
 # from jax import random
 # inputs = random.normal(rngs.train(), (2, 32, 32, 3))
 # time_cond = jnp.log(jnp.array([1, 0.1]))

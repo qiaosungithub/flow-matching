@@ -153,6 +153,11 @@ def naive_upsample_2d(x, factor=2):
     x = jnp.tile(x, [1, 1, factor, 1, factor, 1])
     return jnp.reshape(x, [-1, H * factor, W * factor, C])
 
+def nearest_upsample_2d(x, factor=2):
+    _N, H, W, C = x.shape
+    """perform nearest interpolation"""
+    x = jax.image.resize(x, (_N, H * factor, W * factor, C), method="nearest")
+    return x
 
 def naive_downsample_2d(x, factor=2):
     _N, H, W, C = x.shape
