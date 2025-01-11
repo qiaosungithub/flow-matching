@@ -213,7 +213,7 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, model_c
   if model_config.get('skew_timestep', False):
     # t_batch = skewed_timestep_sample(b1*b2, device=images.device).reshape(b1, b2)
     rnd_normal = jax.random.normal(rngs.train(), (b1, b2))
-    sigma = (rnd_normal * 1.2 - 1.2).exp()
+    sigma = jnp.exp(rnd_normal * 1.2 - 1.2)
     t_batch = 1 / (1 + sigma)
     t_batch = jnp.clip(t_batch, 0.0001, 1.0)
   else:
