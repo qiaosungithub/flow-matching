@@ -19,8 +19,8 @@ model:
     
     # rho: 7
 
-    # embedding_type: positional # FM
-    embedding_type: zero # no t
+    embedding_type: positional # FM
+    # embedding_type: zero # no t
 dataset:
     name: cifar10
     root: CIFAR # pytorch
