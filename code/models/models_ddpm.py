@@ -285,6 +285,7 @@ class SimDDPM(nn.Module):
     ode_solver='jax',
     no_condition_t=False,
     rngs=None,
+    double_temb=False,
     # beta_schedule='linear',
     # beta_start=1e-4,
     # beta_end=0.02,
@@ -308,6 +309,7 @@ class SimDDPM(nn.Module):
     self.ode_solver = ode_solver
     self.no_condition_t = no_condition_t
     self.rngs = rngs
+    self.double_temb = double_temb
     # self.beta_schedule = beta_schedule
     # self.beta_start = beta_start
     # self.beta_end = beta_end
@@ -334,7 +336,9 @@ class SimDDPM(nn.Module):
         dropout=self.dropout,
         use_aug_label=self.use_aug_label,
         aug_label_dim=9,
-        rngs=self.rngs)
+        rngs=self.rngs,
+        double_temb=double_temb,
+      )
     else:
       raise ValueError(f'Unknown net type: {self.net_type}')
 

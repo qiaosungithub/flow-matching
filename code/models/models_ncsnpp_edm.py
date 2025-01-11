@@ -59,6 +59,7 @@ class NCSNpp(nn.Module):
         rngs = None,
         use_aug_label = False,
         aug_label_dim = None,
+        double_temb = False,
         **kwargs
     ):
 
@@ -76,6 +77,7 @@ class NCSNpp(nn.Module):
         self.rngs = rngs
         self.use_aug_label = use_aug_label
         self.aug_label_dim = aug_label_dim
+        self.double_temb = double_temb
 
         self.act = act = nn.swish
         self.init_scale = init_scale = 0.0
@@ -95,18 +97,23 @@ class NCSNpp(nn.Module):
         assert embedding_type in ["fourier", "positional"]
 
         ################ time embedding layer ################
+        if double_temb: # legacy, for restore checkpoint
+            assert embedding_type == "fourier"
+            self.input_temb_dim = input_temb_dim = 2 * nf
+            embedding_size = 2 * nf
+        else: 
+            embedding_size = nf
+            self.input_temb_dim = input_temb_dim = nf
         if embedding_type == "fourier":
             # Gaussian Fourier features embeddings.
             self.temb_layer = layerspp.GaussianFourierProjection(
-                embedding_size=nf, scale=fourier_scale, rngs=rngs
+                embedding_size=embedding_size, scale=fourier_scale, rngs=rngs
             )
         elif embedding_type == "positional":
             # Sinusoidal positional embeddings.
-            self.temb_layer = partial(layers.get_timestep_embedding, embedding_dim=nf)
+            self.temb_layer = partial(layers.get_timestep_embedding, embedding_dim=embedding_size)
         else:
             raise NotImplementedError
-        
-        self.input_temb_dim = input_temb_dim = nf
         #################### aug label ############################
         if use_aug_label:
             assert aug_label_dim is not None
