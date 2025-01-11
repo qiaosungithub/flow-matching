@@ -36,11 +36,11 @@ evalu:
     sample: False
 batch_size: 512
 num_epochs: 4000
-learning_rate: 0.001 # EDM
+learning_rate: 0.0004 # EDM
 lr_schedule: const
 weight_decay: 0.0
 optimizer: adamw
-adam_b2: 0.999
+adam_b2: 0.95
 grad_clip: 0.0
 warmup_epochs: 200
 log_per_step: 100
