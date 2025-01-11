@@ -3,17 +3,17 @@ model:
     image_size: 32
     out_channels: 3
     base_width: 128
-    n_T: 50
+    n_T: 18
     use_aug_label: True
     dropout: 0.13 # EDM
     net_type: ncsnppedm
     average_loss: False # use average or sum for loss
 
-    sampler: edm-euler
-    # sampler: edm
+    # sampler: edm-euler
+    sampler: edm
     # sampler: edm-sde
     
-    no_condition_t: False
+    no_condition_t: True
     embedding_type: fourier
     double_temb: True # legacy
 dataset:
@@ -45,7 +45,7 @@ log_per_step: 100
 visualize_per_epoch: 50
 eval_per_epoch: 50
 checkpoint_per_epoch: 500
-load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241211_185022_1p9khj_kmh-tpuvm-v2-32-7__b_lr_ep_eval/checkpoint_388000
+load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241220_192218_apfh37_kmh-tpuvm-v2-32-2__b_lr_ep_eval/checkpoint_388000
 
 # # Here is for IMAGENET32x32:
 
