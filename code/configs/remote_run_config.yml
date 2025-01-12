@@ -77,11 +77,12 @@ evalu:
 
 # ema_type: edm # [edm, const]
 ema_type: const # [edm, const]
-# ema_value: 0.9986 # only useful for const
-ema_value: 0.9993 # only useful for const
+ema_value: 0.997 # only useful for const
+# ema_value: 0.999 # only useful for const
 batch_size: 2048
 num_epochs: 2000
 learning_rate: 0.0008
+# learning_rate: 0.0004
 lr_schedule: const
 # lr_schedule: classifier_specific
 weight_decay: 0.0

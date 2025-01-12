@@ -15,6 +15,7 @@ which python3
 which pip3
 python3 -c 'import jax; print(jax.devices())'
 python3 -c 'import flax.nnx as nn; print(nn.Linear)'
+ls /kmh-nfs-ssd-eu-mount/data
 "
 
 # pip install wandb
