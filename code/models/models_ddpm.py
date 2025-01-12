@@ -146,9 +146,6 @@ def generate(state: NNXTrainState, model, rng, n_sample):
     t_steps = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
     x_i = x_prior * t_steps[0]
 
-    # import jax.random as random
-    # x = random.normal(rng, x_shape, dtype=model.dtype)
-
     def step_fn(i, inputs):
       x_i, rng = inputs
       rng_this_step = jax.random.fold_in(rng, i)
