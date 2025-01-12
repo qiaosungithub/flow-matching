@@ -239,6 +239,7 @@ def generate(state: NNXTrainState, model, rng, n_sample):
     # denoised = jnp.stack(denoised, axis=0)
     # return images, denoised
   elif model.sampler in ['meta']:
+    raise NotImplementedError("zhh xie de")
     step_indices = jnp.arange(num_steps, dtype=jnp.float32)
     sigma_min = 0.002
     sigma_max = 80.0
@@ -264,13 +265,10 @@ def generate(state: NNXTrainState, model, rng, n_sample):
     images = outputs[0]
     return images
 
-  elif model.sampler in ['edm-euler']:
-    t_steps = model.compute_t(jnp.arange(num_steps), num_steps)
-    t_steps = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
-    x_i = x_prior * t_steps[0]
-
-    # import jax.random as random
-    # x = random.normal(rng, x_shape, dtype=model.dtype)
+  elif model.sampler in ['edm-euler', 'edm-heun']:
+    t_steps = model.compute_t_FM(jnp.arange(num_steps), num_steps)
+    t_steps = jnp.concatenate([t_steps, jnp.ones((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
+    x_i = x_prior
 
     def step_fn(i, inputs):
       x_i, rng = inputs
@@ -385,10 +383,21 @@ class SimDDPM(nn.Module):
     return vis
 
   def compute_t(self, indices, scales):
+    """
+    from big to small
+    """
     t = self.t_max ** (1 / self.rho) + indices / (scales - 1) * (
         self.t_min ** (1 / self.rho) - self.t_max ** (1 / self.rho)
     )
     t = t**self.rho
+    return t
+
+  def compute_t_FM(self, indices, scales):
+    """
+    from small to big
+    """
+    t = self.compute_t(indices, scales)
+    t = 1 / (1 + t)
     return t
 
   def sample_one_step(self, x_i, rng, i):
@@ -412,6 +421,8 @@ class SimDDPM(nn.Module):
       # x_next, denoised = self.sample_one_step_edm_sde(x_i, rng, i, t_steps) # for debug
     elif self.sampler == 'edm-euler':
       x_next = self.sample_one_step_edm_euler(x_i, i, t_steps)
+    elif self.sampler == 'edm-heun':
+      x_next = self.sample_one_step_edm_heun(x_i, i, t_steps)
     else:
       raise NotImplementedError
 
@@ -556,24 +567,46 @@ class SimDDPM(nn.Module):
 
   def sample_one_step_edm_euler(self, x_i, i, t_steps):
     """
-    Euler with EDM t schedule
+    Euler with EDM t schedule, FM use
+    """
+
+    x_cur = x_i
+    t_cur = t_steps[i]
+    dt = t_steps[i + 1] - t_cur
+
+    t_cur = jnp.repeat(t_cur, x_cur.shape[0])
+    # dt = jnp.repeat(dt, x_cur.shape[0])
+    
+    # Euler step.
+    v_pred = self.forward_flow_pred_function(x_cur, t_cur, train=False)
+    x_next = x_cur + batch_mul(dt, v_pred)
+
+    # return x_next, denoised # for debug
+    return x_next
+
+  def sample_one_step_edm_heun(self, x_i, i, t_steps):
+    """
+    Euler with EDM t schedule, FM use
     """
 
     x_cur = x_i
     t_cur = t_steps[i]
     t_next = t_steps[i + 1]
+    dt = t_steps[i + 1] - t_cur
 
-    t_hat = t_cur
-    x_hat = x_cur  # x_hat is always x_cur when gamma=0
-
-    t_hat = jnp.repeat(t_hat, x_hat.shape[0])
-    t_next = jnp.repeat(t_next, x_hat.shape[0])
+    t_cur = jnp.repeat(t_cur, x_cur.shape[0])
+    t_next = jnp.repeat(t_next, x_cur.shape[0])
+    # dt = jnp.repeat(dt, x_cur.shape[0])
     
     # Euler step.
-    denoised = self.forward_edm_denoising_function(x_hat, t_hat, train=False)
-    d_cur = batch_mul(x_hat - denoised, 1. / t_hat)
-    x_next = x_hat + batch_mul(d_cur, t_next - t_hat)
+    v_pred = self.forward_flow_pred_function(x_cur, t_cur, train=False)
+    x_next = x_cur + batch_mul(dt, v_pred)
 
+    # Apply 2nd order correction
+    v_pred_2 = self.forward_flow_pred_function(x_next, t_next, train=False)
+    x_next_ = x_cur + batch_mul(dt, 0.5 * (v_pred + v_pred_2))
+
+    x_next = jnp.where(i < self.n_T - 1, x_next_, x_next)
     # return x_next, denoised # for debug
     return x_next
 

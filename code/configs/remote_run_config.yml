@@ -4,7 +4,6 @@ model:
     out_channels: 3
     base_width: 128
     n_T: 50
-    # n_T: 100
     use_aug_label: False
     dropout: 0.3 # FM
     net_type: ncsnppedm
@@ -13,7 +12,8 @@ model:
     # sampler: euler
     # sampler: heun
     # sampler: edm
-    sampler: meta
+    # sampler: edm-euler
+    sampler: edm-heun
 
     # sampler: edm-sde
     # sampler: edm-euler
