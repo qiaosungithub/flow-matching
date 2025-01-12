@@ -8,19 +8,20 @@ model:
     dropout: 0.13 # EDM
     net_type: ncsnppedm
     average_loss: False # use average or sum for loss
-    # sampler: euler
-    # sampler: heun
+
     sampler: edm
     # sampler: edm-sde
-    # sampler: DDIM
-    ode_solver: jax
-    # ode_solver: scipy # rk45
-    no_condition_t: False
-    embedding_type: fourier # EDM
+    # sampler: edm-euler
 
-    # experiments
-    exp: disturb # option: disturb, predict, joint
-    disturb: 0.01
+    rho: 7
+
+    no_condition_t: True
+    embedding_type: fourier # EDM
+    # double_temb: True # legacy
+
+    # # experiments
+    # exp: disturb # option: disturb, predict, joint
+    # disturb: 0.01
 dataset:
     name: cifar10
     root: CIFAR # pytorch
@@ -44,7 +45,7 @@ learning_rate: 0.001 # EDM
 lr_schedule: const
 weight_decay: 0
 optimizer: adamw
-adam_b2: 0.999
+adam_b2: 0.95
 grad_clip: 0.0
 warmup_epochs: 200
 log_per_step: 30
