@@ -284,6 +284,7 @@ class SimDDPM(nn.Module):
     rngs=None,
     double_temb=False,
     rho=7.0,
+    precond="edm",
     # beta_schedule='linear',
     # beta_start=1e-4,
     # beta_end=0.02,
@@ -310,6 +311,8 @@ class SimDDPM(nn.Module):
     self.no_condition_t = no_condition_t
     self.rngs = rngs
     self.double_temb = double_temb
+    self.precond = precond
+    assert precond in ["edm", "kaiming", "sqa1"]
     # self.beta_schedule = beta_schedule
     # self.beta_start = beta_start
     # self.beta_end = beta_end
@@ -620,13 +623,23 @@ class SimDDPM(nn.Module):
     # return D_x
 
     # edm network
-    c_skip = self.data_std ** 2 / (sigma ** 2 + self.data_std ** 2)
-    c_out = sigma * self.data_std / jnp.sqrt(sigma ** 2 + self.data_std ** 2)
-    # c_out = jnp.ones_like(sigma) # Kaiming shenyi
-
-    c_in = 1 / jnp.sqrt(sigma ** 2 + self.data_std ** 2)
-    # c_in = 1 / jnp.sqrt(sigma ** 2 + 1) # Kaiming shenyi
-    c_noise = jnp.zeros_like(sigma) if self.no_condition_t else 0.25 * jnp.log(sigma)
+    if self.precond == "edm":
+      c_skip = self.data_std ** 2 / (sigma ** 2 + self.data_std ** 2)
+      c_out = sigma * self.data_std / jnp.sqrt(sigma ** 2 + self.data_std ** 2)
+      c_in = 1 / jnp.sqrt(sigma ** 2 + self.data_std ** 2)
+      c_noise = jnp.zeros_like(sigma) if self.no_condition_t else 0.25 * jnp.log(sigma)
+    elif self.precond == "kaiming":
+      c_skip = self.data_std ** 2 / (sigma ** 2 + self.data_std ** 2)
+      c_out = jnp.ones_like(sigma) # Kaiming shenyi
+      c_in = 1 / jnp.sqrt(sigma ** 2 + 1) # Kaiming shenyi
+      c_noise = jnp.zeros_like(sigma) if self.no_condition_t else 0.25 * jnp.log(sigma)
+    elif self.precond == "sqa1": # let sigma_data = 1
+      c_skip = 1 / (sigma ** 2 + 1)
+      c_out = sigma / jnp.sqrt(sigma ** 2 + 1)
+      c_in = 1 / jnp.sqrt(sigma ** 2 + 1)
+      c_noise = jnp.zeros_like(sigma) if self.no_condition_t else jnp.arctan(sigma)
+    else:
+      raise NotImplementedError
 
     # forward network
     in_x = batch_mul(x, c_in)
@@ -660,7 +673,12 @@ class SimDDPM(nn.Module):
     # -----------------------------------------------------------------
     # sample t step
     sigma = jnp.exp(t_batch * self.P_std + self.P_mean)
-    weight = (sigma ** 2 + self.data_std ** 2) / (sigma * self.data_std) ** 2
+    if self.precond in ["edm", "kaiming"]:
+      weight = (sigma ** 2 + self.data_std ** 2) / (sigma * self.data_std) ** 2
+    elif self.precond == "sqa1":
+      weight = 4 * sigma ** 2 + 1 # more weight on noise
+    else:
+      raise NotImplementedError
 
     xn = x + batch_mul(noise_batch, sigma)
     D_xn = self.forward_edm_denoising_function(xn, sigma, augment_label)
