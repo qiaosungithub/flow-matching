@@ -224,6 +224,8 @@ class NCSNpp(nn.Module):
         # meta models
         if use_meta_model:
             conv3x3 = torch_conv3x3
+        else:
+            conv3x3 = layerspp.conv3x3
 
         #################### blocks #########################
         c_list = []

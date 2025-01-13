@@ -377,6 +377,10 @@ class SimDDPM(nn.Module):
     self.t_max = 80.0
     self.rho = rho
 
+    if self.sampler == 'meta': # legacy
+      print('Deprecated: meta sampler, it is replaced by edm-heun or edm-euler')
+      self.sampler = 'edm-heun'
+
 
   def get_visualization(self, list_imgs):
     vis = jnp.concatenate(list_imgs, axis=1)
@@ -575,7 +579,7 @@ class SimDDPM(nn.Module):
     dt = t_steps[i + 1] - t_cur
 
     t_cur = jnp.repeat(t_cur, x_cur.shape[0])
-    # dt = jnp.repeat(dt, x_cur.shape[0])
+    dt = jnp.repeat(dt, x_cur.shape[0])
     
     # Euler step.
     v_pred = self.forward_flow_pred_function(x_cur, t_cur, train=False)
@@ -596,7 +600,7 @@ class SimDDPM(nn.Module):
 
     t_cur = jnp.repeat(t_cur, x_cur.shape[0])
     t_next = jnp.repeat(t_next, x_cur.shape[0])
-    # dt = jnp.repeat(dt, x_cur.shape[0])
+    dt = jnp.repeat(dt, x_cur.shape[0])
     
     # Euler step.
     v_pred = self.forward_flow_pred_function(x_cur, t_cur, train=False)

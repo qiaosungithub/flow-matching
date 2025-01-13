@@ -155,6 +155,8 @@ class AttnBlockpp(nn.Module):
 
         if use_torch_init:
             NIN = lambda ind,rngs,init_scale=1.0: torch_conv1x1(ind, ind, rngs,init_scale=init_scale)
+        else:
+            NIN = layers.NIN
 
         assert self.in_planes // 4 >= 32, 'In planes is {}'.format(self.in_planes)
 
@@ -547,6 +549,8 @@ class ResnetBlockBigGANpp(nn.Module):
 
         if use_torch_conv3x3:
             conv3x3 = torch_conv3x3
+        else:
+            conv3x3 = layers.ddpm_conv3x3
 
         self.conv1 = conv3x3(self.in_planes, self.out_ch, rngs=self.rngs)
 

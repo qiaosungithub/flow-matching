@@ -37,6 +37,7 @@ echo 'Current dir: '
 pwd
 which python
 which pip3
+pip3 list | grep orbax-checkpoint
 export TFDS_DATA_DIR=${TFDS_DATA_DIR}
 python3 main.py \
     --workdir=${LOGDIR} \
