@@ -676,7 +676,7 @@ class SimDDPM(nn.Module):
     if self.precond in ["edm", "kaiming"]:
       weight = (sigma ** 2 + self.data_std ** 2) / (sigma * self.data_std) ** 2
     elif self.precond == "sqa1":
-      weight = 4 * sigma ** 2 + 1 # more weight on noise
+      weight = (4 * sigma ** 2 + 1) / (sigma ** 2) # more weight on noise
     else:
       raise NotImplementedError
 
