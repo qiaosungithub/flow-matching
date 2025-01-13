@@ -220,6 +220,10 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, config,
   elif config.t_schedule == 'lognorm':
     t_batch = jax.random.normal(rngs.train(), (b1, b2))
     t_batch = jax.nn.sigmoid(t_batch)
+  elif config.t_schedule == 'kaiming':
+    t_batch = jax.random.normal(rngs.train(), (b1, b2))
+    t_batch = t_batch * 1.2 - 1.2 # edm like
+    t_batch = 1 - 1 / (1 + jnp.exp(-t_batch)) # kaiming shenyi
 
   # # for debug
   # # print(f"before exp: {t_batch[0][:5]}", flush=True)

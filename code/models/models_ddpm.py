@@ -751,7 +751,7 @@ class SimDDPM(nn.Module):
 
     # create v target
     v_target = x_data - x_prior
-    # v_target = jnp.ones_like(x_data)  # dummy
+    # v_target = jnp.ones_like(x_data) # debug
 
     # create z (as the network input)
     z = batch_mul(t, x_data) + batch_mul(1 - t, x_prior)
@@ -759,7 +759,6 @@ class SimDDPM(nn.Module):
     # forward network
     if self.exp == "predict":
       in_t = 1 - self.t_predictor.forward(z).squeeze(-1)
-      # stop gradient
       in_t = jax.lax.stop_gradient(in_t)
       in_t = jnp.clip(in_t, 1e-3, 1)
     else: in_t = t
