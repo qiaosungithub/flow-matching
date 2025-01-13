@@ -16,6 +16,7 @@ def display_params(model: nn.Module) -> dict:
     return d
 
 def display_model(model: nn.Module) -> dict:
+    # legacy
     if not isinstance(model, nn.Module): return str(model)
     attrs = {}
     arrays = {}

@@ -77,6 +77,7 @@ class NNXTrainState(FlaxTrainState):
 
 
 def ct_ema_scales_schedules(step, config, steps_per_epoch):
+  raise NotImplementedError
   start_ema = float(config.ct.start_ema)
   start_scales = int(config.ct.start_scales)
   end_scales = int(config.ct.end_scales)
@@ -91,10 +92,10 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
 
 
 def edm_ema_scales_schedules(step, config, steps_per_epoch):
-  ema_halflife_kimg = 500  # from edm
+  ema_halflife_kimg = config.get("ema_kimg", 500)  # from edm
   ema_halflife_nimg = ema_halflife_kimg * 1000
 
-  ema_rampup_ratio = 0.05
+  ema_rampup_ratio = config.get("ema_rampup_ratio", 0.05)
   ema_halflife_nimg = jnp.minimum(ema_halflife_nimg, step * config.batch_size * ema_rampup_ratio)
 
   ema_beta = 0.5 ** (config.batch_size / jnp.maximum(ema_halflife_nimg, 1e-8))

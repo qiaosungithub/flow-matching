@@ -5,7 +5,7 @@ model:
     base_width: 128
     n_T: 18
     use_aug_label: False
-    dropout: 0.13 # EDM
+    dropout: 0.13 # EDM 0.13
     net_type: ncsnppedm
     average_loss: False # use average or sum for loss
 
@@ -34,6 +34,8 @@ fid:
 evalu:
     ema: True
     sample: False
+ema_kimg: 1000
+ema_rampup_ratio: 0.025
 batch_size: 512
 num_epochs: 4000
 learning_rate: 0.0005 # EDM 0.001
