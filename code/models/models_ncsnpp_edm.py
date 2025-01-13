@@ -98,19 +98,19 @@ class NCSNpp(nn.Module):
         assert self.progressive_input in ["none", "input_skip", "residual"]
         assert embedding_type in ["fourier", "positional"]
 
+        self.input_temb_dim = input_temb_dim = 2 * nf # NCSN++
         ################ time embedding layer ################
         if embedding_type == "fourier":
             # Gaussian Fourier features embeddings.
             self.temb_layer = layerspp.GaussianFourierProjection(
-                embedding_size=nf, scale=fourier_scale, rngs=rngs
+                embedding_size=input_temb_dim, scale=fourier_scale, rngs=rngs
             )
         elif embedding_type == "positional":
             # Sinusoidal positional embeddings.
-            self.temb_layer = partial(layers.get_timestep_embedding, embedding_dim=nf)
+            self.temb_layer = partial(layers.get_timestep_embedding, embedding_dim=input_temb_dim)
         else:
             raise NotImplementedError
         
-        self.input_temb_dim = input_temb_dim = nf
         #################### class label ############################
         if label_dim:
             self.map_label = nn.Linear(label_dim, input_temb_dim, kernel_init=default_initializer(), use_bias=False, rngs=rngs)
