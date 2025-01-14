@@ -405,7 +405,7 @@ class SimDDPM(nn.Module):
     self.rngs = rngs
     self.double_temb = double_temb
     self.embedding_type = embedding_type
-    if double_temb and (embedding_type is not "zero"):
+    if double_temb and (embedding_type != "zero"):
       for _ in range(10): print("Warning: double_temb is useful when embedding_type is zero")
     self.exp = exp
     self.disturb = disturb
