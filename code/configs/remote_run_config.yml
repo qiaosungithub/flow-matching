@@ -5,7 +5,7 @@ model:
     base_width: 128
     n_T: 18
     use_aug_label: False
-    dropout: 0.18 # EDM 0.13
+    dropout: 0.30 # EDM 0.13
     net_type: ncsnppedm
     average_loss: False # use average or sum for loss
 
