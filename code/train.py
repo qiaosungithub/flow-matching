@@ -54,7 +54,7 @@ from init_t import init_t_network
 NUM_CLASSES = 10
 
 def get_input_pipeline(dataset_config):
-    if dataset_config.name == 'imagenet2012:5.*.*':
+    if dataset_config.name in ['imagenet2012:5.*.*', 'imagenet']:
         import input_pipeline_imgnet as input_pipeline
         return input_pipeline
     elif dataset_config.name == 'cifar10':
@@ -732,7 +732,6 @@ def train_and_evaluate(
     for n_batch, batch in zip(range(steps_per_epoch), train_loader):
 
       step = epoch * steps_per_epoch + n_batch
-      assert config.aug.use_edm_aug == False, "we don't support edm aug for now"
       batch = prepare_batch_data(batch, config)
       # ep = step / steps_per_epoch
       ep = epoch + n_batch / steps_per_epoch # avoid jumping
@@ -858,7 +857,7 @@ def train_and_evaluate(
       log_for_0(f'Sample epoch {epoch}...')
       # sync batch statistics across replicas
       eval_state = sync_batch_stats(state)
-      eval_state = eval_state.replace(params=model_avg)
+      # eval_state = eval_state.replace(params=model_avg) # ZHH: we use this so we can debug faster
       vis, _ = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx)
       vis = make_grid_visualization(vis)
       vis = jax.device_get(vis) # np.ndarray
@@ -914,6 +913,8 @@ def train_and_evaluate(
 def just_evaluate(
     config: ml_collections.ConfigDict, workdir: str
   ):
+  log_for_0('We use just_evaluate!!')
+  raise DeprecationWarning("not modified yet")
   # assert the version of orbax-checkpoint is 0.4.4
   assert ocp.__version__ == '0.6.4', ValueError(f'orbax-checkpoint version must be 0.6.4, but got {ocp.__version__}')
   ########### Initialize ###########

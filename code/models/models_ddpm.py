@@ -17,63 +17,56 @@
 # See issue #620.
 # pytype: disable=wrong-arg-count
 
-from absl import logging
 from typing import Any, Sequence
 
-# from flax import linen as nn
 import flax.nnx as nn
 import jax
 import jax.numpy as jnp
 import numpy as np
-import optax
 from flax.training.train_state import TrainState as FlaxTrainState
 
 from functools import partial
 
 # from models.models_unet import ContextUnet
 from models.models_ncsnpp_edm import NCSNpp as NCSNppEDM
-# from models.models_ncsnpp import NCSNpp
-# import models.jcm.sde_lib as sde_lib
 from models.jcm.sde_lib import batch_mul
 from models.t.t import sqa_t_ver1
 
+def get_beta_schedule(beta_schedule, *, beta_start, beta_end, num_diffusion_timesteps):
+    """
+    DDIM util function
+    """
+    raise NotImplementedError
+    def sigmoid(x):
+        return 1 / (jnp.exp(-x) + 1)
 
-ModuleDef = Any
-
-# def get_beta_schedule(beta_schedule, *, beta_start, beta_end, num_diffusion_timesteps):
-#     """
-#     DDIM util function
-#     """
-#     def sigmoid(x):
-#         return 1 / (jnp.exp(-x) + 1)
-
-#     if beta_schedule == "quad":
-#         betas = (
-#             jnp.linspace(
-#                 beta_start ** 0.5,
-#                 beta_end ** 0.5,
-#                 num_diffusion_timesteps,
-#                 dtype=np.float64,
-#             )
-#             ** 2
-#         )
-#     elif beta_schedule == "linear":
-#         betas = jnp.linspace(
-#             beta_start, beta_end, num_diffusion_timesteps, dtype=np.float64
-#         )
-#     elif beta_schedule == "const":
-#         betas = beta_end * jnp.ones(num_diffusion_timesteps, dtype=np.float64)
-#     elif beta_schedule == "jsd":  # 1/T, 1/(T-1), 1/(T-2), ..., 1
-#         betas = 1.0 / jnp.linspace(
-#             num_diffusion_timesteps, 1, num_diffusion_timesteps, dtype=np.float64
-#         )
-#     elif beta_schedule == "sigmoid":
-#         betas = jnp.linspace(-6, 6, num_diffusion_timesteps)
-#         betas = sigmoid(betas) * (beta_end - beta_start) + beta_start
-#     else:
-#         raise NotImplementedError(beta_schedule)
-#     assert betas.shape == (num_diffusion_timesteps,)
-#     return betas
+    if beta_schedule == "quad":
+        betas = (
+            jnp.linspace(
+                beta_start ** 0.5,
+                beta_end ** 0.5,
+                num_diffusion_timesteps,
+                dtype=np.float64,
+            )
+            ** 2
+        )
+    elif beta_schedule == "linear":
+        betas = jnp.linspace(
+            beta_start, beta_end, num_diffusion_timesteps, dtype=np.float64
+        )
+    elif beta_schedule == "const":
+        betas = beta_end * jnp.ones(num_diffusion_timesteps, dtype=np.float64)
+    elif beta_schedule == "jsd":  # 1/T, 1/(T-1), 1/(T-2), ..., 1
+        betas = 1.0 / jnp.linspace(
+            num_diffusion_timesteps, 1, num_diffusion_timesteps, dtype=np.float64
+        )
+    elif beta_schedule == "sigmoid":
+        betas = jnp.linspace(-6, 6, num_diffusion_timesteps)
+        betas = sigmoid(betas) * (beta_end - beta_start) + beta_start
+    else:
+        raise NotImplementedError(beta_schedule)
+    assert betas.shape == (num_diffusion_timesteps,)
+    return betas
 
 
 class NNXTrainState(FlaxTrainState):
@@ -173,18 +166,23 @@ def generate(state: NNXTrainState, model, rng, n_sample, t_state=None):
 
   # prepare schedule
   num_steps = model.n_T
+
   # initialize noise
   x_shape = (n_sample, model.image_size, model.image_size, model.out_channels)
   rng_used, rng = jax.random.split(rng, 2)
   # sample from prior
   x_prior = jax.random.normal(rng_used, x_shape, dtype=model.dtype)
 
+
   if model.sampler in ['euler', 'heun', "adaptive"]:
+    
     x_i = x_prior
+
     def step_fn(i, inputs):
       x_i, rng = inputs
       rng_this_step = jax.random.fold_in(rng, i)
       rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
+
       merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
       x_i = merged_model.sample_one_step(x_i, rng_z, i, t_state=t_state)
       outputs = (x_i, rng)
@@ -373,11 +371,12 @@ class SimDDPM(nn.Module):
     use_aug_label = False,
     average_loss = False,
     eps=1e-3,
-    h_init=0.035,
     sampler='euler',
     ode_solver='jax',
     rngs=None,
     embedding_type='fourier',
+    double_temb=False,
+    rho=7.0,
     # beta_schedule='linear',
     # beta_start=1e-4,
     # beta_end=0.02,
@@ -401,11 +400,13 @@ class SimDDPM(nn.Module):
     self.use_aug_label = use_aug_label
     self.average_loss = average_loss
     self.eps = eps
-    self.h_init = h_init
     self.sampler = sampler
     self.ode_solver = ode_solver
     self.rngs = rngs
+    self.double_temb = double_temb
     self.embedding_type = embedding_type
+    if double_temb and (embedding_type is not "zero"):
+      for _ in range(10): print("Warning: double_temb is useful when embedding_type is zero")
     self.exp = exp
     self.disturb = disturb
     self.t_predictor = t_predictor
@@ -437,17 +438,19 @@ class SimDDPM(nn.Module):
         embedding_type=embedding_type,
         use_aug_label=self.use_aug_label,
         aug_label_dim=9,
-        rngs=self.rngs)
+        rngs=self.rngs,
+        double_temb=double_temb,
+      )
     else:
       raise ValueError(f'Unknown net type: {self.net_type}')
 
-    self.data_std = 0.5
-
-    # # declare two networks
-    # self.net = net_fn(name='net')
-    # self.net_ema = net_fn(name='net_ema')
-    # self.num_timesteps = num_diffusion_timesteps
     self.net = net_fn()
+
+    self.data_std = 0.5
+    self.t_min = 0.002
+    self.t_max = 80.0
+    self.rho = rho
+
     if self.exp == "joint":
       assert self.no_condition_t == False
       self.t_net = sqa_t_ver1(rngs=rngs)
@@ -460,13 +463,10 @@ class SimDDPM(nn.Module):
     return vis
 
   def compute_t(self, indices, scales):
-    t_max = 80
-    t_min = 0.002
-    rho = 7.0
-    t = t_max ** (1 / rho) + indices / (scales - 1) * (
-        t_min ** (1 / rho) - t_max ** (1 / rho)
+    t = self.t_max ** (1 / self.rho) + indices / (scales - 1) * (
+        self.t_min ** (1 / self.rho) - self.t_max ** (1 / self.rho)
     )
-    t = t**rho
+    t = t**self.rho
     return t
 
   def sample_one_step(self, x_i, rng, i, t_state=None, verbose=False):
@@ -637,6 +637,29 @@ class SimDDPM(nn.Module):
     x_next_ = x_hat + batch_mul(0.5 * d_cur + 0.5 * d_prime, t_next - t_hat)
 
     x_next = jnp.where(i < self.n_T - 1, x_next_, x_next)
+
+    # return x_next, denoised # for debug
+    return x_next
+
+  def sample_one_step_edm_euler(self, x_i, i, t_steps):
+    """
+    Euler with EDM t schedule
+    """
+
+    x_cur = x_i
+    t_cur = t_steps[i]
+    t_next = t_steps[i + 1]
+
+    t_hat = t_cur
+    x_hat = x_cur  # x_hat is always x_cur when gamma=0
+
+    t_hat = jnp.repeat(t_hat, x_hat.shape[0])
+    t_next = jnp.repeat(t_next, x_hat.shape[0])
+    
+    # Euler step.
+    denoised = self.forward_edm_denoising_function(x_hat, t_hat, train=False)
+    d_cur = batch_mul(x_hat - denoised, 1. / t_hat)
+    x_next = x_hat + batch_mul(d_cur, t_next - t_hat)
 
     # return x_next, denoised # for debug
     return x_next

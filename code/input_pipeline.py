@@ -143,12 +143,12 @@ def create_split(
         ]),
       )
     else:
-      raise NotImplementedError
+      # raise NotImplementedError
       ds = datasets.ImageFolder(
         os.path.join(dataset_cfg.root, split),
         transform=transforms.Compose([
           transforms.RandomResizedCrop(IMAGE_SIZE, interpolation=3),
-          transforms.RandomHorizontalFlip(),
+          transforms.RandomHorizontalFlip(p=0.5),
           transforms.ToTensor(),
           transforms.Normalize(mean=MEAN_RGB, std=STDDEV_RGB),
         ]),

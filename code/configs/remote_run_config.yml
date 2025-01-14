@@ -20,6 +20,7 @@ model:
     
     # embedding_type: positional # FM
     embedding_type: zero # no t
+    double_temb: True
 
     # # experiments
     # exp: disturb # option: disturb, predict, joint
