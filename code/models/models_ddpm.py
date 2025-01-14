@@ -99,8 +99,8 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
 
 
 def edm_ema_scales_schedules(step, config, steps_per_epoch):
-  # ema_halflife_kimg = 500  # from edm
-  ema_halflife_kimg = 50000  # log(0.5) / log(0.999999) * 128 / 1000 = 88722 kimg, from flow
+  ema_halflife_kimg = 500  # from edm
+  # ema_halflife_kimg = 50000  # log(0.5) / log(0.999999) * 128 / 1000 = 88722 kimg, from flow
   ema_halflife_nimg = ema_halflife_kimg * 1000
 
   ema_rampup_ratio = 0.05
@@ -687,14 +687,20 @@ class SimDDPM(nn.Module):
 
   def forward_flow_pred_function(self, z, t, augment_label=None, train: bool = True):  # EDM
 
-    if self.exp == "joint":
+    # calculate c_noise
+    if self.exp == "joint": # joint exp
       t = 1 - self.t_net.forward(z).squeeze(-1)
+    
     t_cond = jnp.log(t * 999)
-    if self.exp == "disturb" and train:
+
+    if self.exp == "disturb" and train: # disturb exp
       t_cond = t_cond + self.disturb * jax.random.normal(self.rngs.train(), t_cond.shape)
+
+    # calculate in_z
     if self.precond == "none": in_z = z
     elif self.precond == "edm1":
-      in_z = batch_mul(z, 1/jnp.sqrt(t**2 * self.data_std**2 + (1-t)**2))
+      in_z = batch_mul(z, 1 / jnp.sqrt(t**2 * self.data_std**2 + (1-t)**2))
+
     else: raise NotImplementedError
     u_pred = self.net(in_z, t_cond, augment_label=augment_label, train=train)
     return u_pred

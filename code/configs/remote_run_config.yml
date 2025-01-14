@@ -4,10 +4,10 @@ model:
     out_channels: 3
     base_width: 128
     n_T: 18
-    use_aug_label: False
-    dropout: 0.15 # FM 0.15
+    use_aug_label: True
+    dropout: 0.2 # FM 0.15
     net_type: ncsnppedm
-    average_loss: True # use average or sum for loss
+    average_loss: False # use average or sum for loss
 
     # sampler: euler
     # sampler: heun
@@ -33,7 +33,7 @@ dataset:
     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
     cache: True
 aug: 
-    use_edm_aug: False # NOTE: if you want to turn on this, also turn on model.use_aug_label
+    use_edm_aug: True # NOTE: if you want to turn on this, also turn on model.use_aug_label
 fid:
     eval_only: False
     fid_per_epoch: 50
@@ -43,9 +43,9 @@ evalu:
     ema: True
     sample: True
 t_schedule: kaiming # option: [uniform, lognorm, kaiming]
-batch_size: 2048
+batch_size: 512
 num_epochs: 2000
-learning_rate: 0.0008 # FM
+learning_rate: 0.001 # FM 0.0008
 lr_schedule: const
 weight_decay: 0.0
 optimizer: adamw
