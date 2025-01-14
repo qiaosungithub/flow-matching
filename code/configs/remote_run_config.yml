@@ -18,7 +18,7 @@ model:
     no_condition_t: True
     embedding_type: fourier
     # double_temb: True # legacy
-    precond: sqa1
+    precond: sqa2
 
     # # experiments
     # exp: disturb # option: disturb, predict, joint

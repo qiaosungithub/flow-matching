@@ -638,6 +638,11 @@ class SimDDPM(nn.Module):
       c_out = sigma / jnp.sqrt(sigma ** 2 + 1)
       c_in = 1 / jnp.sqrt(sigma ** 2 + 1)
       c_noise = jnp.zeros_like(sigma) if self.no_condition_t else jnp.arctan(sigma)
+    elif self.precond == "sqa2": # let sigma_data = 1
+      c_skip = 1 / (sigma ** 2 + 1)
+      c_out = sigma / jnp.sqrt(sigma ** 2 + 1)
+      c_in = 1 / jnp.sqrt(sigma ** 2 + 1)
+      c_noise = jnp.zeros_like(sigma) if self.no_condition_t else 0.25 * jnp.log(sigma)
     else:
       raise NotImplementedError
 
