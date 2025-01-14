@@ -16,18 +16,12 @@
 # pylint: skip-file
 
 from .jcm import layers, layerspp, normalization
-# from jcm import layers, layerspp, normalization
-# import flax.linen as nn
 import flax.nnx as nn
 import functools
 from functools import partial
 import jax.numpy as jnp
 import jax
 import numpy as np
-import ml_collections
-
-from typing import Any, Sequence
-
 
 from absl import logging
 
@@ -97,13 +91,15 @@ class NCSNpp(nn.Module):
         assert embedding_type in ["fourier", "positional", "zero"]
 
         ################ time embedding layer ################
-        if double_temb: # legacy, for restore checkpoint
-            assert embedding_type == "fourier"
+        if embedding_type == "fourier":
             self.input_temb_dim = input_temb_dim = 2 * nf
-            embedding_size = 2 * nf
-        else: 
-            embedding_size = nf
+        elif embedding_type == "positional":
+            for _ in range(10): print("Warning: NCSN++ uses fourier embedding! positional embedding is only for loading checkpoints")
             self.input_temb_dim = input_temb_dim = nf
+        elif embedding_type == "zero":
+            self.input_temb_dim = input_temb_dim = 2 * nf if double_temb else nf
+        embedding_size = input_temb_dim
+        # init embedding layer
         if embedding_type == "fourier":
             # Gaussian Fourier features embeddings.
             self.temb_layer = layerspp.GaussianFourierProjection(
@@ -113,13 +109,12 @@ class NCSNpp(nn.Module):
             # Sinusoidal positional embeddings.
             self.temb_layer = partial(layers.get_timestep_embedding, embedding_dim=embedding_size)
         elif embedding_type == "zero":
-            self.temb_layer = partial(layers.get_zero_embedding, embedding_dim=nf)
+            self.temb_layer = partial(layers.get_zero_embedding, embedding_dim=embedding_size)
         else:
             raise NotImplementedError
         #################### aug label ############################
         if use_aug_label:
             assert aug_label_dim is not None
-            assert embedding_type in ["positional", "zero"] # for FM, we do not use fourier
             self.augemb_layer = nn.Linear(aug_label_dim, input_temb_dim, kernel_init=default_initializer(), use_bias=False, rngs=rngs)
         #################### noise condition ############################
         self.cond_MLP = nn.Sequential(

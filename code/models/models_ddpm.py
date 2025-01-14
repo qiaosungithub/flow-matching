@@ -300,6 +300,8 @@ class SimDDPM(nn.Module):
     self.ode_solver = ode_solver
     self.rngs = rngs
     self.double_temb = double_temb
+    if double_temb and (embedding_type is not "zero"):
+      for _ in range(10): print("Warning: double_temb is useful when embedding_type is zero")
 
     if self.net_type == 'context':
       raise NotImplementedError
