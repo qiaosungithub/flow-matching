@@ -35,8 +35,8 @@ get_normalization = normalization.get_normalization
 default_initializer = layers.default_init
 
 
-class NCSNpp(nn.Module):
-    """NCSN++ model"""
+class DDPMpp(nn.Module):
+    """DDPM++ model"""
 
     def __init__(self,
         base_width = 128,
@@ -46,9 +46,9 @@ class NCSNpp(nn.Module):
         num_res_blocks = 4,
         attn_resolutions = (16,),
         dropout = 0.0,
-        fir_kernel = (1, 3, 3, 1),
+        fir_kernel = (1, 1),
         resblock_type = "biggan",
-        embedding_type = "fourier",
+        embedding_type = "positional", # DDPM++ uses positional for edm
         fourier_scale = 16.0,
         rngs = None,
         use_aug_label = False,
@@ -84,7 +84,7 @@ class NCSNpp(nn.Module):
         self.num_resolutions = num_resolutions = len(ch_mult)
 
         progressive = self.progressive = "none"
-        progressive_input = self.progressive_input = "residual"
+        progressive_input = self.progressive_input = "none"
         
         assert progressive in ["none", "output_skip", "residual"]
         assert self.progressive_input in ["none", "input_skip", "residual"]
@@ -92,15 +92,16 @@ class NCSNpp(nn.Module):
 
         ################ time embedding layer ################
         if embedding_type == "fourier":
+            raise NotADirectoryError("DDPM++ uses positional embedding")
             self.input_temb_dim = input_temb_dim = 2 * nf
         elif embedding_type == "positional":
-            for _ in range(10): print("Warning: NCSN++ uses fourier embedding! positional embedding is only for loading checkpoints")
             self.input_temb_dim = input_temb_dim = nf
         elif embedding_type == "zero":
             self.input_temb_dim = input_temb_dim = 2 * nf if double_temb else nf
         embedding_size = input_temb_dim
         # init embedding layer
         if embedding_type == "fourier":
+            raise NotADirectoryError("DDPM++ uses positional embedding")
             # Gaussian Fourier features embeddings.
             self.temb_layer = layerspp.GaussianFourierProjection(
                 embedding_size=embedding_size, scale=fourier_scale, rngs=rngs
@@ -226,6 +227,7 @@ class NCSNpp(nn.Module):
                 if self.progressive_input == "input_skip":
                     raise NotImplementedError
                 elif self.progressive_input == "residual":
+                    raise IsADirectoryError("DDPM++ uses none")
                     in_dim = nf * ch_mult[i_level-1] if i_level > 0 else out_channels
                     setattr(
                         self,
@@ -392,6 +394,7 @@ class NCSNpp(nn.Module):
                     h = combiner()(input_pyramid, h)
 
                 elif self.progressive_input == "residual":
+                    raise IsADirectoryError("DDPM++ uses none")
                     name = f'enc_{cur_size}x{cur_size}_aux_residual'
                     # print("input_pyramid.shape", input_pyramid.shape)
                     input_pyramid = getattr(self, name)(input_pyramid)

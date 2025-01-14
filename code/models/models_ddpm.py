@@ -29,6 +29,7 @@ from functools import partial
 
 # from models.models_unet import ContextUnet
 from models.models_ncsnpp_edm import NCSNpp as NCSNppEDM
+from models.models_ddpmpp_edm import DDPMpp as DDPMppEDM
 from models.jcm.sde_lib import batch_mul
 
 def get_beta_schedule(beta_schedule, *, beta_start, beta_end, num_diffusion_timesteps):
@@ -281,14 +282,10 @@ class SimDDPM(nn.Module):
     eps=1e-3,
     sampler='euler',
     ode_solver='jax',
-    no_condition_t=False,
     rngs=None,
+    embedding_type=None,
     double_temb=False,
     rho=7.0,
-    # beta_schedule='linear',
-    # beta_start=1e-4,
-    # beta_end=0.02,
-    # num_diffusion_timesteps=1000,
     **kwargs
   ):
     self.image_size = image_size
@@ -306,13 +303,10 @@ class SimDDPM(nn.Module):
     self.eps = eps
     self.sampler = sampler
     self.ode_solver = ode_solver
-    self.no_condition_t = no_condition_t
     self.rngs = rngs
     self.double_temb = double_temb
-    # self.beta_schedule = beta_schedule
-    # self.beta_start = beta_start
-    # self.beta_end = beta_end
-    # self.num_diffusion_timesteps = num_diffusion_timesteps
+    if double_temb and (embedding_type is not "zero"):
+      for _ in range(10): print("Warning: double_temb is useful when embedding_type is zero")
 
     if self.net_type == 'context':
       raise NotImplementedError
@@ -321,18 +315,27 @@ class SimDDPM(nn.Module):
         n_feat=self.base_width,
         n_classes=self.num_classes,
         image_size=self.image_size,)
-    elif self.net_type == 'ncsnpp':
-      raise NotImplementedError
-      net_fn = partial(NCSNpp,
+    elif self.net_type == 'ddpmppedm':
+      if embedding_type is None: embedding_type = 'positional'
+      net_fn = partial(DDPMppEDM,
         base_width=self.base_width,
         image_size=self.image_size,
-        dropout=self.dropout)
+        out_channels=self.out_channels,
+        dropout=self.dropout,
+        embedding_type=embedding_type,
+        use_aug_label=self.use_aug_label,
+        aug_label_dim=9,
+        rngs=self.rngs,
+        double_temb=double_temb,
+      )
     elif self.net_type == 'ncsnppedm':
+      if embedding_type is None: embedding_type = 'fourier'
       net_fn = partial(NCSNppEDM,
         base_width=self.base_width,
         image_size=self.image_size,
         out_channels=self.out_channels,
         dropout=self.dropout,
+        embedding_type=embedding_type,
         use_aug_label=self.use_aug_label,
         aug_label_dim=9,
         rngs=self.rngs,
@@ -341,7 +344,6 @@ class SimDDPM(nn.Module):
     else:
       raise ValueError(f'Unknown net type: {self.net_type}')
 
-    # self.num_timesteps = num_diffusion_timesteps
     self.net = net_fn()
 
     self.data_std = 0.5
@@ -623,7 +625,7 @@ class SimDDPM(nn.Module):
 
     c_in = 1 / jnp.sqrt(sigma ** 2 + self.data_std ** 2)
     # c_in = 1 / jnp.sqrt(sigma ** 2 + 1) # Kaiming shenyi
-    c_noise = jnp.zeros_like(sigma) if self.no_condition_t else 0.25 * jnp.log(sigma)
+    c_noise = 0.25 * jnp.log(sigma)
 
     # forward network
     in_x = batch_mul(x, c_in)

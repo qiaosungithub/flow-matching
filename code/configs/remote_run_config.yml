@@ -6,7 +6,7 @@ model:
     n_T: 18
     use_aug_label: False
     dropout: 0.18 # EDM 0.13
-    net_type: ncsnppedm
+    net_type: ddpmppedm # options: ddpmppedm, ncsnppedm
     average_loss: False # use average or sum for loss
 
     # sampler: edm-euler
@@ -15,9 +15,8 @@ model:
 
     # rho: 7
     
-    no_condition_t: True
-    embedding_type: fourier
-    # double_temb: True # legacy
+    # embedding_type: fourier
+    # embedding_type: zero # no time condition
 dataset:
     name: cifar10
     root: CIFAR # pytorch
