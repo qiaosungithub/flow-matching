@@ -132,7 +132,15 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
   def loss_fn(params_to_train):
     """loss function used for training."""
     
-    outputs = state.apply_fn(state.graphdef, params_to_train, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'], batch['label'], batch['augment_label'], noise_batch, t_batch)
+    outputs = state.apply_fn(
+      state.graphdef, params_to_train, state.rng_states, state.batch_stats, state.useless_variable_state, 
+      is_training=True, 
+      images=batch['image'], 
+      labels=batch['label'], 
+      augment_labels=batch['augment_label'], 
+      noise_batch=noise_batch, 
+      t_batch=t_batch
+    )
     loss, new_batch_stats, new_rng_states, dict_losses, images = outputs
 
     return loss, (new_batch_stats, new_rng_states, dict_losses, images)
@@ -378,6 +386,7 @@ def create_train_state(
     if is_training:
       merged_model.train()
     else:
+      raise NotImplementedError
       merged_model.eval()
     del params2, rng_states2, batch_stats2, useless_
     loss_train, dict_losses, images = merged_model.forward(images, labels, augment_labels, noise_batch, t_batch)

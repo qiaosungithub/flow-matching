@@ -267,6 +267,7 @@ class SimDDPM(nn.Module):
     rngs=None,
     cond=False, # class conditional
     label_dropout=0,
+    guidance=0,
     # beta_schedule='linear',
     # beta_start=1e-4,
     # beta_end=0.02,
@@ -293,6 +294,7 @@ class SimDDPM(nn.Module):
     self.cond = cond
     self.label_dropout = label_dropout
     self.label_dim = num_classes if cond else 0
+    self.guidance = guidance
     # self.beta_schedule = beta_schedule
     # self.beta_start = beta_start
     # self.beta_end = beta_end
@@ -566,10 +568,10 @@ class SimDDPM(nn.Module):
     """
     if self.label_dim == 0: labels = None
     elif labels is None:
-      labels = jnp.zeros([1, self.label_dim], device=x.device) 
+      labels_in = jnp.zeros((1, self.label_dim)) 
     else:
       assert labels.shape[1] == self.label_dim
-      labels = jnp.asarray(labels, dtype=jnp.float32).reshape(-1, self.label_dim)
+      labels_in = jnp.asarray(labels, dtype=jnp.float32).reshape(-1, self.label_dim)
 
     # # use FM network to denoise
     # c_in = 1 / (sigma + 1)
@@ -592,7 +594,11 @@ class SimDDPM(nn.Module):
     in_x = batch_mul(x, c_in)
     c_noise = c_noise.reshape(c_noise.shape[0])
 
-    F_x = self.net(in_x, c_noise, augment_label=augment_label, train=train, labels=labels)
+    F_x = self.net(in_x, c_noise, augment_label=augment_label, train=train, labels=labels_in)
+
+    if (not train) and (labels is not None) and (self.guidance > 0): # add guidance
+      uncond_F_x = self.net(in_x, c_noise, augment_label=augment_label, train=train, labels=jnp.zeros((1, self.label_dim)))
+      F_x = (1 + self.guidance) * F_x - self.guidance * uncond_F_x
 
     D_x = batch_mul(x, c_skip) + batch_mul(F_x, c_out)
     return D_x
@@ -620,7 +626,7 @@ class SimDDPM(nn.Module):
     weight = (sigma ** 2 + self.data_std ** 2) / (sigma * self.data_std) ** 2
 
     xn = x + batch_mul(noise_batch, sigma)
-    D_xn = self.forward_edm_denoising_function(xn, sigma, augment_label=augment_label, labels=labels)
+    D_xn = self.forward_edm_denoising_function(xn, sigma, augment_label=augment_label, labels=labels, train=True)
 
     # loss
     loss = (D_xn - gt)**2
@@ -646,6 +652,7 @@ class SimDDPM(nn.Module):
     return loss_train, dict_losses, images
 
   def __call__(self, imgs, labels, train: bool = False):
+    raise DeprecationWarning
     # initialization only
     t = jnp.ones((imgs.shape[0],))
     augment_label = jnp.ones((imgs.shape[0], 9)) if self.use_aug_label else None  # fixed augment_dim # TODO: what is this?

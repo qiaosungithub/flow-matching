@@ -20,6 +20,7 @@ model:
 
     cond: True
     label_dropout: 0.1
+    guidance: 0.1
 dataset:
     name: cifar10
     root: CIFAR # pytorch
