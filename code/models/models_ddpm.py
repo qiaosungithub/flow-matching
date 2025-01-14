@@ -671,7 +671,7 @@ class SimDDPM(nn.Module):
     sigma = jnp.exp(t_batch * self.P_std + self.P_mean)
     if self.precond in ["edm", "kaiming"]:
       weight = (sigma ** 2 + self.data_std ** 2) / (sigma * self.data_std) ** 2
-    elif self.precond == "sqa1":
+    elif self.precond in ["sqa1", "sqa2"]:
       weight = (4 * sigma ** 2 + 1) / (sigma ** 2) # more weight on noise
     else:
       raise NotImplementedError
