@@ -285,10 +285,6 @@ class SimDDPM(nn.Module):
     double_temb=False,
     rho=7.0,
     precond="edm",
-    # beta_schedule='linear',
-    # beta_start=1e-4,
-    # beta_end=0.02,
-    # num_diffusion_timesteps=1000,
     exp=None,
     disturb=None, 
     **kwargs
@@ -312,11 +308,7 @@ class SimDDPM(nn.Module):
     self.rngs = rngs
     self.double_temb = double_temb
     self.precond = precond
-    assert precond in ["edm", "kaiming", "sqa1"]
-    # self.beta_schedule = beta_schedule
-    # self.beta_start = beta_start
-    # self.beta_end = beta_end
-    # self.num_diffusion_timesteps = num_diffusion_timesteps
+    # assert precond in ["edm", "kaiming", "sqa1"]
     self.exp = exp
     self.disturb = disturb
 
@@ -673,7 +665,6 @@ class SimDDPM(nn.Module):
 
     assert noise_batch.shape == x.shape
     assert t_batch.shape == (bz,)
-    # t_batch = t_batch.reshape(bz, 1, 1, 1)
 
     # -----------------------------------------------------------------
     # sample t step
