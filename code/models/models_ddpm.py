@@ -196,9 +196,6 @@ def generate(state: NNXTrainState, model, rng, n_sample):
     t_steps = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
     x_i = x_prior * t_steps[0]
 
-    # import jax.random as random
-    # x = random.normal(rng, x_shape, dtype=model.dtype)
-
     def step_fn(i, inputs):
       x_i, rng = inputs
       rng_this_step = jax.random.fold_in(rng, i)
@@ -230,9 +227,6 @@ def generate(state: NNXTrainState, model, rng, n_sample):
     t_steps = model.compute_t(jnp.arange(num_steps), num_steps)
     t_steps = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
     x_i = x_prior * t_steps[0]
-
-    # import jax.random as random
-    # x = random.normal(rng, x_shape, dtype=model.dtype)
 
     def step_fn(i, inputs):
       x_i, rng = inputs
@@ -300,6 +294,7 @@ class SimDDPM(nn.Module):
     self.ode_solver = ode_solver
     self.rngs = rngs
     self.double_temb = double_temb
+    self.embedding_type = embedding_type
     if double_temb and (embedding_type is not "zero"):
       for _ in range(10): print("Warning: double_temb is useful when embedding_type is zero")
 
@@ -331,7 +326,6 @@ class SimDDPM(nn.Module):
     else:
       raise ValueError(f'Unknown net type: {self.net_type}')
 
-    # self.num_timesteps = num_diffusion_timesteps
     self.net = net_fn()
 
     self.data_std = 0.5
@@ -621,7 +615,7 @@ class SimDDPM(nn.Module):
 
     # create v target
     v_target = x_data - x_prior
-    # v_target = jnp.ones_like(x_data)  # dummy
+    # v_target = jnp.ones_like(x_data) # debug
 
     # create z (as the network input)
     z = batch_mul(t, x_data) + batch_mul(1 - t, x_prior)
