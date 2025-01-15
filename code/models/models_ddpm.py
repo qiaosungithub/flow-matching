@@ -619,25 +619,19 @@ class SimDDPM(nn.Module):
       c_skip = self.data_std ** 2 / (sigma ** 2 + self.data_std ** 2)
       c_out = sigma * self.data_std / jnp.sqrt(sigma ** 2 + self.data_std ** 2)
       c_in = 1 / jnp.sqrt(sigma ** 2 + self.data_std ** 2)
-      c_noise = jnp.zeros_like(sigma) if self.no_condition_t else 0.25 * jnp.log(sigma)
     elif self.precond == "kaiming":
       c_skip = self.data_std ** 2 / (sigma ** 2 + self.data_std ** 2)
       c_out = jnp.ones_like(sigma) # Kaiming shenyi
       c_in = 1 / jnp.sqrt(sigma ** 2 + 1) # Kaiming shenyi
-      c_noise = jnp.zeros_like(sigma) if self.no_condition_t else 0.25 * jnp.log(sigma)
-    elif self.precond == "sqa1": # let sigma_data = 1
+    elif self.precond in ["sqa1", "sqa2", "sqa3"]: # let sigma_data = 1
       c_skip = 1 / (sigma ** 2 + 1)
       c_out = sigma / jnp.sqrt(sigma ** 2 + 1)
       c_in = 1 / jnp.sqrt(sigma ** 2 + 1)
-      c_noise = jnp.zeros_like(sigma) if self.no_condition_t else jnp.arctan(sigma)
-    elif self.precond == "sqa2": # let sigma_data = 1
-      c_skip = 1 / (sigma ** 2 + 1)
-      c_out = sigma / jnp.sqrt(sigma ** 2 + 1)
-      c_in = 1 / jnp.sqrt(sigma ** 2 + 1)
-      c_noise = jnp.zeros_like(sigma) if self.no_condition_t else 0.25 * jnp.log(sigma)
     else:
       raise NotImplementedError
 
+    c_noise = jnp.zeros_like(sigma) if self.no_condition_t else 0.25 * jnp.log(sigma)
+    
     # forward network
     in_x = batch_mul(x, c_in)
     c_noise = c_noise.reshape(c_noise.shape[0])
@@ -673,6 +667,8 @@ class SimDDPM(nn.Module):
       weight = (sigma ** 2 + self.data_std ** 2) / (sigma * self.data_std) ** 2
     elif self.precond in ["sqa1", "sqa2"]:
       weight = (4 * sigma ** 2 + 1) / (sigma ** 2) # more weight on noise
+    elif self.precond in ['sqa3']:
+      weight = (sigma ** 2 + 1) / (sigma ** 2)
     else:
       raise NotImplementedError
 
