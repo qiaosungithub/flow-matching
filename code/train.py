@@ -914,7 +914,6 @@ def just_evaluate(
     config: ml_collections.ConfigDict, workdir: str
   ):
   log_for_0('We use just_evaluate!!')
-  raise DeprecationWarning("not modified yet")
   # assert the version of orbax-checkpoint is 0.4.4
   assert ocp.__version__ == '0.6.4', ValueError(f'orbax-checkpoint version must be 0.6.4, but got {ocp.__version__}')
   ########### Initialize ###########
@@ -951,8 +950,7 @@ def just_evaluate(
     raise ValueError('Checkpoint path {} does not exist'.format(config.load_from))
   state = restore_checkpoint(model_init_fn, state, config.load_from, model_config, ema=config.evalu.ema) # NOTE: whether to use the ema model
   state_step = int(state.step)
-  # t_state = init_t_network(debug=True) if config.model.sampler == "adaptive" else None
-  # state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
+  state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
 
   
   # ### debug sampler here, please delete the above line
@@ -1071,22 +1069,27 @@ def just_evaluate(
   log_for_0(f'fixed_sample_idx: {vis_sample_idx}')
   log_for_0('Eval...')
   ########### Sampling ###########
-  # eval_state = sync_batch_stats(state)
+  eval_state = sync_batch_stats(state)
   if config.evalu.sample: # if we want to sample
     log_for_0(f'Sample...')
-    vis, _, all_t = sample_step_verbose(state, 0, model, random.PRNGKey(0), 16, t_state=t_state)
-    print("vis.shape: ", vis.shape)
-    print("all_t.shape: ", all_t.shape)
-    all_t = jnp.mean(all_t, axis=0)
-    if config.wandb and index == 0:
-      for ep in range(1, all_t.shape[0]):
-        wandb.log({
-          't': all_t[ep],
-          # 'iter': ep
-          })
-    # print("vis shape: ", vis.shape)
-    vis = vis[:,-1] # only take the last one
-    vis = make_grid_visualization(vis, grid=4)
+    # sync batch statistics across replicas
+    # eval_state = eval_state.replace(params=model_avg)
+    vis, nfe = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx)
+    vis = make_grid_visualization(vis)
+    ##### for t state
+    # vis, _, all_t = sample_step_verbose(state, 0, model, random.PRNGKey(0), 16, t_state=t_state)
+    # print("vis.shape: ", vis.shape)
+    # print("all_t.shape: ", all_t.shape)
+    # all_t = jnp.mean(all_t, axis=0)
+    # if config.wandb and index == 0:
+    #   for ep in range(1, all_t.shape[0]):
+    #     wandb.log({
+    #       't': all_t[ep],
+    #       # 'iter': ep
+    #       })
+    # # print("vis shape: ", vis.shape)
+    # vis = vis[:,-1] # only take the last one
+    # vis = make_grid_visualization(vis, grid=4)
     vis = jax.device_get(vis) # np.ndarray
     vis = vis[0]
     # print(vis.shape)
@@ -1094,11 +1097,9 @@ def just_evaluate(
     canvas = Image.fromarray(vis)
     if config.wandb and index == 0:
       wandb.log({'gen': wandb.Image(canvas)})
-    # log_for_0('Sample NFE: {}'.format(nfe))
-    # assert False, 'image saved!: {}'.format(nfe)
+    log_for_0('Sample NFE: {}'.format(nfe))
     # sample_step(eval_state, image_size, sampling_config, epoch, use_wandb=config.wandb)
   ########### FID ###########
-  eval_state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
   if config.fid.on_use:
 
     samples_all, nfe = sample_util.generate_samples_for_fid_eval(eval_state, workdir, config, p_sample_step, run_p_sample_step)

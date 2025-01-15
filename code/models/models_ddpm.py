@@ -248,6 +248,7 @@ def generate(state: NNXTrainState, model, rng, n_sample, t_state=None):
 
   elif model.sampler in ['edm-euler', 'edm-heun']:
     t_steps = model.compute_t_FM(jnp.arange(num_steps), num_steps)
+    t_steps = t_steps.at[0].set(0.0) # km shenyi, wo bu xin
     t_steps = jnp.concatenate([t_steps, jnp.ones((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
     x_i = x_prior
 

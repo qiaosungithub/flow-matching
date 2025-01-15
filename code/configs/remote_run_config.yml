@@ -11,12 +11,12 @@ model:
 
     # sampler: euler
     # sampler: heun
-    # sampler: edm
+    sampler: edm
     # sampler: edm-sde
     # sampler: ban
     # sampler: adaptive
-    sampler: edm-heun
-    
+    # sampler: edm-heun
+
     ode_solver: jax
     # ode_solver: O # rk45
     
