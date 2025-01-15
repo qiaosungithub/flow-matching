@@ -27,6 +27,8 @@ FM with no t baseline: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/2024121
 
 DDIM: `/kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241209_004559_gihhxu_kmh-tpuvm-v2-32-1__b_lr_ep_eval/checkpoint_194000`
 
+FM Kaiming shenyi t schedule: `/kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20250114_134602_l0qu1c_kmh-tpuvm-v2-32-1__b_lr_ep_eval/checkpoint_97000`
+
 ## datasets
 
 We now use pytorch dataset. To use tfds, switch to the `FM-nnx-tfds` branch.
