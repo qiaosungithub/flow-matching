@@ -14,12 +14,12 @@ model:
     sampler: edm
     # sampler: edm-sde
     
-    no_condition_t: False
+    no_condition_t: True
     embedding_type: fourier
 
     cond: True
-    label_dropout: 0.1
-    guidance: 0.1
+    label_dropout: 0.0
+    # guidance: 0.1
 dataset:
     name: cifar10
     root: CIFAR # pytorch
