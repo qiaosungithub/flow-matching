@@ -132,7 +132,15 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
   def loss_fn(params_to_train):
     """loss function used for training."""
     
-    outputs = state.apply_fn(state.graphdef, params_to_train, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'], batch['label'], batch['augment_label'], noise_batch, t_batch)
+    outputs = state.apply_fn(
+      state.graphdef, params_to_train, state.rng_states, state.batch_stats, state.useless_variable_state, 
+      is_training=True, 
+      images=batch['image'], 
+      labels=batch['label'], 
+      augment_labels=batch['augment_label'], 
+      noise_batch=noise_batch, 
+      t_batch=t_batch
+    )
     loss, new_batch_stats, new_rng_states, dict_losses, images = outputs
 
     return loss, (new_batch_stats, new_rng_states, dict_losses, images)
@@ -380,6 +388,7 @@ def create_train_state(
     if is_training:
       merged_model.train()
     else:
+      raise NotImplementedError
       merged_model.eval()
     del params2, rng_states2, batch_stats2, useless_
     loss_train, dict_losses, images = merged_model.forward(images, labels, augment_labels, noise_batch, t_batch)
@@ -518,8 +527,6 @@ def train_and_evaluate(
   # log_for_0(f"save directory: {sampling_config.save_dir}")
 
   ########### Create DataLoaders ###########
-
-
   # input_pipeline = get_input_pipeline(dataset_config)
   # input_type = tf.bfloat16 if config.half_precision else tf.float32
   # dataset_builder = tfds.builder(dataset_config.name)
@@ -733,6 +740,7 @@ def train_and_evaluate(
       # continue
 
       state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute, model_config)
+      
       if epoch == epoch_offset and n_batch == 0:
         log_for_0('p_train_step compiled in {}s'.format(time.time() - train_metrics_last_t))
         log_for_0('Initial compilation completed. Reset timer.')
@@ -860,6 +868,7 @@ def just_evaluate(
     config: ml_collections.ConfigDict, workdir: str
   ):
   log_for_0('We use just_evaluate!!')
+  raise EOFError('写了')
   # assert the version of orbax-checkpoint is 0.4.4
   assert ocp.__version__ == '0.6.4', ValueError(f'orbax-checkpoint version must be 0.6.4, but got {ocp.__version__}')
   ########### Initialize ###########
