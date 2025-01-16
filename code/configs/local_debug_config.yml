@@ -2,8 +2,8 @@
 model:
     image_size: 32
     out_channels: 3
-    base_width: 8
-    n_T: 5
+    base_width: 128
+    n_T: 18
     use_aug_label: True
     dropout: 0.15 # FM
     net_type: ncsnppedm
@@ -11,18 +11,20 @@ model:
 
     # sampler: euler
     # sampler: heun
-    # sampler: edm
+    sampler: edm
     # sampler: edm-sde
     # sampler: DDIM
     # sampler: ban
     # sampler: adaptive
-    sampler: heun1
+    # sampler: heun1
     ode_solver: jax
     # ode_solver: scipy # rk45
     
     # embedding_type: positional # FM
     embedding_type: zero # no t
     double_temb: True
+    
+    precond: none
     sampling_schedule: quad
 
     # # experiments
@@ -59,4 +61,4 @@ visualize_per_epoch: 1
 eval_per_epoch: 80
 checkpoint_per_epoch: 500
 wandb: False
-# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241211_150928_85yb5q_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/checkpoint_48000
+load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20250114_134602_l0qu1c_kmh-tpuvm-v2-32-1__b_lr_ep_eval/checkpoint_97000

@@ -954,10 +954,10 @@ def just_evaluate(
 
   
   # ### debug sampler here, please delete the above line
-  # num_steps = 100
+  # num_steps = 18
   # # t = model.compute_t(jnp.arange(num_steps), num_steps)
   # # vis, denoised = generate(state, model, random.PRNGKey(0), 1) # (num_steps, 32, 32, 3)
-  # vis, all_t = generate(state, model, random.PRNGKey(0), 1, t_state=t_state) # (num_steps, 32, 32, 3)
+  # vis, all_t = generate(state, model, random.PRNGKey(0), 1) # (num_steps, 32, 32, 3)
   # print("vis.shape: ", vis.shape)
   # vis = vis.reshape(num_steps, 32, 32, 3)
   # # denoised = denoised.reshape(num_steps, 32, 32, 3)

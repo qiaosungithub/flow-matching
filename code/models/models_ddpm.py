@@ -195,7 +195,7 @@ def generate(state: NNXTrainState, model, rng, n_sample, t_state=None):
   
   elif model.sampler in ['edm', 'edm-sde']:
     t_steps = model.compute_t(jnp.arange(num_steps), num_steps)
-    t_steps = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
+    # t_steps = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
     x_i = x_prior * t_steps[0]
     def step_fn(i, inputs):
       x_i, rng = inputs
@@ -209,6 +209,13 @@ def generate(state: NNXTrainState, model, rng, n_sample, t_state=None):
       # return outputs, denoised # for debug
     outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
     images = outputs[0]
+    # print(f"norm of x_max: {jnp.mean(x_i ** 2)}")
+    # for i in range(num_steps):
+    #   D = step_fn(i, (x_i, rng))
+    #   x_i = D[0]
+    #   rng = D[1]
+    #   print(f"step {i} done")
+    #   print(f"norm of x_i: {jnp.mean(x_i ** 2)}")
     return images
   
   elif model.sampler == "ban": # sqa experiment
@@ -251,7 +258,7 @@ def generate(state: NNXTrainState, model, rng, n_sample, t_state=None):
 
   elif model.sampler in ['euler1', 'heun1']:
     t_steps = model.compute_t(jnp.arange(num_steps), num_steps)
-    t_steps = jnp.concatenate([t_steps, jnp.ones((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
+    # t_steps = jnp.concatenate([t_steps, jnp.ones((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
     x_i = x_prior
 
     def step_fn(i, inputs):
@@ -507,11 +514,12 @@ class SimDDPM(nn.Module):
       )
       t = t**self.rho
       t = 1 / (1 + t)
+      t = jnp.concatenate([t, jnp.ones((1,), dtype=self.dtype)], axis=0)
     else: raise NotImplementedError
 
     if self.sampler in ['edm', 'edm-sde']:
       # big to small
-      t = 1 / t - 1
+      t = 1 / jnp.maximum(t, 0.002) - 1
     else: 
       t = t.at[0].set(0.0) # km shenyi, wo bu xin
       t = t * (1 - self.eps) + self.eps
@@ -549,6 +557,8 @@ class SimDDPM(nn.Module):
       x_next = self.sample_one_step_edm_sde(x_i, rng, i, t_steps)
       # x_next, denoised = self.sample_one_step_edm_sde(x_i, rng, i, t_steps) # for debug
     else: raise NotImplementedError
+
+    return x_next
     
   def sample_one_step_new(self, x_i, rng, i, t_steps):
 
