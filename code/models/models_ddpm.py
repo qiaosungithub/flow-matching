@@ -17,28 +17,19 @@
 # See issue #620.
 # pytype: disable=wrong-arg-count
 
-from absl import logging
 from typing import Any, Sequence
 
-# from flax import linen as nn
 import flax.nnx as nn
 import jax
 import jax.numpy as jnp
 import numpy as np
-import optax
 from flax.training.train_state import TrainState as FlaxTrainState
 
 from functools import partial
 
 # from models.models_unet import ContextUnet
 from models.models_ncsnpp_edm import NCSNpp as NCSNppEDM
-# from models.models_ncsnpp import NCSNpp
-# import models.jcm.sde_lib as sde_lib
 from models.jcm.sde_lib import batch_mul
-
-
-
-ModuleDef = Any
 
 def get_beta_schedule(beta_schedule, *, beta_start, beta_end, num_diffusion_timesteps):
     """
@@ -140,7 +131,8 @@ def generate(state: NNXTrainState, model, rng, n_sample, class_idx=None):
     labels[:, class_idx] = 1
 
   if model.sampler in ['euler', 'heun']:
-      
+    raise NotImplementedError
+
     x_i = x_prior
 
     def step_fn(i, inputs):
@@ -161,9 +153,6 @@ def generate(state: NNXTrainState, model, rng, n_sample, class_idx=None):
     t_steps = model.compute_t(jnp.arange(num_steps), num_steps)
     t_steps = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
     x_i = x_prior * t_steps[0]
-
-    # import jax.random as random
-    # x = random.normal(rng, x_shape, dtype=model.dtype)
 
     def step_fn(i, inputs):
       x_i, rng = inputs
@@ -295,10 +284,6 @@ class SimDDPM(nn.Module):
     self.label_dropout = label_dropout
     self.label_dim = num_classes if cond else 0
     self.guidance = guidance
-    # self.beta_schedule = beta_schedule
-    # self.beta_start = beta_start
-    # self.beta_end = beta_end
-    # self.num_diffusion_timesteps = num_diffusion_timesteps
 
     if self.net_type == 'context':
       raise NotImplementedError
@@ -328,7 +313,6 @@ class SimDDPM(nn.Module):
     else:
       raise ValueError(f'Unknown net type: {self.net_type}')
 
-    # self.num_timesteps = num_diffusion_timesteps
     self.net = net_fn()
 
     self.data_std = 0.5
@@ -359,12 +343,12 @@ class SimDDPM(nn.Module):
     a = jnp.take(alpha, t + 1).reshape(-1, 1, 1, 1)
     return a
 
-  def sample_one_step(self, x_i, rng, i):
+  def sample_one_step(self, x_i, rng, i, labels=None):
 
     if self.sampler == 'euler':
-      x_next = self.sample_one_step_euler(x_i, i) 
+      x_next = self.sample_one_step_euler(x_i, i, labels=labels) 
     elif self.sampler == 'heun':
-      x_next = self.sample_one_step_heun(x_i, i)
+      x_next = self.sample_one_step_heun(x_i, i, labels=labels)
     else:
       raise NotImplementedError
 
