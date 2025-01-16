@@ -3,7 +3,7 @@ model:
     image_size: 32
     out_channels: 3
     base_width: 128
-    n_T: 18
+    n_T: 50
     use_aug_label: True
     dropout: 0.2 # FM 0.15
     net_type: ncsnppedm

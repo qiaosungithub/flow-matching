@@ -957,13 +957,13 @@ def just_evaluate(
   # num_steps = 18
   # # t = model.compute_t(jnp.arange(num_steps), num_steps)
   # # vis, denoised = generate(state, model, random.PRNGKey(0), 1) # (num_steps, 32, 32, 3)
-  # vis, all_t = generate(state, model, random.PRNGKey(0), 1) # (num_steps, 32, 32, 3)
+  # vis, denoised = generate(state, model, random.PRNGKey(4), 1) # (num_steps, 32, 32, 3)
   # print("vis.shape: ", vis.shape)
   # vis = vis.reshape(num_steps, 32, 32, 3)
-  # # denoised = denoised.reshape(num_steps, 32, 32, 3)
-  # all_t = all_t.reshape(num_steps,)
+  # denoised = denoised.reshape(num_steps, 32, 32, 3)
+  # # all_t = all_t.reshape(num_steps,)
   # assert vis.shape == (num_steps, 32, 32, 3)
-  # # assert denoised.shape == (num_steps, 32, 32, 3)
+  # assert denoised.shape == (num_steps, 32, 32, 3)
   # from utils.vis_util import float_to_uint8
   # for ep in range(num_steps):
   #   img = vis[ep]
@@ -971,9 +971,9 @@ def just_evaluate(
   #   min = np.min(img)
   #   mean = np.sqrt(np.mean(img**2))
   #   img = float_to_uint8(img)
-  #   time = all_t[ep]
-  #   # denoised_img = denoised[ep]
-  #   # denoised_img = float_to_uint8(denoised_img)
+  #   # time = all_t[ep]
+  #   denoised_img = denoised[ep]
+  #   denoised_img = float_to_uint8(denoised_img)
   #   if index == 0 and config.wandb:
   #     wandb.log({
   #       'ep': ep,
@@ -981,12 +981,11 @@ def just_evaluate(
   #       'min': min,
   #       'mean': mean,
   #       'img': wandb.Image(img),
-  #       't': time,
-  #       # 'denoised': wandb.Image(denoised_img),
+  #       # 't': time,
+  #       'denoised': wandb.Image(denoised_img),
   #       # 'noise_level': t[ep]
   #       })
-    
-
+  
   # exit("6.7900")
 
   ########### FID ###########

@@ -209,14 +209,22 @@ def generate(state: NNXTrainState, model, rng, n_sample, t_state=None):
       # return outputs, denoised # for debug
     outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
     images = outputs[0]
-    # print(f"norm of x_max: {jnp.mean(x_i ** 2)}")
+    return images
+    # ### debug
+    # all_x = []
+    # denoised = []
+    # # all_t = []
     # for i in range(num_steps):
-    #   D = step_fn(i, (x_i, rng))
+    #   D, d = step_fn(i, (x_i, rng))
     #   x_i = D[0]
     #   rng = D[1]
-    #   print(f"step {i} done")
-    #   print(f"norm of x_i: {jnp.mean(x_i ** 2)}")
-    return images
+    #   # all_t.append(t)
+    #   all_x.append(x_i)
+    #   denoised.append(d)
+    # images = jnp.stack(all_x, axis=1)
+    # denoised = jnp.stack(denoised, axis=1)
+    # # all_t = jnp.stack(all_t, axis=1)
+    # return images, denoised
   
   elif model.sampler == "ban": # sqa experiment
     raise 老东西Error
@@ -558,6 +566,7 @@ class SimDDPM(nn.Module):
       # x_next, denoised = self.sample_one_step_edm_sde(x_i, rng, i, t_steps) # for debug
     else: raise NotImplementedError
 
+    # return x_next, denoised # for debug
     return x_next
     
   def sample_one_step_new(self, x_i, rng, i, t_steps):
