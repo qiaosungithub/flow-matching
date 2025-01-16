@@ -11,11 +11,11 @@ model:
 
     # sampler: euler
     # sampler: heun
-    sampler: edm
+    # sampler: edm
     # sampler: edm-sde
     # sampler: ban
     # sampler: adaptive
-    # sampler: edm-heun
+    sampler: heun1
 
     ode_solver: jax
     # ode_solver: O # rk45
@@ -29,6 +29,7 @@ model:
     # disturb: 0.02
 
     precond: none # option: [none, edm1]
+    sampling_schedule: quad
 dataset:
     name: cifar10
     root: CIFAR # pytorch

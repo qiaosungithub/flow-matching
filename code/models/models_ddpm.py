@@ -17,7 +17,7 @@
 # See issue #620.
 # pytype: disable=wrong-arg-count
 
-from typing import Any, Sequence
+from typing import Any
 
 import flax.nnx as nn
 import jax
@@ -31,6 +31,8 @@ from functools import partial
 from models.models_ncsnpp_edm import NCSNpp as NCSNppEDM
 from models.jcm.sde_lib import batch_mul
 from models.t.t import sqa_t_ver1
+
+老东西Error = ConnectionError
 
 def get_beta_schedule(beta_schedule, *, beta_start, beta_end, num_diffusion_timesteps):
     """
@@ -210,6 +212,7 @@ def generate(state: NNXTrainState, model, rng, n_sample, t_state=None):
     return images
   
   elif model.sampler == "ban": # sqa experiment
+    raise 老东西Error
     # here num_steps mean we solve for "0, i, 2i, ..., 1/2, 1/2+2i, 1/2+4i, ..., 1-2/i"
     assert num_steps % 4 == 0
     x_i = x_prior
@@ -246,9 +249,8 @@ def generate(state: NNXTrainState, model, rng, n_sample, t_state=None):
     images = outputs[0]
     return images
 
-  elif model.sampler in ['edm-euler', 'edm-heun']:
-    t_steps = model.compute_t_FM(jnp.arange(num_steps), num_steps)
-    t_steps = t_steps.at[0].set(0.0) # km shenyi, wo bu xin
+  elif model.sampler in ['euler1', 'heun1']:
+    t_steps = model.compute_t(jnp.arange(num_steps), num_steps)
     t_steps = jnp.concatenate([t_steps, jnp.ones((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
     x_i = x_prior
 
@@ -258,7 +260,7 @@ def generate(state: NNXTrainState, model, rng, n_sample, t_state=None):
       rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
 
       merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-      x_i = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps)
+      x_i = merged_model.sample_one_step_new(x_i, rng_z, i, t_steps)
       # x_i, denoised = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps) # for debug
 
       outputs = (x_i, rng)
@@ -282,6 +284,7 @@ def generate_verbose(state: NNXTrainState, model, rng, n_sample, t_state=None):
   verbose version, return all t
   return shape: (n_sample, 32, 32, 3)
   """
+  raise 老东西Error
   if model.ode_solver == 'O':
     raise NotImplementedError
     return sample_by_diffeq(state,model,rng,n_sample, t_min=model.eps)
@@ -408,6 +411,7 @@ class SimDDPM(nn.Module):
     disturb=None, 
     t_predictor=None,
     precond="none",
+    sampling_schedule="uniform",
     **kwargs
   ):
     self.image_size = image_size
@@ -434,6 +438,7 @@ class SimDDPM(nn.Module):
     self.disturb = disturb
     self.t_predictor = t_predictor
     self.precond = precond
+    self.sampling_schedule = sampling_schedule
     # self.beta_schedule = beta_schedule
     # self.beta_start = beta_start
     # self.beta_end = beta_end
@@ -486,19 +491,38 @@ class SimDDPM(nn.Module):
     return vis
 
   def compute_t(self, indices, scales):
-    """
-    from big to small
-    """
-    t = self.t_max ** (1 / self.rho) + indices / (scales - 1) * (
-        self.t_min ** (1 / self.rho) - self.t_max ** (1 / self.rho)
-    )
-    t = t**self.rho
+
+    if self.sampling_schedule == 'uniform':
+      t = jnp.linspace(0, 1, scales + 1)
+    elif self.sampling_schedule in ['quadratic', 'quad']:
+      t = jnp.linspace(1, 0, scales + 1)
+      t = 1 - t**2
+    elif False:
+      power = float(self.schedule[3:])
+      t = np.linspace(1, 0, self.n_T + 1)
+      t = 1 - t**power
+    elif self.sampling_schedule == "edm":
+      t = self.t_max ** (1 / self.rho) + indices / (scales - 1) * (
+          self.t_min ** (1 / self.rho) - self.t_max ** (1 / self.rho)
+      )
+      t = t**self.rho
+      t = 1 / (1 + t)
+    else: raise NotImplementedError
+
+    if self.sampler in ['edm', 'edm-sde']:
+      # big to small
+      t = 1 / t - 1
+    else: 
+      t_steps = t_steps.at[0].set(0.0) # km shenyi, wo bu xin
+      t = t * (1 - self.eps) + self.eps
+
     return t
 
   def compute_t_FM(self, indices, scales):
     """
     from small to big
     """
+    raise 老东西Error
     t = self.compute_t(indices, scales)
     t = 1 / (1 + t)
     return t
@@ -524,10 +548,14 @@ class SimDDPM(nn.Module):
     elif self.sampler == 'edm-sde':
       x_next = self.sample_one_step_edm_sde(x_i, rng, i, t_steps)
       # x_next, denoised = self.sample_one_step_edm_sde(x_i, rng, i, t_steps) # for debug
-    elif self.sampler == 'edm-euler':
-      x_next = self.sample_one_step_edm_euler(x_i, i, t_steps)
-    elif self.sampler == 'edm-heun':
-      x_next = self.sample_one_step_edm_heun(x_i, i, t_steps)
+    else: raise NotImplementedError
+    
+  def sample_one_step_new(self, x_i, rng, i, t_steps):
+
+    if self.sampler == 'euler1':
+      x_next = self.sample_one_step_general_euler(x_i, i, t_steps)
+    elif self.sampler == 'heun1':
+      x_next = self.sample_one_step_general_heun(x_i, i, t_steps)
     else:
       raise NotImplementedError
 
@@ -679,7 +707,7 @@ class SimDDPM(nn.Module):
     # return x_next, denoised # for debug
     return x_next
 
-  def sample_one_step_edm_euler(self, x_i, i, t_steps):
+  def sample_one_step_general_euler(self, x_i, i, t_steps):
     """
     Euler with EDM t schedule, FM use
     """
@@ -698,7 +726,7 @@ class SimDDPM(nn.Module):
     # return x_next, denoised # for debug
     return x_next
 
-  def sample_one_step_edm_heun(self, x_i, i, t_steps):
+  def sample_one_step_general_heun(self, x_i, i, t_steps):
     """
     Euler with EDM t schedule, FM use
     """
@@ -807,6 +835,8 @@ class SimDDPM(nn.Module):
     c_in = 1 / (sigma + 1)
     in_x = batch_mul(x, c_in)
     c_out = sigma / (sigma + 1)
+
+    # TODO: whether to add eps??
 
     F_x = self.forward_flow_pred_function(in_x, c_in, augment_label=augment_label, train=train)
 

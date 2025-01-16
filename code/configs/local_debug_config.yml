@@ -3,25 +3,27 @@ model:
     image_size: 32
     out_channels: 3
     base_width: 8
-    n_T: 50
+    n_T: 5
     use_aug_label: True
     dropout: 0.15 # FM
     net_type: ncsnppedm
     average_loss: True # use average or sum for loss
 
-    sampler: euler
+    # sampler: euler
     # sampler: heun
     # sampler: edm
     # sampler: edm-sde
     # sampler: DDIM
     # sampler: ban
     # sampler: adaptive
+    sampler: heun1
     ode_solver: jax
     # ode_solver: scipy # rk45
     
     # embedding_type: positional # FM
     embedding_type: zero # no t
     double_temb: True
+    sampling_schedule: quad
 
     # # experiments
     # exp: disturb # option: disturb, predict, joint
@@ -35,7 +37,7 @@ dataset:
 aug: 
     use_edm_aug: True # NOTE: if you want to turn on this, also turn on model.use_aug_label
 fid:
-    eval_only: False
+    eval_only: True
     fid_per_epoch: 1
     num_samples: 1000
     cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
