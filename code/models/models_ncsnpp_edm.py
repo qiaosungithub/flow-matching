@@ -16,18 +16,12 @@
 # pylint: skip-file
 
 from .jcm import layers, layerspp, normalization
-# from jcm import layers, layerspp, normalization
-# import flax.linen as nn
 import flax.nnx as nn
 import functools
 from functools import partial
 import jax.numpy as jnp
 import jax
 import numpy as np
-import ml_collections
-
-from typing import Any, Sequence
-
 
 from absl import logging
 

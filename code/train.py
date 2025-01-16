@@ -234,7 +234,7 @@ def sample_step(state, sample_idx, model, rng_init, device_batch_size, MEAN_RGB=
   rng_sample = random.fold_in(rng_init, sample_idx)  # fold in sample_idx
   images = generate(state, model, rng_sample, n_sample=device_batch_size)
 
-  images_all = lax.all_gather(images, axis_name='batch')  # each device has a copy  
+  images_all = lax.all_gather(images, axis_name='batch')  # each device has a copy
   images_all = images_all.reshape(-1, *images_all.shape[2:])
 
   # The images should be [-1, 1], which is correct
@@ -640,7 +640,7 @@ def train_and_evaluate(
       return images[0]  # images have been all gathered
     
   elif config.model.ode_solver == 'scipy':
-    # raise NotImplementedError("我还没写")
+    raise DeprecationWarning('其实用这个')
     from utils.rk45_util import get_rk45_functions
     run_p_sample_step, p_sample_step = get_rk45_functions(model, config, random.PRNGKey(0))
 
@@ -810,7 +810,7 @@ def train_and_evaluate(
       log_for_0(f'Sample epoch {epoch}...')
       # sync batch statistics across replicas
       eval_state = sync_batch_stats(state)
-      eval_state = eval_state.replace(params=model_avg)
+      # eval_state = eval_state.replace(params=model_avg) # ZHH: we use this so we can debug faster
       vis = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx)
       vis = make_grid_visualization(vis)
       vis = jax.device_get(vis) # np.ndarray
