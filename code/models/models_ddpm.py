@@ -513,7 +513,7 @@ class SimDDPM(nn.Module):
       # big to small
       t = 1 / t - 1
     else: 
-      t_steps = t_steps.at[0].set(0.0) # km shenyi, wo bu xin
+      t = t.at[0].set(0.0) # km shenyi, wo bu xin
       t = t * (1 - self.eps) + self.eps
 
     return t
