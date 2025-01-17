@@ -626,9 +626,7 @@ class SimDDPM(nn.Module):
     in_x = batch_mul(x, c_in)
 
     # calculate c_noise
-    if self.exp == "joint": # joint exp
-      sigma = self.t_net.forward(in_x).squeeze(-1)
-    elif self.exp == "predict":
+    if self.exp == "predict":
       in_t = self.t_predictor.forward(in_x).squeeze(-1)
       in_t = jax.lax.stop_gradient(in_t)
       # # for sanity check
@@ -637,6 +635,9 @@ class SimDDPM(nn.Module):
       sigma = jnp.clip(in_t, 1e-4, 1000)
 
     c_noise = jnp.zeros_like(sigma) if self.no_condition_t else 0.25 * jnp.log(sigma)
+
+    if self.exp == "joint": # joint exp
+      c_noise = self.t_net.forward(in_x).squeeze(-1)
 
     # forward network
     c_noise = c_noise.reshape(c_noise.shape[0])

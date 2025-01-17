@@ -16,7 +16,7 @@ model:
     double_temb: True # legacy
 
     # experiments
-    exp: predict
+    exp: joint
 dataset:
     name: cifar10
     root: CIFAR # pytorch
