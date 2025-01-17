@@ -568,7 +568,6 @@ def train_and_evaluate(
 
   ########### Create DataLoaders ###########
 
-
   # input_pipeline = get_input_pipeline(dataset_config)
   # input_type = tf.bfloat16 if config.half_precision else tf.float32
   # dataset_builder = tfds.builder(dataset_config.name)
