@@ -5,7 +5,7 @@ model:
     base_width: 128
     n_T: 18
     use_aug_label: False
-    dropout: 0.20 # EDM 0.13
+    dropout: 0.13 # EDM 0.13
     net_type: ncsnppedm
     average_loss: False # use average or sum for loss
 
@@ -15,9 +15,12 @@ model:
 
     # rho: 7
     
-    no_condition_t: True
+    no_condition_t: False
     embedding_type: fourier
-    # double_temb: True # legacy
+    double_temb: True # legacy
+
+    # experiments
+    exp: predict
 dataset:
     name: cifar10
     root: CIFAR # pytorch
@@ -34,8 +37,8 @@ fid:
 evalu:
     ema: True
     sample: False
-ema_kimg: 1000
-ema_rampup_ratio: 0.025
+# ema_kimg: 1000
+# ema_rampup_ratio: 0.025
 batch_size: 512
 num_epochs: 4000
 learning_rate: 0.001 # EDM 0.001

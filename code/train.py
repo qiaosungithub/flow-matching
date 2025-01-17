@@ -43,6 +43,7 @@ import models.models_ddpm as models_ddpm
 from models.models_ddpm import generate, edm_ema_scales_schedules
 import input_pipeline
 from input_pipeline import prepare_batch_data
+from init_t import init_t_network
 
 NUM_CLASSES = 10
 
@@ -187,7 +188,7 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
   return new_state, metrics, images
 
 
-def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, model_config):
+def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, config, t_predictor=None):
   """
   Perform a single training step.
   We will pmap this function
@@ -195,6 +196,8 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, model_c
   batch: a dict, with image, label, augment_label
   rngs: nnx.Rngs
   train_step_compute_fn: the pmaped version of train_step_compute
+  ---
+  t_state (for exp predict): the t_state for the model, which should be replicated
   """
 
   # # ResNet has no dropout; but maintain rng_dropout for future usage
@@ -222,7 +225,7 @@ def sample_step(state, sample_idx, model, rng_init, device_batch_size, MEAN_RGB=
   rng_sample = random.fold_in(rng_init, sample_idx)  # fold in sample_idx
   images = generate(state, model, rng_sample, n_sample=device_batch_size)
 
-  images_all = lax.all_gather(images, axis_name='batch')  # each device has a copy  
+  images_all = lax.all_gather(images, axis_name='batch')  # each device has a copy
   images_all = images_all.reshape(-1, *images_all.shape[2:])
 
   # The images should be [-1, 1], which is correct
@@ -497,7 +500,7 @@ def train_and_evaluate(
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='LMCI', dir=workdir, tags=["SQA-EDM"])
+    wandb.init(project='LMCI', dir=workdir, tags=["SQA-EDM-exp"])
     # wandb.init(project='sqa_FM_compare', dir=workdir)
     wandb.config.update(config.to_dict())
   global_seed(config.seed)
@@ -512,6 +515,7 @@ def train_and_evaluate(
   # log_for_0(f"save directory: {sampling_config.save_dir}")
 
   ########### Create DataLoaders ###########
+
   # input_pipeline = get_input_pipeline(dataset_config)
   # input_type = tf.bfloat16 if config.half_precision else tf.float32
   # dataset_builder = tfds.builder(dataset_config.name)
@@ -549,10 +553,15 @@ def train_and_evaluate(
   # log_for_0('eval_steps: {}'.format(val_steps))
 
   ########### Create Model ###########
+  if model_config.get("exp", None) == "predict":
+    t_state = init_t_network(debug=True)
+    t_predictor = nn.merge(t_state.graphdef, t_state.params, t_state.rng_states, t_state.batch_stats, t_state.useless_variable_state)
+  else: t_predictor = None
+
   model_cls = models_ddpm.SimDDPM
   rngs = nn.Rngs(config.seed, params=config.seed + 114, dropout=config.seed + 514, train=config.seed + 1919)
   dtype = get_dtype(config.half_precision)
-  model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype)
+  model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype, t_predictor=t_predictor)
   model = model_init_fn(rngs=rngs, **model_config)
   show_dict(f'number of model parameters:{count_params(model)}')
 
@@ -627,7 +636,7 @@ def train_and_evaluate(
       return images[0]  # images have been all gathered
     
   elif config.model.ode_solver == 'scipy':
-    # raise NotImplementedError("我还没写")
+    raise DeprecationWarning('其实用这个')
     from utils.rk45_util import get_rk45_functions
     run_p_sample_step, p_sample_step = get_rk45_functions(model, config, random.PRNGKey(0))
 
@@ -670,10 +679,8 @@ def train_and_evaluate(
 
       step = epoch * steps_per_epoch + n_batch
       batch = prepare_batch_data(batch, config)
-      ep = step / steps_per_epoch
-
-      # print(f"aug label dim: {batch['augment_label'].shape}")
-      # continue # debug
+      # ep = step / steps_per_epoch
+      ep = epoch + n_batch / steps_per_epoch # avoid jumping
 
       # img = batch['image']
       # print(f"img.shape: {img.shape}")
@@ -725,8 +732,7 @@ def train_and_evaluate(
       #   exit(114514)
       # continue
 
-      state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute, model_config)
-      
+      state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute, config, t_predictor=t_predictor)
       if epoch == epoch_offset and n_batch == 0:
         log_for_0('p_train_step compiled in {}s'.format(time.time() - train_metrics_last_t))
         log_for_0('Initial compilation completed. Reset timer.')
@@ -797,7 +803,7 @@ def train_and_evaluate(
       log_for_0(f'Sample epoch {epoch}...')
       # sync batch statistics across replicas
       eval_state = sync_batch_stats(state)
-      eval_state = eval_state.replace(params=model_avg)
+      # eval_state = eval_state.replace(params=model_avg) # ZHH: we use this so we can debug faster
       vis = run_p_sample_step(p_sample_step, eval_state, vis_sample_idx)
       vis = make_grid_visualization(vis)
       vis = jax.device_get(vis) # np.ndarray
@@ -851,6 +857,7 @@ def train_and_evaluate(
 def just_evaluate(
     config: ml_collections.ConfigDict, workdir: str
   ):
+  raise SyntaxError
   # assert the version of orbax-checkpoint is 0.4.4
   assert ocp.__version__ == '0.6.4', ValueError(f'orbax-checkpoint version must be 0.6.4, but got {ocp.__version__}')
   ########### Initialize ###########

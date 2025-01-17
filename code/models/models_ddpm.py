@@ -156,7 +156,7 @@ def generate(state: NNXTrainState, model, rng, n_sample):
       rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
 
       merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-      x_i = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps, t_state)
+      x_i = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps)
       # x_i, denoised = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps) # for debug
 
       outputs = (x_i, rng)
@@ -318,10 +318,6 @@ class SimDDPM(nn.Module):
     self.exp = exp
     self.disturb = disturb
     self.t_predictor = t_predictor
-    # self.beta_schedule = beta_schedule
-    # self.beta_start = beta_start
-    # self.beta_end = beta_end
-    # self.num_diffusion_timesteps = num_diffusion_timesteps
 
     if self.net_type == 'context':
       raise NotImplementedError
@@ -620,7 +616,6 @@ class SimDDPM(nn.Module):
     our network has F((1-t)x + t*noise) = x - noise
     """
 
-
     # edm network
     c_skip = self.data_std ** 2 / (sigma ** 2 + self.data_std ** 2)
     c_out = sigma * self.data_std / jnp.sqrt(sigma ** 2 + self.data_std ** 2)
@@ -632,10 +627,13 @@ class SimDDPM(nn.Module):
 
     # calculate c_noise
     if self.exp == "joint": # joint exp
-      sigma = 1 - self.t_net.forward(in_x).squeeze(-1)
+      sigma = self.t_net.forward(in_x).squeeze(-1)
     elif self.exp == "predict":
-      in_t = 1 - self.t_predictor.forward(in_x).squeeze(-1)
+      in_t = self.t_predictor.forward(in_x).squeeze(-1)
       in_t = jax.lax.stop_gradient(in_t)
+      # # for sanity check
+      # jax.debug.print('in_t shape: {s}', s=in_t.shape)
+      # jax.debug.print('mean error: {s}', s=jnp.mean(jnp.abs(1/(in_t + 1) - 1/(sigma+1))))
       sigma = jnp.clip(in_t, 1e-4, 1000)
 
     c_noise = jnp.zeros_like(sigma) if self.no_condition_t else 0.25 * jnp.log(sigma)
