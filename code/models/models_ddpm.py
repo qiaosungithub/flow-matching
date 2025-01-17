@@ -548,7 +548,7 @@ class SimDDPM(nn.Module):
     if self.sampler == 'euler':
       x_next = self.sample_one_step_euler(x_i, i) 
     elif self.sampler == 'heun':
-      x_next = self.sample_one_step_heun(x_i, i) 
+      x_next = self.sample_one_step_heun(x_i, i)
     elif self.sampler == 'adaptive':
       x_next = self.sample_one_step_adaptive(x_i, i, t_state=t_state, verbose=verbose)
     else:
@@ -835,10 +835,11 @@ class SimDDPM(nn.Module):
     u_pred = self.net(in_z, t_cond, augment_label=augment_label, train=train)
     return u_pred
 
-  # def forward_DDIM_pred_function(self, z, t, augment_label=None, train: bool = True):  # DDIM
-  #   t_cond = jnp.zeros_like(t) if self.no_condition_t else t
-  #   eps_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
-  #   return eps_pred
+  def forward_DDIM_pred_function(self, z, t, augment_label=None, train: bool = True):  # DDIM
+    raise NotImplementedError
+    t_cond = jnp.zeros_like(t) if self.no_condition_t else t
+    eps_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
+    return eps_pred
   
   def forward_edm_denoising_function(self, x, sigma, augment_label=None, train: bool = True):  # EDM
     """
