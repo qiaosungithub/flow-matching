@@ -17,7 +17,7 @@
 # See issue #620.
 # pytype: disable=wrong-arg-count
 
-from typing import Any, Sequence
+from typing import Any
 
 import flax.nnx as nn
 import jax
@@ -30,6 +30,9 @@ from functools import partial
 # from models.models_unet import ContextUnet
 from models.models_ncsnpp_edm import NCSNpp as NCSNppEDM
 from models.jcm.sde_lib import batch_mul
+from models.t.t import sqa_t_ver1
+
+老东西Error = ConnectionError
 
 def get_beta_schedule(beta_schedule, *, beta_start, beta_end, num_diffusion_timesteps):
     """
@@ -153,7 +156,7 @@ def generate(state: NNXTrainState, model, rng, n_sample):
       rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
 
       merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-      x_i = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps)
+      x_i = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps, t_state)
       # x_i, denoised = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps) # for debug
 
       outputs = (x_i, rng)
@@ -289,6 +292,9 @@ class SimDDPM(nn.Module):
     # beta_start=1e-4,
     # beta_end=0.02,
     # num_diffusion_timesteps=1000,
+    exp=None,
+    disturb=None, 
+    t_predictor=None,
     **kwargs
   ):
     self.image_size = image_size
@@ -309,6 +315,9 @@ class SimDDPM(nn.Module):
     self.no_condition_t = no_condition_t
     self.rngs = rngs
     self.double_temb = double_temb
+    self.exp = exp
+    self.disturb = disturb
+    self.t_predictor = t_predictor
     # self.beta_schedule = beta_schedule
     # self.beta_start = beta_start
     # self.beta_end = beta_end
@@ -341,7 +350,6 @@ class SimDDPM(nn.Module):
     else:
       raise ValueError(f'Unknown net type: {self.net_type}')
 
-    # self.num_timesteps = num_diffusion_timesteps
     self.net = net_fn()
 
     self.data_std = 0.5
@@ -349,6 +357,12 @@ class SimDDPM(nn.Module):
     self.t_max = 80.0
     self.rho = rho
 
+    if self.exp == "joint":
+      assert self.no_condition_t == False
+      self.t_net = sqa_t_ver1(rngs=rngs)
+    elif self.exp == "predict":
+      assert self.no_condition_t == False
+      assert self.t_predictor is not None
 
   def get_visualization(self, list_imgs):
     vis = jnp.concatenate(list_imgs, axis=1)
@@ -606,15 +620,6 @@ class SimDDPM(nn.Module):
     our network has F((1-t)x + t*noise) = x - noise
     """
 
-    # # use FM network to denoise
-    # c_in = 1 / (sigma + 1)
-    # in_x = batch_mul(x, c_in)
-    # c_out = sigma / (sigma + 1)
-
-    # F_x = self.forward_flow_pred_function(in_x, c_in, augment_label=augment_label, train=train)
-
-    # D_x = in_x + batch_mul(F_x, c_out)
-    # return D_x
 
     # edm network
     c_skip = self.data_std ** 2 / (sigma ** 2 + self.data_std ** 2)
@@ -623,10 +628,19 @@ class SimDDPM(nn.Module):
 
     c_in = 1 / jnp.sqrt(sigma ** 2 + self.data_std ** 2)
     # c_in = 1 / jnp.sqrt(sigma ** 2 + 1) # Kaiming shenyi
+    in_x = batch_mul(x, c_in)
+
+    # calculate c_noise
+    if self.exp == "joint": # joint exp
+      sigma = 1 - self.t_net.forward(in_x).squeeze(-1)
+    elif self.exp == "predict":
+      in_t = 1 - self.t_predictor.forward(in_x).squeeze(-1)
+      in_t = jax.lax.stop_gradient(in_t)
+      sigma = jnp.clip(in_t, 1e-4, 1000)
+
     c_noise = jnp.zeros_like(sigma) if self.no_condition_t else 0.25 * jnp.log(sigma)
 
     # forward network
-    in_x = batch_mul(x, c_in)
     c_noise = c_noise.reshape(c_noise.shape[0])
 
     F_x = self.net(in_x, c_noise, augment_label=augment_label, train=train)
