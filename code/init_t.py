@@ -163,7 +163,7 @@ def init_t_network(debug=False):
   #   raise ValueError('Checkpoint path must be absolute')
   # if not os.path.exists(config.load_from):
   #   raise ValueError('Checkpoint path {} does not exist'.format(config.load_from))
-  state = restore_checkpoint(model_cls, state, "/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241128_031750_8xab8k_kmh-tpuvm-v2-32-preemptible-2__b_lr_ep_eval/checkpoint_4850", {}) # change the path to the checkpoint path here !!!!!!!!!
+  state = restore_checkpoint(model_cls, state, "/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching_t/20250117_085619_mb2rdd_kmh-tpuvm-v2-32-4__b_lr_ep_eval/checkpoint_19400", {}) # change the path to the checkpoint path here !!!!!!!!!
   state_step = int(state.step)
   if not debug:
     state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior

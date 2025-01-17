@@ -19,7 +19,7 @@ After testing, `sqa_t_ver1` reaches the best performance with the least number o
 
 Vanilla FM baseline: `/kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241127_010129_q9ifcu_kmh-tpuvm-v2-32-6__b_lr_ep_eval/checkpoint_194000`
 
-t_network: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241128_031750_8xab8k_kmh-tpuvm-v2-32-preemptible-2__b_lr_ep_eval/checkpoint_4850`
+FM t_network: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241128_031750_8xab8k_kmh-tpuvm-v2-32-preemptible-2__b_lr_ep_eval/checkpoint_4850`
 
 FM with no t baseline: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241130_140252_c95a47_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/checkpoint_194000`
 
@@ -28,6 +28,8 @@ DDIM: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241202_214940_zd8s4j_k
 EDM: `/kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241211_185022_1p9khj_kmh-tpuvm-v2-32-7__b_lr_ep_eval/checkpoint_388000`.
 
 EDM w/o t: `/kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241220_192218_apfh37_kmh-tpuvm-v2-32-2__b_lr_ep_eval/checkpoint_388000`
+
+EDM t_network: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching_t/20250117_085619_mb2rdd_kmh-tpuvm-v2-32-4__b_lr_ep_eval/checkpoint_19400`, use base_width 50
 
 ## datasets
 

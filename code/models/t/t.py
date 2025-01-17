@@ -43,7 +43,7 @@ class sqa_t_ver1(nn.Module):
                  rngs=None, 
                  **kwargs):
         # for restoring checkpoints #
-        base_width = 20
+        base_width = 50 # EDM model
         act = "relu"
         use_sigmoid = False
         ##############################
