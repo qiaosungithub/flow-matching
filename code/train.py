@@ -252,7 +252,7 @@ def sample_step(state, sample_idx, model, rng_init, device_batch_size, MEAN_RGB=
   rng_init: here we do not want nnx.Rngs
   """
   rng_sample = random.fold_in(rng_init, sample_idx)  # fold in sample_idx
-  images = generate(state, model, rng_sample, n_sample=device_batch_size, t_state=t_state)
+  images = generate(state, model, rng_sample, n_sample=device_batch_size, t_state=t_state) # here, the t_state is only for adaptive sampler use
   nfe = None
   if model.ode_solver == 'O':
     images, nfe = images
