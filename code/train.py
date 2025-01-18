@@ -868,7 +868,6 @@ def just_evaluate(
     config: ml_collections.ConfigDict, workdir: str
   ):
   log_for_0('We use just_evaluate!!')
-  raise EOFError('写了')
   # assert the version of orbax-checkpoint is 0.4.4
   assert ocp.__version__ == '0.6.4', ValueError(f'orbax-checkpoint version must be 0.6.4, but got {ocp.__version__}')
   ########### Initialize ###########
@@ -877,8 +876,7 @@ def just_evaluate(
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='LMCI-eval', dir=workdir, tags=['FM'])
-    # wandb.init(project='sqa_edm_debug', dir=workdir)
+    wandb.init(project='LMCI-eval', dir=workdir, tags=['FM-cond'])
     wandb.config.update(config.to_dict())
   # dtype = jnp.bfloat16 if model_config.half_precision else jnp.float32
   global_seed(config.seed)
@@ -1045,7 +1043,7 @@ def just_evaluate(
   if rank == 0 and config.wandb:
     nfe = config.model.n_T
     if config.model.ode_solver == 'scipy': raise LookupError('Not implemented')
-    elif config.model.sampler not in ['euler', "DDIM", "adaptive"]: nfe*=2
+    elif config.model.sampler not in ['euler', "DDIM", "adaptive"]: nfe=2*nfe-1
     if config.model.ode_solver != 'O':
       wandb.log({'NFE': nfe})
 
