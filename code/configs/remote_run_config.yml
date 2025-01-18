@@ -19,8 +19,8 @@ model:
     
     # rho: 7
 
-    # embedding_type: positional # FM
-    embedding_type: zero # no t
+    embedding_type: positional # FM
+    # embedding_type: zero # no t
 
     cond: True
     label_dropout: 0.0
@@ -54,7 +54,7 @@ log_per_step: 100
 visualize_per_epoch: 50
 eval_per_epoch: 80
 checkpoint_per_epoch: 1000
-load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20250116_105106_9cybij_kmh-tpuvm-v2-32-preemptible-1__b_lr_ep_eval
+# load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20250116_105106_9cybij_kmh-tpuvm-v2-32-preemptible-1__b_lr_ep_eval
 
 # # Here is for IMAGENET32x32:
 
