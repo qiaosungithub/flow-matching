@@ -94,8 +94,8 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
 
 
 def edm_ema_scales_schedules(step, config, steps_per_epoch):
-  ema_halflife_kimg = 500  # from edm
-  # ema_halflife_kimg = 50000  # log(0.5) / log(0.999999) * 128 / 1000 = 88722 kimg, from flow
+  # ema_halflife_kimg = 500  # from edm
+  ema_halflife_kimg = 50000  # log(0.5) / log(0.999999) * 128 / 1000 = 88722 kimg, from flow
   ema_halflife_nimg = ema_halflife_kimg * 1000
 
   ema_rampup_ratio = 0.05
@@ -495,10 +495,10 @@ class SimDDPM(nn.Module):
     self.rho = rho
 
     if self.exp == "joint":
-      assert self.no_condition_t == False
+      assert self.embedding_type != "zero"
       self.t_net = sqa_t_ver1(rngs=rngs)
     elif self.exp == "predict":
-      assert self.no_condition_t == False
+      assert self.embedding_type != "zero"
       assert self.t_predictor is not None
 
   def get_visualization(self, list_imgs):
@@ -817,21 +817,29 @@ class SimDDPM(nn.Module):
 
   def forward_flow_pred_function(self, z, t, augment_label=None, train: bool = True):  # EDM
 
-    # calculate c_noise
-    if self.exp == "joint": # joint exp
-      t = 1 - self.t_net.forward(z).squeeze(-1)
-    
-    t_cond = jnp.log(t * 999)
-
-    if self.exp == "disturb" and train: # disturb exp
-      t_cond = t_cond + self.disturb * jax.random.normal(self.rngs.train(), t_cond.shape)
-
     # calculate in_z
     if self.precond == "none": in_z = z
     elif self.precond == "edm1":
       in_z = batch_mul(z, 1 / jnp.sqrt(t**2 * self.data_std**2 + (1-t)**2))
-
     else: raise NotImplementedError
+
+    # calculate c_noise
+    if self.exp == "predict":
+      in_t = 1 - self.t_predictor.forward(in_z).squeeze(-1)
+      in_t = jax.lax.stop_gradient(in_t)
+      # for sanity check
+      jax.debug.print('in_t shape: {s}', s=in_t.shape)
+      jax.debug.print('mean error: {s}', s=jnp.mean(jnp.abs(in_t - t)))
+      t = jnp.clip(in_t, 1e-3, 1)
+    
+    t_cond = jnp.log(t * 999)
+
+    if self.exp == "joint": # joint exp
+      t_cond = self.t_net.forward(in_z).squeeze(-1)
+
+    if self.exp == "disturb" and train: # disturb exp
+      t_cond = t_cond + self.disturb * jax.random.normal(self.rngs.train(), t_cond.shape)
+
     u_pred = self.net(in_z, t_cond, augment_label=augment_label, train=train)
     return u_pred
 
@@ -896,14 +904,7 @@ class SimDDPM(nn.Module):
     z = batch_mul(t, x_data) + batch_mul(1 - t, x_prior)
 
     # forward network
-    if self.exp == "predict":
-      in_t = 1 - self.t_predictor.forward(z).squeeze(-1)
-      in_t = jax.lax.stop_gradient(in_t)
-      in_t = jnp.clip(in_t, 1e-3, 1)
-    else: in_t = t
-    # error = jnp.mean((in_t-t)**2)
-    # jax.debug.print('error: {e}', e=error)
-    u_pred = self.forward_flow_pred_function(z, in_t)
+    u_pred = self.forward_flow_pred_function(z, t)
 
     # loss
     loss = (v_target - u_pred)**2
