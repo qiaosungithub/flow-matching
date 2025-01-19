@@ -14,8 +14,8 @@ model:
     no_condition_t: False
 
     # experiments
-    exp: disturb # option: disturb, predict, joint
-    disturb: 10
+    exp: predict # option: disturb, predict, joint
+    # disturb: 10
 dataset:
     name: cifar10
     root: CIFAR # pytorch

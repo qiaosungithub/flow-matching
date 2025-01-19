@@ -566,18 +566,18 @@ class SimDDPM(nn.Module):
 
     # forward network
     if self.exp == "disturb":
+      raise NotImplementedError
       in_t = t + self.disturb * jax.random.normal(self.rngs.train(), t.shape)
       # in_t = jnp.clip(in_t, 1e-3, 1)
-    elif self.exp == "predict":
-      raise NotImplementedError
-      in_t = 1 - self.t_predictor.forward(z).squeeze(-1)
-      # stop gradient
-      in_t = jax.lax.stop_gradient(in_t)
-      in_t = jnp.clip(in_t, 1e-3, 1)
-    else: in_t = t
+    # elif self.exp == "predict":
+    #   in_t = 1 - self.t_predictor.forward(z).squeeze(-1)
+    #   # stop gradient
+    #   in_t = jax.lax.stop_gradient(in_t)
+    #   in_t = jnp.clip(in_t, 1e-3, 1)
+    # else: in_t = t
     # error = jnp.mean((in_t-t)**2)
     # jax.debug.print('error: {e}', e=error)
-    eps_pred = self.forward_DDIM_pred_function(z, in_t, augment_label=augment_label, train=train)
+    eps_pred = self.forward_DDIM_pred_function(z, t, augment_label=augment_label, train=train)
 
 
     # loss
