@@ -16,7 +16,6 @@ from functools import partial
 import time
 from typing import Any
 
-from absl import logging
 from flax import jax_utils as ju
 from flax.training import common_utils
 from flax.training.train_state import TrainState as FlaxTrainState
@@ -30,16 +29,13 @@ import optax
 import torch
 import numpy as np
 import flax.nnx as nn
-import tensorflow as tf
-import tensorflow_datasets as tfds
 from PIL import Image
-from torch.utils.data import DataLoader
 
 from utils.info_util import print_params
 from utils.vis_util import make_grid_visualization, visualize_cifar_batch
 from utils.logging_util import log_for_0, Timer
 from utils.metric_utils import tang_reduce
-from utils.display_utils import show_dict, display_model, count_params
+from utils.display_utils import show_dict, count_params
 import utils.fid_util as fid_util
 import utils.sample_util as sample_util
 
@@ -55,6 +51,7 @@ import utils.sample_util as sample_util
 # Amen.
 import models.models_ddpm as models_ddpm
 from models.models_ddpm import generate, get_ema_scales_schedules, diffusion_schedule_fn_some, create_zhh_SAMPLING_diffusion_schedule
+from init_t import init_t_network
 
 NUM_CLASSES = 10
 
@@ -513,7 +510,7 @@ def train_and_evaluate(
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='LMCI', dir=workdir, tags=['ADM_NEW'])
+    wandb.init(project='LMCI', dir=workdir, tags=['DDPM-exp'])
     # wandb.init(project='sqa_FM_compare', dir=workdir)
     wandb.config.update(config.to_dict())
   global_seed(config.seed)
@@ -528,32 +525,6 @@ def train_and_evaluate(
   # log_for_0(f"save directory: {sampling_config.save_dir}")
 
   ########### Create DataLoaders ###########
-  # if config.batch_size % jax.process_count() > 0:
-  #   raise ValueError('Batch size must be divisible by the number of processes')
-  # local_batch_size = config.batch_size // jax.process_count()
-  # log_for_0('local_batch_size: {}'.format(local_batch_size))
-  # log_for_0('jax.local_device_count: {}'.format(jax.local_device_count()))
-
-  # if local_batch_size % jax.local_device_count() > 0:
-  #   raise ValueError('Local batch size must be divisible by the number of local devices')
-
-  # train_set = train_set_(root=dataset_config.root)
-  # val_set = val_set_(root=dataset_config.root)
-
-  # train_loader, steps_per_epoch = create_split(
-  #   train_set, local_batch_size, 'train', dataset_config
-  # )
-
-  # # eval_loader, steps_per_eval = create_split(
-  # #   val_set, local_batch_size, 'val', config
-  # # )
-
-  # eval_loader = DataLoader(val_set, batch_size=config.eval_batch_size, shuffle=True, drop_last=False, pin_memory=True)
-
-  # log_for_0('steps_per_epoch: {}'.format(steps_per_epoch))
-
-  # if config.steps_per_eval != -1:
-  #   steps_per_eval = config.steps_per_eval
 
   # input_pipeline = get_input_pipeline(dataset_config)
   # input_type = tf.bfloat16 if config.half_precision else tf.float32
@@ -583,10 +554,15 @@ def train_and_evaluate(
   # log_for_0('eval_steps: {}'.format(val_steps))
 
   ########### Create Model ###########
+  if model_config.get("exp", None) == "predict":
+    t_state = init_t_network(debug=True)
+    t_predictor = nn.merge(t_state.graphdef, t_state.params, t_state.rng_states, t_state.batch_stats, t_state.useless_variable_state)
+  else: t_predictor = None
+
   model_cls = models_ddpm.SimDDPM
   rngs = nn.Rngs(config.seed, params=config.seed + 114, dropout=config.seed + 514, train=config.seed + 1919)
   dtype = get_dtype(config.half_precision)
-  model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype)
+  model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype, t_predictor=t_predictor)
   model = model_init_fn(rngs=rngs, **model_config)
   show_dict(f'number of model parameters:{count_params(model)}')
 
@@ -679,7 +655,7 @@ def train_and_evaluate(
       return images[0]  # images have been all gathered
     
   elif config.model.ode_solver == 'scipy':
-    # raise NotImplementedError("我还没写")
+    raise DeprecationWarning('其实用这个')
     from utils.rk45_util import get_rk45_functions
     run_p_sample_step, p_sample_step = get_rk45_functions(model, config, random.PRNGKey(0))
 
@@ -922,6 +898,7 @@ def train_and_evaluate(
 def just_evaluate(
     config: ml_collections.ConfigDict, workdir: str
   ):
+  raise SyntaxError
   # assert the version of orbax-checkpoint is 0.4.4
   assert ocp.__version__ == '0.6.4', ValueError(f'orbax-checkpoint version must be 0.6.4, but got {ocp.__version__}')
   ########### Initialize ###########
