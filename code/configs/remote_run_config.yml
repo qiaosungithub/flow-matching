@@ -25,7 +25,7 @@ model:
     double_temb: True
 
     # experiments
-    exp: joint # option: disturb, predict, joint
+    exp: predict # option: disturb, predict, joint
     # disturb: 0.02
 
     precond: none # option: [none, edm1]
