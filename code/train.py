@@ -188,7 +188,7 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
   return new_state, metrics, images
 
 
-def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, config, t_predictor=None):
+def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, config):
   """
   Perform a single training step.
   We will pmap this function
@@ -196,8 +196,6 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, config,
   batch: a dict, with image, label, augment_label
   rngs: nnx.Rngs
   train_step_compute_fn: the pmaped version of train_step_compute
-  ---
-  t_state (for exp predict): the t_state for the model, which should be replicated
   """
 
   # # ResNet has no dropout; but maintain rng_dropout for future usage
@@ -732,7 +730,7 @@ def train_and_evaluate(
       #   exit(114514)
       # continue
 
-      state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute, config, t_predictor=t_predictor)
+      state, metrics, vis = train_step(state, batch, rngs, p_train_step_compute, config)
       if epoch == epoch_offset and n_batch == 0:
         log_for_0('p_train_step compiled in {}s'.format(time.time() - train_metrics_last_t))
         log_for_0('Initial compilation completed. Reset timer.')
