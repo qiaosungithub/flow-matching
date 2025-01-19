@@ -5,9 +5,9 @@ model:
     image_size: 32
     out_channels: 3
     base_width: 128
-    learn_var: True # default: False
+    # learn_var: True # default: False
     # learn_var: False # default: False
-    n_T: 250 # num of sample steps, matches "diffusion_nT"
+    n_T: 500 # num of sample steps, matches "diffusion_nT"
     use_aug_label: False
     dropout: 0.15
     net_type: ncsnppedm
@@ -22,11 +22,15 @@ model:
     # ode_solver: scipy # rk45
     
     no_condition_t: False
-    # class_conditional: False
-    class_conditional: True
+    class_conditional: False
+    # class_conditional: True
     # t_condition_method: not # for No T experiments
     t_condition_method: direct # default: log999
     # classifier_model_depth: 3
+
+    # experiments
+    exp: joint # option: disturb, predict, joint
+    # disturb: 10
 dataset:
     name: cifar10
     root: CIFAR # pytorch
@@ -44,10 +48,8 @@ evalu:
     ema: True
     sample: True
 
-# ema_type: edm # [edm, const]
-ema_type: const # [edm, const]
-ema_value: 0.997 # only useful for const
-# ema_value: 0.999 # only useful for const
+ema_type: edm # [edm, const]
+# ema_type: const # [edm, const]
 batch_size: 2048
 num_epochs: 2000
 learning_rate: 0.0008
@@ -66,7 +68,7 @@ save_by_fid: True
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241130_140252_c95a47_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/checkpoint_194000
 
 # diffusion:
-diffusion_nT: 4000
+diffusion_nT: 500
 diffusion_schedule: cosine
 time_weighting: const 
 

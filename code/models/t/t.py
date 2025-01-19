@@ -7,6 +7,7 @@ import flax.nnx as nn
 from jcm import layers, layerspp, normalization
 from functools import partial
 import numpy as np
+import math
 
 conv3x3 = layerspp.conv3x3
 ResnetBlockBigGAN = layerspp.ResnetBlockBigGANpp
@@ -34,6 +35,49 @@ ResnetBlockBigGAN = layerspp.ResnetBlockBigGANpp
 #         #     x = nn.sigmoid(x)
 #         # x = (jnp.mean(x**2, axis=(1, 2, 3)))**(0.5)
 #         return x
+
+def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
+    """
+    Create a beta schedule that discretizes the given alpha_t_bar function,
+    which defines the cumulative product of (1-beta) over time from t = [0,1].
+
+    :param num_diffusion_timesteps: the number of betas to produce.
+    :param alpha_bar: a lambda that takes an argument t from 0 to 1 and
+                      produces the cumulative product of (1-beta) up to that
+                      part of the diffusion process.
+    :param max_beta: the maximum beta to use; use values lower than 1 to
+                     prevent singularities.
+    """
+    betas = []
+    for i in range(num_diffusion_timesteps):
+        t1 = i / num_diffusion_timesteps
+        t2 = (i + 1) / num_diffusion_timesteps
+        betas.append(min(1 - alpha_bar(t2) / alpha_bar(t1), max_beta))
+    return jnp.array(betas)
+
+def create_zhh_diffusion_schedule():
+    if True:
+        betas = betas_for_alpha_bar(
+                500,
+                lambda t: math.cos((t + 0.008) / 1.008 * math.pi / 2) ** 2,
+            )
+        # 大便
+        alphas = 1.0 - betas
+        alphas_cumprod = jnp.cumprod(alphas, axis=0)
+        alphas_cumprod_prev = jnp.append(1.0, alphas_cumprod[:-1])
+        alphas_cumprod_next = jnp.append(alphas_cumprod[1:], 0.0)
+        posterior_variance = betas * (1.0 - alphas_cumprod_prev) / (1.0 - alphas_cumprod)
+        posterior_log_variance_clipped = jnp.log(jnp.append(posterior_variance[1], posterior_variance[1:]))
+        zhh_diffusion_schedule = {
+        'betas': betas, 'alphas': alphas, 'alphas_cumprod': alphas_cumprod, 'alphas_cumprod_prev': alphas_cumprod_prev, 'alphas_cumprod_next': alphas_cumprod_next,
+        'posterior_variance': posterior_variance, 'posterior_log_variance_clipped': posterior_log_variance_clipped,
+        }
+        # cosine schedule
+    elif False:
+        raise NotImplementedError
+    else:
+        raise NotImplementedError
+    return zhh_diffusion_schedule
 
 class sqa_t_ver1(nn.Module):
 
@@ -77,46 +121,9 @@ class sqa_t_ver1(nn.Module):
             x = x.reshape(x.shape[0], 1)
         return x
 
-    def get_beta_schedule(self):
-        beta_schedule = 'linear'
-        beta_start = 1e-4
-        beta_end = 0.02
-        num_diffusion_timesteps = 1000
-        def sigmoid(x):
-            return 1 / (jnp.exp(-x) + 1)
-
-        if beta_schedule == "quad":
-            betas = (
-                jnp.linspace(
-                    beta_start ** 0.5,
-                    beta_end ** 0.5,
-                    num_diffusion_timesteps,
-                    dtype=np.float64,
-                )
-                ** 2
-            )
-        elif beta_schedule == "linear":
-            betas = jnp.linspace(
-                beta_start, beta_end, num_diffusion_timesteps, dtype=np.float64
-            )
-        elif beta_schedule == "const":
-            betas = beta_end * jnp.ones(num_diffusion_timesteps, dtype=np.float64)
-        elif beta_schedule == "jsd":  # 1/T, 1/(T-1), 1/(T-2), ..., 1
-            betas = 1.0 / jnp.linspace(
-                num_diffusion_timesteps, 1, num_diffusion_timesteps, dtype=np.float64
-            )
-        elif beta_schedule == "sigmoid":
-            betas = jnp.linspace(-6, 6, num_diffusion_timesteps)
-            betas = sigmoid(betas) * (beta_end - beta_start) + beta_start
-        else:
-            raise NotImplementedError(beta_schedule)
-        assert betas.shape == (num_diffusion_timesteps,)
-        return betas
-
     def get_nearest_index(self, t):
         t = 1-t
-        betas = self.get_beta_schedule()
-        alpha = jnp.cumprod(1-betas, axis=0) # (1000, )
+        alpha = create_zhh_diffusion_schedule()['alphas_cumprod']
         dif = jnp.abs(alpha - t)
         # assert dif.shape[1] == 1000
         index = jnp.argmin(dif, axis=1) 
