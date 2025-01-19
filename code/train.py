@@ -594,7 +594,7 @@ def train_and_evaluate(
       raise ValueError('Checkpoint path must be absolute')
     if not os.path.exists(config.load_from):
       raise ValueError('Checkpoint path {} does not exist'.format(config.load_from))
-    state = restore_checkpoint(model_init_fn ,state, config.load_from)
+    state = restore_checkpoint(model_init_fn, state, config.load_from)
     # sanity check, as in Kaiming's code
     assert state.step > 0 and state.step % steps_per_epoch == 0, ValueError('Got an invalid checkpoint with step {}'.format(state.step))
   step_offset = int(state.step)
