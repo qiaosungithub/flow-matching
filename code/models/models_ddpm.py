@@ -18,7 +18,7 @@
 # pytype: disable=wrong-arg-count
 
 from absl import logging
-from typing import Any, Sequence
+from typing import Any
 
 import flax.nnx as nn
 import jax
@@ -206,11 +206,15 @@ def diffusion_sampling_schedule(diffusion_schedule, diffusion_nT, sample_nT, lam
 
     posterior_mean_coef1 = jnp.sqrt(new_alphas_cumprod_prev) - jnp.sqrt(new_alpha_cumprods) * posterior_mean_coef2
     
-    # sanity check
-    posterior_mean_coef1 = posterior_mean_coef1_legacy
-    posterior_mean_coef2 = posterior_mean_coef2_legacy
+    # # sanity check
+    # posterior_mean_coef1 = posterior_mean_coef1_legacy
+    # posterior_mean_coef2 = posterior_mean_coef2_legacy
 
     # print(f"lambdaa: {lambdaa}")
+    # print(f"legacy: coeff1: {posterior_mean_coef1_legacy}")
+    # print(f"legacy: coeff2: {posterior_mean_coef2_legacy}")
+    # print(f"new: coeff1: {posterior_mean_coef1}")
+    # print(f"new: coeff2: {posterior_mean_coef2}")
     # print(f"diff of coeff 2: {jnp.max(jnp.abs(posterior_mean_coef2 - posterior_mean_coef2_legacy))}")
     # print(f"diff of coeff 1: {jnp.max(jnp.abs(posterior_mean_coef1 - posterior_mean_coef1_legacy))}")
     # exit("邓")
@@ -1435,4 +1439,4 @@ class SimDDPM(nn.Module):
     out_ema = None   # no need to initialize it here
     return out, out_ema
 
-# diffusion_sampling_schedule("cosine", 500, 500, 1.0)
+diffusion_sampling_schedule("cosine", 10, 10, 1.0)
