@@ -795,9 +795,9 @@ class SimDDPM(nn.Module):
     if self.exp == "predict":
       in_t = self.t_predictor.forward(z).squeeze(-1)
       in_t = jax.lax.stop_gradient(in_t)
-      # for sanity check
-      jax.debug.print('in_t shape: {s}', s=in_t.shape)
-      jax.debug.print('mean error: {s}', s=jnp.mean(jnp.abs(in_t-t)))
+      # # for sanity check
+      # jax.debug.print('in_t shape: {s}', s=in_t.shape)
+      # jax.debug.print('mean error: {s}', s=jnp.mean(jnp.abs(in_t-t)))
       t = jnp.clip(in_t, 1e-4, 1000)
 
     t_cond = self.t_preprocess_fn(t).astype(self.dtype)
