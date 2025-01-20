@@ -848,7 +848,7 @@ class SimDDPM(nn.Module):
     # t_batch = t_batch.reshape(bz, 1, 1, 1)
 
     # -----------------------------------------------------------------
-    #  diffusion alpha, betas
+    # diffusion alpha, betas
     betas = beta_batch
     assert betas.shape == t_batch.shape, 'betas shape: {s}, t_batch shape: {t}'.format(s=betas.shape, t=t_batch.shape)
     alphas = 1.0 - betas
