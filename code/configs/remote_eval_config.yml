@@ -55,7 +55,7 @@ model:
     sampler: ddpm
     # sampler: DDIM
     sample_clip_denoised: True
-    use_posterior_variance: True
+    # use_posterior_variance: True
 
 diffusion:
     diffusion_nT: 500
