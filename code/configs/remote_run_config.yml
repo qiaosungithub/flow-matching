@@ -20,13 +20,13 @@ model:
     # ode_solver: scipy # rk45
     
     class_conditional: False
-    t_condition_method: not # for No T experiments
-    # t_condition_method: direct # option: [log999, direct, not]
+    # t_condition_method: not # for No T experiments
+    t_condition_method: direct # option: [log999, direct, not]
     # classifier_model_depth: 3
     target: x # default: eps
 
-    # # experiments
-    # exp: disturb # option: disturb, predict, joint
+    # experiments
+    exp: predict # option: disturb, predict, joint
     # disturb: 0.02
 dataset:
     name: cifar10
@@ -44,6 +44,8 @@ fid:
 evalu:
     ema: True
     sample: True
+
+ema_type: edm # [edm, const]
 batch_size: 2048
 num_epochs: 4000
 learning_rate: 0.0012

@@ -17,15 +17,12 @@
 # See issue #620.
 # pytype: disable=wrong-arg-count
 
-from absl import logging
-from typing import Any, Sequence
+from typing import Any
 
-# from flax import linen as nn
 import flax.nnx as nn
 import jax
 import jax.numpy as jnp
 import numpy as np
-import optax
 import math
 from flax.training.train_state import TrainState as FlaxTrainState
 
@@ -33,13 +30,10 @@ from functools import partial
 
 # from models.models_unet import ContextUnet
 from models.models_ncsnpp_edm import NCSNpp as NCSNppEDM
-# from models.models_ncsnpp import NCSNpp
-# import models.jcm.sde_lib as sde_lib
 from models.jcm.sde_lib import batch_mul
+from models.t.t import sqa_t_ver1
 
-
-
-ModuleDef = Any
+老东西Error = ConnectionError
 
 
 # these are copied from IDDPM repo
@@ -77,6 +71,11 @@ def ct_ema_scales_schedules(step, config, steps_per_epoch):
   scales = scales + 1
   return target_ema, scales
 
+def const_ema_scales_schedules(step, config, steps_per_epoch):
+  # ema_halflife_kimg = 500  # from edm
+  ema_beta = jnp.array(config.ema_value, dtype=jnp.float32)
+  scales = jnp.ones((1,), dtype=jnp.int32)
+  return ema_beta, scales
 
 def edm_ema_scales_schedules(step, config, steps_per_epoch):
   # ema_halflife_kimg = 500  # from edm
@@ -89,6 +88,14 @@ def edm_ema_scales_schedules(step, config, steps_per_epoch):
   ema_beta = 0.5 ** (config.batch_size / jnp.maximum(ema_halflife_nimg, 1e-8))
   scales = jnp.ones((1,), dtype=jnp.int32)
   return ema_beta, scales
+
+def get_ema_scales_schedules(config):
+  if config.ema_type == 'const':
+    return const_ema_scales_schedules
+  elif config.ema_type == 'edm':
+    return edm_ema_scales_schedules
+  else:
+    raise NotImplementedError(f'Unknown ema_type: {config.ema_type}')
 
 def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
     """
@@ -490,8 +497,6 @@ class SimDDPM(nn.Module):
     base_width,
     num_classes = 10,
     out_channels = 1,
-    P_std = 1.2,
-    P_mean = -1.2,
     n_T = 18,  # inference steps
     net_type = 'ncsnpp',
     dropout = 0.0,
@@ -499,7 +504,6 @@ class SimDDPM(nn.Module):
     use_aug_label = False,
     average_loss = False,
     eps=1e-3,
-    h_init=0.035,
     sampler='euler',
     sample_clip_denoised=True,
     ode_solver='jax',
@@ -510,14 +514,13 @@ class SimDDPM(nn.Module):
     target = "eps",
     exp=None,
     disturb=None, 
+    t_predictor=None,
     **kwargs
   ):
     self.image_size = image_size
     self.base_width = base_width
     self.num_classes = num_classes
     self.out_channels = out_channels
-    self.P_std = P_std
-    self.P_mean = P_mean
     self.n_T = n_T
     self.net_type = net_type
     self.dropout = dropout
@@ -525,7 +528,6 @@ class SimDDPM(nn.Module):
     self.use_aug_label = use_aug_label
     self.average_loss = average_loss
     self.eps = eps
-    self.h_init = h_init
     self.sampler = sampler
     self.ode_solver = ode_solver
     self.learn_var = learn_var
@@ -537,16 +539,7 @@ class SimDDPM(nn.Module):
     assert target in ['eps', 'x']
     self.exp = exp
     self.disturb = disturb
-
-    # sde = sde_lib.KVESDE(
-    #   t_min=0.002,
-    #   t_max=80.0,
-    #   N=18,  # config.model.num_scales
-    #   rho=7.0,
-    #   data_std=0.5,
-    # )
-    # self.sde = sde
-    # This is not used in flow matching
+    self.t_predictor = t_predictor
 
     if self.net_type == 'context':
       raise NotImplementedError
@@ -574,17 +567,21 @@ class SimDDPM(nn.Module):
     else:
       raise ValueError(f'Unknown net type: {self.net_type}')
 
-    # # declare two networks
-    # self.net = net_fn(name='net')
-    # self.net_ema = net_fn(name='net_ema')
     self.net = net_fn()
 
+    if self.exp == "joint":
+      assert t_condition_method == "direct"
+      self.t_net = sqa_t_ver1(rngs=rngs, round=False)
+    elif self.exp == "predict":
+      assert t_condition_method == "direct"
+      assert self.t_predictor is not None
 
   def get_visualization(self, list_imgs):
     vis = jnp.concatenate(list_imgs, axis=1)
     return vis
 
   def compute_t(self, indices, scales):
+    raise NotImplementedError
     t_max = 80
     t_min = 0.002
     rho = 7.0
@@ -593,29 +590,13 @@ class SimDDPM(nn.Module):
     )
     t = t**rho
     return t
-    
-  def compute_losses(self, pred, gt):
-    assert pred.shape == gt.shape
-
-    # simple l2 loss
-    loss_rec = jnp.mean((pred - gt)**2)
-    
-    loss_train = loss_rec
-
-    dict_losses = {
-      'loss_rec': loss_rec,
-      'loss_train': loss_train
-    }
-    return loss_train, dict_losses
 
   def sample_one_step(self, x_i, rng, i):
 
     if self.sampler == 'euler':
       x_next = self.sample_one_step_euler(x_i, i) 
     elif self.sampler == 'heun':
-      x_next = self.sample_one_step_heun(x_i, i) 
-    elif self.sampler == 'edm':
-      raise LookupError("找对地方了")
+      x_next = self.sample_one_step_heun(x_i, i)
     else:
       raise NotImplementedError
 
@@ -636,7 +617,7 @@ class SimDDPM(nn.Module):
     # return x_next, denoised 
 
   def sample_one_step_heun(self, x_i, i):
-
+    raise NotImplementedError
     x_cur = x_i
 
     t_cur = i / self.n_T  # t start from 0 (t = 0 is noise here)
@@ -645,7 +626,6 @@ class SimDDPM(nn.Module):
     t_next = (i + 1) / self.n_T  # t start from 0 (t = 0 is noise here)
     t_next = t_next * (1 - self.eps) + self.eps
 
-    # TODO{kaiming}: revisit S_churn
     t_hat = t_cur
     x_hat = x_cur  # x_hat is always x_cur when gamma=0
 
@@ -667,6 +647,7 @@ class SimDDPM(nn.Module):
     return x_next
 
   def sample_one_step_euler(self, x_i, i):
+    raise NotImplementedError
     # i: loop from 0 to self.n_T - 1
     t = i / self.n_T  # t start from 0 (t = 0 is noise here)
     t = t * (1 - self.eps) + self.eps
@@ -689,7 +670,6 @@ class SimDDPM(nn.Module):
     t_cur = t_steps[i]
     t_next = t_steps[i + 1]
 
-    # TODO{kaiming}: revisit S_churn
     t_hat = t_cur
     x_hat = x_cur  # x_hat is always x_cur when gamma=0
 
@@ -891,9 +871,27 @@ class SimDDPM(nn.Module):
     # t_cond = jnp.zeros_like(t) if self.no_condition_t else jnp.log(t * 999)
     if not self.class_conditional:
       y = None
+
+    # calculate c_noise
+    if self.exp == "predict":
+      in_t = self.t_predictor.forward(z).squeeze(-1)
+      in_t = jax.lax.stop_gradient(in_t)
+      # for sanity check
+      jax.debug.print('in_t shape: {s}', s=in_t.shape)
+      jax.debug.print('mean error: {s}', s=jnp.mean(jnp.abs(in_t-t)))
+      t = jnp.clip(in_t, 1e-4, 1000)
+
     t_cond = self.t_preprocess_fn(t).astype(self.dtype)
+
+    if self.exp == "joint": # joint exp
+      t_cond = self.t_net.forward(z).squeeze(-1)
+
+    # forward network
+    t_cond = t_cond.reshape(t_cond.shape[0])
+
     if self.exp == "disturb" and train:
       t_cond = t_cond + self.disturb * jax.random.normal(self.rngs.train(), t_cond.shape)
+
     u_pred = self.net(z, t_cond, augment_label=augment_label, train=train,y=y)
     if self.learn_var:
       return jnp.split(u_pred, 2, axis=-1)
@@ -907,6 +905,7 @@ class SimDDPM(nn.Module):
     We hope this function operates D(x+sigma*noise) = x
     our network has F((1-t)x + t*noise) = x - noise
     """
+    raise NotImplementedError
 
     # forward network
     c_in = 1 / (sigma + 1)
@@ -922,7 +921,6 @@ class SimDDPM(nn.Module):
     """
     You should first sample the noise and t and input them
     """
-    
     imgs = imgs.astype(self.dtype)
     gt = imgs
     x = imgs
@@ -1064,6 +1062,6 @@ class SimDDPM(nn.Module):
     # initialization only
     t = jnp.ones((imgs.shape[0],))
     augment_label = jnp.ones((imgs.shape[0], 9)) if self.use_aug_label else None  # fixed augment_dim # TODO: what is this?
-    out = self.net(imgs, t, augment_label,y=jnp.ones((imgs.shape[0],))) # TODO: whether to add train=train
+    out = self.net(imgs, t, augment_label,y=jnp.ones((imgs.shape[0],)))
     out_ema = None   # no need to initialize it here
     return out, out_ema

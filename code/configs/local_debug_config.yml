@@ -21,8 +21,8 @@ model:
     target: x # default: eps
 
     # experiments
-    exp: disturb # option: disturb, predict, joint
-    disturb: 0.02
+    exp: predict # option: disturb, predict, joint
+    # disturb: 0.02
 dataset:
     name: cifar10
     root: CIFAR # pytorch
@@ -40,6 +40,7 @@ fid:
 evalu:
     ema: True
     sample: True
+ema_type: edm # [edm, const]
 batch_size: 512
 num_epochs: 10
 learning_rate: 0.0008
