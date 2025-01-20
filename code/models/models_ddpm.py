@@ -352,6 +352,7 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
     # denoised = jnp.stack(denoised, axis=0)
     # return images, denoised
   elif model.sampler in ['ddpm', 'DDPM']:
+    raise NotImplementedError
     x_i = x_prior
     o = model.sampling_diffusion_schedule()
     t_steps = o['sample_ts']
@@ -435,7 +436,7 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
     # outputs = jax.lax.fori_loop(0, num_steps-2, step_fn, (x_i, rng))
     images = outputs[0]
     
-    # for debug
+    # # for debug
     # all_x = []
     # denoised = []
     # for i in range(num_steps):

@@ -916,17 +916,17 @@ def just_evaluate(
     raise ValueError('Checkpoint path must be absolute')
   if not os.path.exists(config.load_from):
     raise ValueError('Checkpoint path {} does not exist'.format(config.load_from))
-  state,_ = restore_checkpoint(model_init_fn, state, config.load_from, model_config, ema=config.evalu.ema) # NOTE: whether to use the ema model
+  state, _ = restore_checkpoint(model_init_fn, state, config.load_from, model_config, ema=config.evalu.ema) # NOTE: whether to use the ema model
   state_step = int(state.step)
   state = ju.replicate(state) # NOTE: this doesn't split the RNGs automatically, but it is an intended behavior
 
   
-  # ### debug sampler here
+  ### debug sampler here
   # assert False, 'Please note that you should delete the "replicate" line'
-  # num_steps = 1000
+  # num_steps = 500
   # # state = state[0]
-  # t = model.compute_t(jnp.arange(num_steps), num_steps)
-  # vis, denoised = generate(state, model, random.PRNGKey(0), 1) # (num_steps, 32, 32, 3)
+  # # t = model.compute_t(jnp.arange(num_steps), num_steps)
+  # vis, denoised = generate(state, model, random.PRNGKey(0), 1, config=None) # (num_steps, 32, 32, 3)
   # print("vis.shape: ", vis.shape)
   # vis = vis.reshape(num_steps, 32, 32, 3)
   # denoised = denoised.reshape(num_steps, 32, 32, 3)
@@ -949,10 +949,9 @@ def just_evaluate(
   #       'mean': mean,
   #       'img': wandb.Image(img),
   #       'denoised': wandb.Image(denoised_img),
-  #       'noise_level': t[ep]
+  #       # 'noise_level': t[ep]
   #       })
-    
-
+  
   # exit("6.7900")
 
   ########### FID ###########

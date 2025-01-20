@@ -14,8 +14,8 @@ load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241207_160106_l7h7
 ############################################
 model:
     ##### T-conditioning #####
-    # t_condition_method: direct # options: [direct, log999, dot25log, not (i.e. no t)] # note: edm must use "dot25log"
-    t_condition_method: not
+    t_condition_method: direct # options: [direct, log999, dot25log, not (i.e. no t)] # note: edm must use "dot25log"
+    # t_condition_method: not
     
     ##### Common Configs (rarely changes) #####
     image_size: 32
