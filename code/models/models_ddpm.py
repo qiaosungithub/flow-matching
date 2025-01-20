@@ -29,7 +29,6 @@ import math
 from flax.training.train_state import TrainState as FlaxTrainState
 from functools import partial
 
-# from models.models_unet import ContextUnet
 from models.models_ncsnpp_edm import NCSNpp as NCSNppEDM, NCSNppClassifier as NCSNppEDMClassifier
 from models.jcm.sde_lib import batch_mul
 
@@ -163,7 +162,7 @@ def everything_from_beta(betas):
       'posterior_variance': posterior_variance, 'posterior_log_variance_clipped': posterior_log_variance_clipped,
     }    
   
-def diffusion_sampling_schedule(diffusion_schedule, diffusion_nT, sample_nT):
+def diffusion_sampling_schedule(diffusion_schedule, diffusion_nT, sample_nT, lambdaa=0.0):
     diffusion_steps_total = diffusion_nT
     sample_steps_total = sample_nT
     
@@ -191,15 +190,27 @@ def diffusion_sampling_schedule(diffusion_schedule, diffusion_nT, sample_nT):
     log_model_variance = jnp.log(model_variance)
     sqrt_recip_alphas_cumprod = jnp.sqrt(1.0 / new_alpha_cumprods)
     sqrt_recipm1_alphas_cumprod = jnp.sqrt(1.0 / new_alpha_cumprods - 1.0)
-    posterior_mean_coef1 = (
+    posterior_mean_coef1_legacy = (
         new_betas * jnp.sqrt(new_alphas_cumprod_prev) / (1.0 - new_alpha_cumprods)
     )
-    posterior_mean_coef2 = (
+    posterior_mean_coef2_legacy = (
         (1.0 - new_alphas_cumprod_prev)
         * jnp.sqrt(1-new_betas)
         / (1.0 - new_alpha_cumprods)
     )
+
+    posterior_mean_coef2 = jnp.sqrt(
+      (1 - new_alphas_cumprod_prev) - 
+      lambdaa ** 2 * (1 - new_alpha_cumprods / new_alphas_cumprod_prev) * ((1 - new_alphas_cumprod_prev) / (1 - new_alpha_cumprods))
+      ) / jnp.sqrt(1 - new_alpha_cumprods)
+
+    posterior_mean_coef1 = jnp.sqrt(new_alphas_cumprod_prev) - jnp.sqrt(new_alpha_cumprods) * posterior_mean_coef2
     
+    # print(f"lambdaa: {lambdaa}")
+    # print(f"diff of coeff 2: {jnp.max(jnp.abs(posterior_mean_coef2 - posterior_mean_coef2_legacy))}")
+    # print(f"diff of coeff 1: {jnp.max(jnp.abs(posterior_mean_coef1 - posterior_mean_coef1_legacy))}")
+    # exit("邓")
+
     # finally convert to jax, to avoid stange
     sample_ts = jnp.array(sample_ts)
     o.update({
@@ -238,54 +249,6 @@ def diffusion_beta_schedule(diffusion_schedule, diffusion_nT):
     else:
       raise NotImplementedError(f'Unknown diffusion schedule: {diffusion_schedule}')
     
-
-# from jax.experimental import ode as O
-# import models.ode_pkg_repo as O
-import models.ode_pkg as O
-def solve_diffeq_by_O(init_x,state,see_steps:int=10,t_min:float=0.0):
-    def f(x, t):
-        # assert t.shape == (), ValueError(f't shape: {t.shape}')
-        creation = t.reshape(1,).repeat(x.shape[0],axis=0)
-        merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-        u_pred = merged_model.forward_prediction_function(x, creation, train=False)
-        return u_pred
-    out = O.odeint(f, init_x, jnp.linspace(t_min,1.0,see_steps), rtol=1e-4, atol=1e-4) 
-    # out = O.odeint(f, init_x, jnp.linspace(t_min,1.0,see_steps), rtol=1e-5, atol=1e-5) 
-    return out
-    # return out, None
-  
-# NOTE: problem with diffrax is that it is imcompatible with JAX 0.4.27
-# import diffrax as D
-# def solve_diffeq_by_diffrax(init_x,state,see_steps:int=10,t_min:float=0.0):
-#     def f(t, x):
-#     # def f(x, t):
-#         # assert t.shape == (), ValueError(f't shape: {t.shape}')
-#         creation = t.reshape(1,).repeat(x.shape[0],axis=0)
-#         merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-#         u_pred = merged_model.forward_prediction_function(x, creation, train=False)
-#         return u_pred
-#     term = D.ODETerm(f)
-#     solver = D.Dopri5()
-#     controller = D.PIDController(rtol=1e-5, atol=1e-5)
-#     out = D.diffeqsolve(term, solver, y0=init_x, t0=t_min,t1=1.0, stepsize_controller=controller) 
-#     # out = O.odeint(f, init_x, jnp.linspace(t_min,1,see_steps), rtol=1e-5, atol=1e-5) 
-#     return out
-
-def sample_by_diffeq(state: NNXTrainState, model, rng, n_sample,t_min:float=0.0):
-    别传进去 = rng
-    只能用一次, 别传进去 = jax.random.split(别传进去)
-    init_x = jax.random.normal(只能用一次, (n_sample, model.image_size, model.image_size, model.out_channels))    
-    # samples, nfe = solve_diffeq_by_O(init_x, state, see_steps=2, t_min=t_min) # [2, N, 32, 32, 3] # [1, N]
-    samples = solve_diffeq_by_O(init_x, state, see_steps=2, t_min=t_min)
-    # we extract nfe from samples
-    
-    images = samples[1]
-    nfes = samples[2].mean(axis=(1,2,3)).astype(jnp.int32)
-    # print('nfes :', nfes)
-    # print('average nfe:', nfes.mean())
-    # print('samples.shape:', samples_.shape)
-    # print('nfe.shape:', nfe.shape)
-    return images, nfes.mean()
 
 # move this out from model for JAX compilation
 def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='random',classifier=None,classifier_state=None,classifier_scale=0.0):
@@ -327,6 +290,7 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
   rng = 只能用一次诶
 
   if model.sampler in ['euler', 'heun']:
+    raise NotImplementedError
     assert y is None, NotImplementedError()
     assert classifier is None, NotImplementedError()
       
@@ -350,6 +314,7 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
     }[model.sampler] # heun has two steps per iteration
   
   elif model.sampler in ['edm', 'edm-sde']:
+    raise NotImplementedError
     assert y is None, NotImplementedError()
     assert classifier is None, NotImplementedError()
     t_steps = model.compute_edm_t(jnp.arange(num_steps), num_steps)
@@ -442,7 +407,50 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
     # return images, denoised
   
     return images, num_steps
+  elif model.sampler in ['interpolate']: # experiment
+    assert classifier is None
+    x_i = x_prior
+    o = model.sampling_diffusion_schedule()
+    t_steps = o['sample_ts']
+    sqrt_recip_alphas_cumprod_steps = o['sample_sqrt_recip_alphas_cumprod']
+    sqrt_recipm1_alphas_cumprod_steps = o['sample_sqrt_recipm1_alphas_cumprod']
+    posterior_mean_coef1_steps = o['sample_posterior_mean_coef1']
+    posterior_mean_coef2_steps = o['sample_posterior_mean_coef2']
+    log_model_variance_steps = o['sample_log_model_variance']
+    posterior_log_variance_clipped_steps = o['sample_posterior_log_variance_clipped']
+    beta_steps = o['sample_beta']
+
+    def step_fn(i, inputs):
+      x_i, rng = inputs
+      rng_this_step = jax.random.fold_in(rng, i)
+      rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
+
+      merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
+      x_i = merged_model.sample_one_step_ddpmddim(x_i, rng_z, i, y=y, t_steps=t_steps, sqrt_recip_alphas_cumprod_steps=sqrt_recip_alphas_cumprod_steps, sqrt_recipm1_alphas_cumprod_steps=sqrt_recipm1_alphas_cumprod_steps,posterior_mean_coef1_steps=posterior_mean_coef1_steps,posterior_mean_coef2_steps=posterior_mean_coef2_steps,log_model_variance_steps=log_model_variance_steps,posterior_log_variance_clipped_steps=posterior_log_variance_clipped_steps,beta_steps=beta_steps,classifier_grad_fn=None,classifier_scale=classifier_scale)
+      outputs = (x_i, rng)
+      return outputs
+
+    # outputs = jax.lax.fori_loop(0, 1, step_fn, (x_i, rng))
+    outputs = jax.lax.fori_loop(0, num_steps, step_fn, (x_i, rng))
+    # outputs = jax.lax.fori_loop(0, num_steps-2, step_fn, (x_i, rng))
+    images = outputs[0]
+    
+    # for debug
+    # all_x = []
+    # denoised = []
+    # for i in range(num_steps):
+    #   D = step_fn(i, (x_i, rng))
+    #   (x_i, denoise), rng = D
+    #   denoised.append(denoise)
+    #   all_x.append(x_i)
+    #   jax.debug.print('step {i} done', i=i)
+    # images = jnp.stack(all_x, axis=0)
+    # denoised = jnp.stack(denoised, axis=0)
+    # return images, denoised
+  
+    return images, num_steps
   elif model.sampler in ['ddim', 'DDIM']:
+    raise NotImplementedError
     assert y is None, NotImplementedError()
     assert classifier is None, NotImplementedError()
     x_i = x_prior
@@ -567,6 +575,9 @@ class SimDDPM(nn.Module):
     
     # classifier
     classifier_model_depth=2,
+
+    # exp
+    lambdaa=0.0,
     **kwargs
   ):
     self.image_size = image_size
@@ -599,8 +610,9 @@ class SimDDPM(nn.Module):
     # self.num_diffusion_timesteps = num_diffusion_timesteps
     self.sample_clip_denoised = sample_clip_denoised
     self.use_posterior_variance = use_posterior_variance
-    if self.use_posterior_variance:
-      assert ((self.sampler in ['DDPM', 'ddpm']) and not self.learn_var), 'posterior variance is only used in naive DDPM'
+    # if self.use_posterior_variance:
+    #   assert ((self.sampler in ['DDPM', 'ddpm']) and not self.learn_var), 'posterior variance is only used in naive DDPM'
+    self.lambdaa = lambdaa
     self.class_conditional = class_conditional
 
     if self.net_type == 'context':
@@ -679,7 +691,7 @@ class SimDDPM(nn.Module):
     return everything_from_beta(diffusion_beta_schedule(self.diffusion_schedule, self.diffusion_nT))
   
   def sampling_diffusion_schedule(self):
-    return diffusion_sampling_schedule(self.diffusion_schedule, self.diffusion_nT, self.n_T)
+    return diffusion_sampling_schedule(self.diffusion_schedule, self.diffusion_nT, self.n_T, self.lambdaa)
     
   def compute_losses(self, pred, gt):
     raise NotImplementedError
@@ -722,6 +734,7 @@ class SimDDPM(nn.Module):
     # return x_next, denoised 
 
   def sample_one_step_heun(self, x_i, i):
+    raise NotImplementedError
 
     x_cur = x_i
 
@@ -752,6 +765,7 @@ class SimDDPM(nn.Module):
     return x_next
 
   def sample_one_step_euler(self, x_i, i):
+    raise NotImplementedError
     # i: loop from 0 to self.n_T - 1
     t = i / self.n_T  # t start from 0 (t = 0 is noise here)
     t = t * (1 - self.eps) + self.eps
@@ -766,6 +780,7 @@ class SimDDPM(nn.Module):
     return x_next
   
   def sample_one_step_edm_ode(self, x_i, i, t_steps):
+    raise NotImplementedError
     """
     edm's second order ODE solver
     """
@@ -796,6 +811,7 @@ class SimDDPM(nn.Module):
     return x_next
   
   def sample_one_step_edm_sde(self, x_i, rng, i, t_steps):
+    raise NotImplementedError
     """
     edm's second order SDE solver
     """
@@ -889,6 +905,48 @@ class SimDDPM(nn.Module):
 
       nonzero_mask = jnp.where(t > 0.5, 1, 0) # no noise when t == 0
       sample = model_mean + batch_mul(batch_mul(nonzero_mask, noise) , jnp.exp(0.5 * log_model_variance))
+
+      # return sample, x_start # for debug
+      # return x_start
+      return sample
+  
+  def sample_one_step_ddpmddim(self, x_i, rng, i, t_steps, sqrt_recip_alphas_cumprod_steps, sqrt_recipm1_alphas_cumprod_steps, posterior_mean_coef1_steps, posterior_mean_coef2_steps,log_model_variance_steps,posterior_log_variance_clipped_steps, beta_steps,y=None,classifier_grad_fn=None,classifier_scale=None):
+      """
+      DDPM, DDIM interpolate
+      self.lambdaa: 0 for ddim, 1 for ddpm
+      """
+      assert self.lambdaa >= 0 and self.lambdaa <= 1, 'lambdaa should be in [0, 1]'
+      assert not self.class_conditional
+      assert not self.learn_var, 'DDIM only supports fixed variance DDPMs'
+      assert self.use_posterior_variance, 'DDIM only supports posterior variance DDPMs'
+      
+      b = x_i.shape[0]
+      t = batch_t(t_steps[i],b)
+      sqrt_recip_alphas_cumprod = batch_t(sqrt_recip_alphas_cumprod_steps[i],b)
+      sqrt_recipm1_alphas_cumprod = batch_t(sqrt_recipm1_alphas_cumprod_steps[i],b)
+      posterior_mean_coef1 = batch_t(posterior_mean_coef1_steps[i],b)
+      posterior_mean_coef2 = batch_t(posterior_mean_coef2_steps[i],b)
+      posterior_log_variance_clipped = batch_t(posterior_log_variance_clipped_steps[i],b)
+      # betas = batch_t(beta_steps[i],b)
+      
+      eps_pred = self.forward_prediction_function(x_i, t, train=False,y=y)
+      log_model_variance = posterior_log_variance_clipped
+      
+      # get x_start from eps
+      x_start = batch_mul(sqrt_recip_alphas_cumprod, x_i) - batch_mul(sqrt_recipm1_alphas_cumprod, eps_pred)
+      
+      if self.sample_clip_denoised:
+          x_start = jnp.clip(x_start, -1, 1)
+          
+      model_mean = batch_mul(posterior_mean_coef1, x_start) + batch_mul(posterior_mean_coef2, x_i) # 这里写错了就高兴
+      
+      #### END ####
+
+      noise = jax.random.normal(rng, x_i.shape)
+
+      nonzero_mask = jnp.where(t > 0.5, 1, 0) # no noise when t == 0
+      noise_scale = jnp.exp(0.5 * log_model_variance) * self.lambdaa 
+      sample = model_mean + batch_mul(batch_mul(nonzero_mask, noise), noise_scale)
 
       # return sample, x_start # for debug
       # return x_start
@@ -1371,3 +1429,5 @@ class SimDDPM(nn.Module):
     out = self.net(imgs, t, augment_label,y=jnp.ones((imgs.shape[0],))) # TODO: whether to add train=train
     out_ema = None   # no need to initialize it here
     return out, out_ema
+
+# diffusion_sampling_schedule("cosine", 500, 500, 1.0)

@@ -1,116 +1,123 @@
-# Put your `debug.sh` configs in this YAML file
-
-# # Here is for MNIST:
-# training:
-#     learning_rate: 0.0001
-#     scheduler: poly # constant
-#     warmup_steps: 20000
-#     num_epochs: 2
-#     batch_size: 1024
-#     log_per_step: 20
-#     sigma_min: 0.0
-#     wandb: False
-#     checkpoint_per_epoch: 1000
-#     eval_per_epoch: 1
-#     # load_from: /kmh-nfs-us-mount/logs/sqa/sqa_NCSNv2/20241101_030317_2ml2nf_kmh-tpuvm-v2-32-1__b_lr_ep_torchvision_r50_eval/checkpoint_5684
-# model:
-#     name: UNet_for_mnist
-# dataset:
-#     name: MNIST
-#     root: /kmh-nfs-ssd-eu-mount/code/qiao/data/MNIST/
-#     image_size: 28
-#     prefetch_factor: 2
-#     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
-# sampling:
-#     ema: True
-#     ema_decay: 0.999
-#     save_dir: /kmh-nfs-ssd-eu-mount/code/qiao/flow-matching/sqa-flow-matching/images/
-# fid:
-#     eval_only: True
-#     fid_per_epoch: 1
-#     num_samples: 1000
-
-# Here is for CIFAR10:
+continue_training: False # this is for resuming training
+# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241206_001843_i2wyhh_kmh-tpuvm-v3-32-1__b_lr_ep_eval # FM model (w/ t)
+# load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241213_190021_ftvrxo_kmh-tpuvm-v2-32-2__b_lr_ep_eval # New FM model (w/ t)
+# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241211_150928_85yb5q_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/checkpoint_48000 # FM w/o t
+load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241207_160106_l7h71r_kmh-tpuvm-v3-32-1__b_lr_ep_eval # DDPM model (w/ t)
+# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241210_003420_srefmk_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/best_fid # ADM model (w/ t)
+# load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241210_003719_b663n5_kmh-tpuvm-v2-32-7__b_lr_ep_eval/best_fid # ADM class-conditional model (w/ t)
+# load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241209_004559_gihhxu_kmh-tpuvm-v2-32-1__b_lr_ep_eval/checkpoint_194000 # DDIM model (w/ t); diffusion schedule is "linear"
+# load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241211_185022_1p9khj_kmh-tpuvm-v2-32-7__b_lr_ep_eval # EDM model (w/ t)
+# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241210_185646_e19l8l_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_145500 # DDIM model (w/o t)
+# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241208_145127_x40660_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_48000 # DDPM (w/o t)
+############################################
+#     Normal Training Configuration        #
+############################################
 model:
+    ##### T-conditioning #####
+    t_condition_method: direct # options: [direct, log999, dot25log, not (i.e. no t)] # note: edm must use "dot25log"
+    # t_condition_method: not
+    
+    ##### Common Configs (rarely changes) #####
     image_size: 32
     out_channels: 3
-    base_width: 4
-    n_T: 50
+    base_width: 128
     use_aug_label: False
-    dropout: 0.20 # FM
     net_type: ncsnppedm
-    average_loss: True # use average or sum for loss
-    # sampler: euler
-    # sampler: heun
-    sampler: edm
-    # sampler: edm-sde
-    # sampler: DDIM
-    ode_solver: jax
-    # ode_solver: scipy # rk45
-    no_condition_t: False
+    average_loss: False # use average or sum for loss
+
+    ##### Common Configs (may changes) #####
+    dropout: 0.15 # not important
+    # embedding_type: fourier # options: [positional, fourier]
     embedding_type: positional
+    # task: EDM # options: [FM, Diffusion, EDM]
+    task: Diffusion
+
+    ##### FM-specific configs #####
+
+    ##### Diffusion-specific configs #####
+    # learn_var: True # default: False
+
+    ##### Conditional Generation #####
+    class_conditional: False
+
+    ##### Sampling Configs #####
+    n_T: 500 # num of sample steps, matches "diffusion_nT"
+    
+    # # --- Flow Matching / EDM --- #
+    # # sampler: euler
+    # # sampler: heun
+    # # sampler: edm
+    # # sampler: edm-sde
+    # # ode_solver: jax
+    # ode_solver: O
+
+    # --- Diffusion --- #
+    # sampler: ddpm
+    # sampler: DDIM
+    sampler: interpolate
+    lambdaa: 0.2
+    sample_clip_denoised: True
+    use_posterior_variance: True
+
+diffusion:
+    diffusion_nT: 500
+    diffusion_schedule: cosine
+
 dataset:
     name: cifar10
     root: CIFAR # pytorch
     prefetch_factor: 2
     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
-    cache: False
+    cache: True
+
 aug: 
-    use_edm_aug: False # NOTE: if you want to turn on this, also turn on model.use_aug_label
+    use_edm_aug: False # NOTE: if you want to turn on this, you must also turn on model.use_aug_label
+
 fid:
     eval_only: False
-    fid_per_epoch: 100
-    num_samples: 1000
+    fid_per_epoch: 200
+    num_samples: 50000
     cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
-evalu:
+
+evalu: # In principle, this should not be used
     ema: True
     sample: True
+
 batch_size: 512
-num_epochs: 400
-learning_rate: 0.0008 # FM
+num_epochs: 4000
+learning_rate: 0.001
 lr_schedule: const
-weight_decay: 0
+
+# ema
+ema_schedule: edm # options: [const, edm]
+ema_halflife_king: 500 # default: 50000
+
+weight_decay: 0.0
 optimizer: adamw
-adam_b2: 0.999
-grad_clip: 0.0 # TODO: enable this
+adam_b2: 0.95
+grad_clip: 0.0
 warmup_epochs: 200
-log_per_step: 30
-visualize_per_epoch: 100
+log_per_step: 20
+visualize_per_epoch: 50
 eval_per_epoch: 100
+checkpoint_per_epoch: 500
+save_by_fid: False # if True, then only save checkpoint with fid better than all previous checkpoints
 wandb: False
-checkpoint_per_epoch: 100
-load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241206_001843_i2wyhh_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_48000
 
-
-# # Here is for IMAGENET32x32:
-# training:
-#     learning_rate: 0.0001
-#     scheduler: poly # constant
-#     warmup_steps: 20000
-#     num_epochs: 2
-#     batch_size: 1024
-#     log_per_step: 20
-#     sigma_min: 0.0
-#     wandb: False
-#     checkpoint_per_epoch: 1000
-#     eval_per_epoch: 1
-#     # load_from: /kmh-nfs-us-mount/logs/sqa/sqa_NCSNv2/20241101_030317_2ml2nf_kmh-tpuvm-v2-32-1__b_lr_ep_torchvision_r50_eval/checkpoint_5684
-# model:
-#     name: UNet_for_32
-# dataset:
-#     name: imagenet2012:5.*.*
-#     # root: /kmh-nfs-ssd-eu-mount/code/qiao/data/MNIST/
+##### Classifier Guidance #####
+run_classifier_guidance: False
+# load_classifier_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241206_233913_v8zrw5_kmh-tpuvm-v2-32-preemptible-1__b_lr_ep_eval # this classifier has lowest valid loss
+# load_classifier_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241215_025006_1tmfkz_kmh-tpuvm-v2-32-4__b_lr_ep_eval # a new classifier for testing
+# classifier_scale: 5.0
+# classifier_model:
+#     task: Classifier
 #     image_size: 32
-#     prefetch_factor: 2
-#     num_workers: 64 # NOTE: On V2, if you don't use num_workers=64, sometimes the code will exit unexpectedly
-# sampling:
-#     ema: True
-#     ema_decay: 0.999
-#     save_dir: /kmh-nfs-ssd-eu-mount/code/qiao/flow-matching/sqa-flow-matching/images/
-# fid:
-#     on_use: False
-#     eval_only: True
-#     fid_per_epoch: 1
-#     num_samples: 1000
+#     out_channels: 3
+#     base_width: 32
+#     n_T: 250 # num of sample steps, matches "diffusion_nT"
+#     dropout: 0.3
+#     net_type: ncsnppedm_classifier
+#     average_loss: True # use average or sum for loss
 
-# NOTE: you cannot add more hierarchy structure without modifying default.py and load_config.py
+#     t_condition_method: direct # default: log999
+#     classifier_model_depth: 3
