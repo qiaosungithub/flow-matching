@@ -206,6 +206,10 @@ def diffusion_sampling_schedule(diffusion_schedule, diffusion_nT, sample_nT, lam
 
     posterior_mean_coef1 = jnp.sqrt(new_alphas_cumprod_prev) - jnp.sqrt(new_alpha_cumprods) * posterior_mean_coef2
     
+    # sanity check
+    posterior_mean_coef1 = posterior_mean_coef1_legacy
+    posterior_mean_coef2 = posterior_mean_coef2_legacy
+
     # print(f"lambdaa: {lambdaa}")
     # print(f"diff of coeff 2: {jnp.max(jnp.abs(posterior_mean_coef2 - posterior_mean_coef2_legacy))}")
     # print(f"diff of coeff 1: {jnp.max(jnp.abs(posterior_mean_coef1 - posterior_mean_coef1_legacy))}")

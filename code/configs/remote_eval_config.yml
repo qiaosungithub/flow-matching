@@ -55,7 +55,7 @@ model:
     # sampler: ddpm
     # sampler: DDIM
     sampler: interpolate
-    lambdaa: 0.2
+    lambdaa: 1.0
     sample_clip_denoised: True
     use_posterior_variance: True
 
