@@ -168,6 +168,7 @@ def diffusion_sampling_schedule(diffusion_schedule, diffusion_nT, sample_nT, lam
     
     o = everything_from_beta(diffusion_beta_schedule(diffusion_schedule, diffusion_steps_total))
     sample_ts = space_timesteps(diffusion_steps_total,str(sample_steps_total))[::-1]
+    # assert False, jax.device_get(sample_ts)
     
     new_betas = []
     new_alpha_cumprods = []
@@ -360,7 +361,7 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
     # denoised = jnp.stack(denoised, axis=0)
     # return images, denoised
   elif model.sampler in ['ddpm', 'DDPM']:
-    raise NotImplementedError
+    # raise NotImplementedError
     x_i = x_prior
     o = model.sampling_diffusion_schedule()
     t_steps = o['sample_ts']
@@ -459,7 +460,7 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
   
     return images, num_steps
   elif model.sampler in ['ddim', 'DDIM']:
-    raise NotImplementedError
+    # raise NotImplementedError
     assert y is None, NotImplementedError()
     assert classifier is None, NotImplementedError()
     x_i = x_prior
@@ -680,8 +681,18 @@ class SimDDPM(nn.Module):
       self.t_min = 0.002
       self.t_max = 80.0
       self.rho = 7.0
-      self.data_std = 0.5    
+      self.data_std = 0.5   
 
+    assert 0.0 <= self.lambdaa <= 1.0, 'lambdaa should be in [0, 1]'
+
+    if self.sampler in ['ddpm', 'DDPM'] and self.lambdaa < 1.0:
+      logging.info(f'lambdaa is set to 1.0 for DDPM sampler, original value is {self.lambdaa}')
+      self.lambdaa = 1.0
+
+    if self.sampler in ['ddim', 'DDIM'] and self.lambdaa > 0.0:
+      logging.info(f'lambdaa is set to 1.0 for DDIM sampler, original value is {self.lambdaa}')
+      self.lambdaa = 0.0
+    
   def get_visualization(self, list_imgs):
     vis = jnp.concatenate(list_imgs, axis=1)
     return vis
@@ -700,6 +711,7 @@ class SimDDPM(nn.Module):
     return everything_from_beta(diffusion_beta_schedule(self.diffusion_schedule, self.diffusion_nT))
   
   def sampling_diffusion_schedule(self):
+    # assert False, (self.diffusion_nT, self.n_T, self.lambdaa)
     return diffusion_sampling_schedule(self.diffusion_schedule, self.diffusion_nT, self.n_T, self.lambdaa)
     
   def compute_losses(self, pred, gt):
@@ -979,6 +991,7 @@ class SimDDPM(nn.Module):
     # when eta=0, no need to add noise
     if self.sample_clip_denoised:
       x0_t = jnp.clip(x0_t, -1, 1)
+      eps = batch_mul(x_i - batch_mul(jnp.sqrt(at), x0_t), 1. / jnp.sqrt(1 - at))
 
     # # sqa try, change this back
     # eps = jax.random.normal(rng, x_i.shape)
@@ -1439,4 +1452,5 @@ class SimDDPM(nn.Module):
     out_ema = None   # no need to initialize it here
     return out, out_ema
 
-diffusion_sampling_schedule("cosine", 10, 10, 1.0)
+if __name__ == '__main__':
+    diffusion_sampling_schedule("cosine", 10, 10, 1.0)
