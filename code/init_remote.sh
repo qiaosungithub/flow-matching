@@ -20,23 +20,23 @@ echo 'Log dir: '$LOGDIR
 
 
 # mount NFS Filestore
-# gcloud compute tpus tpu-vm ssh $VM_NAME --zone $ZONE \
-# --worker=all --command "
+gcloud compute tpus tpu-vm ssh $VM_NAME --zone $ZONE \
+--worker=all --command "
 
-# sudo apt-get -y update
-# sudo apt-get -y install nfs-common
+sudo apt-get -y update
+sudo apt-get -y install nfs-common
 
-# sudo mkdir -p /kmh-nfs-us-mount
-# sudo mount -o vers=3 10.26.72.146:/kmh_nfs_us /kmh-nfs-us-mount
-# sudo chmod go+rw /kmh-nfs-us-mount
-# ls /kmh-nfs-us-mount
+sudo mkdir -p /kmh-nfs-us-mount
+sudo mount -o vers=3 10.26.72.146:/kmh_nfs_us /kmh-nfs-us-mount
+sudo chmod go+rw /kmh-nfs-us-mount
+ls /kmh-nfs-us-mount
 
-# sudo mkdir -p /kmh-nfs-ssd-eu-mount
-# sudo mount -o vers=3 10.150.179.250:/kmh_nfs_ssd_eu /kmh-nfs-ssd-eu-mount
-# sudo chmod go+rw /kmh-nfs-ssd-eu-mount
-# ls /kmh-nfs-ssd-eu-mount
+sudo mkdir -p /kmh-nfs-ssd-eu-mount
+sudo mount -o vers=3 10.150.179.250:/kmh_nfs_ssd_eu /kmh-nfs-ssd-eu-mount
+sudo chmod go+rw /kmh-nfs-ssd-eu-mount
+ls /kmh-nfs-ssd-eu-mount
 
-# "
+"
 
 gcloud compute tpus tpu-vm ssh $VM_NAME --zone $ZONE \
 --worker=all --command "
