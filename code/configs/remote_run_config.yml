@@ -26,7 +26,7 @@ model:
     target: x # default: eps
 
     # experiments
-    exp: joint # option: disturb, predict, joint
+    exp: predict # option: disturb, predict, joint
     # disturb: 0.02
 dataset:
     name: cifar10
