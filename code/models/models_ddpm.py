@@ -299,8 +299,8 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
   rng = 只能用一次诶
 
   if model.sampler in ['euler', 'heun']:
-    raise NotImplementedError
-    assert y is None, NotImplementedError()
+    # raise NotImplementedError
+    # assert y is None, NotImplementedError()
     assert classifier is None, NotImplementedError()
       
     x_i = x_prior
@@ -311,7 +311,7 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
       rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
 
       merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-      x_i = merged_model.sample_one_step(x_i, rng_z, i)
+      x_i = merged_model.sample_one_step(x_i, rng_z, i, y=y)
       outputs = (x_i, rng)
       return outputs
 
@@ -323,8 +323,8 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
     }[model.sampler] # heun has two steps per iteration
   
   elif model.sampler in ['edm', 'edm-sde']:
-    raise NotImplementedError
-    assert y is None, NotImplementedError()
+    # raise NotImplementedError
+    # assert y is None, NotImplementedError()
     assert classifier is None, NotImplementedError()
     t_steps = model.compute_edm_t(jnp.arange(num_steps), num_steps)
     t_steps = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=model.dtype)], axis=0)  # t_N = 0; no need to round_sigma
@@ -336,7 +336,7 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
       rng_z, 别传进去 = jax.random.split(rng_this_step, 2)
 
       merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
-      x_i = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps)
+      x_i = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps, y=y)
       # x_i, denoised = merged_model.sample_one_step_edm(x_i, rng_z, i, t_steps) # for debug
 
       outputs = (x_i, rng)
@@ -650,6 +650,7 @@ class SimDDPM(nn.Module):
         aug_label_dim=9,
         class_conditional=self.class_conditional,
         num_classes=self.num_classes,
+        use_sqa_class_conditional=self.task in ['FM', 'EDM'],
         rngs=self.rngs)
     elif self.net_type == 'ncsnppedm_classifier':
       net_fn = partial(NCSNppEDMClassifier,
@@ -677,7 +678,7 @@ class SimDDPM(nn.Module):
     self.net = net_fn()
     
     # edm specific settings
-    if self.task in ['edm', 'EDM']:
+    if self.task in ['edm', 'EDM'] or self.sampler in ['edm', 'edm-sde']:
       self.t_min = 0.002
       self.t_max = 80.0
       self.rho = 7.0
@@ -729,24 +730,24 @@ class SimDDPM(nn.Module):
     }
     return loss_train, dict_losses
 
-  def sample_one_step(self, x_i, rng, i):
+  def sample_one_step(self, x_i, rng, i, y=None):
 
     if self.sampler == 'euler':
-      x_next = self.sample_one_step_euler(x_i, i) 
+      x_next = self.sample_one_step_euler(x_i, i, y=y)
     elif self.sampler == 'heun':
-      x_next = self.sample_one_step_heun(x_i, i)
+      x_next = self.sample_one_step_heun(x_i, i, y=y)
     else:
       raise NotImplementedError(f'Unknown sampler: {self.sampler}')
 
     return x_next
   
-  def sample_one_step_edm(self, x_i, rng, i, t_steps):
+  def sample_one_step_edm(self, x_i, rng, i, t_steps, y=None):
 
     if self.sampler == 'edm':
-      x_next = self.sample_one_step_edm_ode(x_i, i, t_steps) 
+      x_next = self.sample_one_step_edm_ode(x_i, i, t_steps, y=y) 
       # x_next, denoised = self.sample_one_step_edm_ode(x_i, i, t_steps) # for debug
     elif self.sampler == 'edm-sde':
-      x_next = self.sample_one_step_edm_sde(x_i, rng, i, t_steps)
+      x_next = self.sample_one_step_edm_sde(x_i, rng, i, t_steps, y=y)
       # x_next, denoised = self.sample_one_step_edm_sde(x_i, rng, i, t_steps) # for debug
     else:
       raise NotImplementedError(f'Unknown sampler: {self.sampler}')
@@ -785,14 +786,14 @@ class SimDDPM(nn.Module):
 
     return x_next
 
-  def sample_one_step_euler(self, x_i, i):
-    raise NotImplementedError
+  def sample_one_step_euler(self, x_i, i, y=None):
+    # raise NotImplementedError
     # i: loop from 0 to self.n_T - 1
     t = i / self.n_T  # t start from 0 (t = 0 is noise here)
     t = t * (1 - self.eps) + self.eps
     t = jnp.repeat(t, x_i.shape[0])
 
-    u_pred = self.forward_prediction_function(x_i, t, train=False)
+    u_pred = self.forward_prediction_function(x_i, t, train=False, y=y)
 
     # move one step
     dt = 1. / self.n_T
@@ -800,8 +801,8 @@ class SimDDPM(nn.Module):
 
     return x_next
   
-  def sample_one_step_edm_ode(self, x_i, i, t_steps):
-    raise NotImplementedError
+  def sample_one_step_edm_ode(self, x_i, i, t_steps, y=None):
+    # raise NotImplementedError
     """
     edm's second order ODE solver
     """
@@ -817,12 +818,12 @@ class SimDDPM(nn.Module):
     t_next = jnp.repeat(t_next, x_hat.shape[0])
     
     # Euler step.
-    denoised = self.forward_edm_denoising_function(x_hat, t_hat, train=False)
+    denoised = self.forward_edm_denoising_function(x_hat, t_hat, train=False, y=y)
     d_cur = batch_mul(x_hat - denoised, 1. / t_hat)
     x_next = x_hat + batch_mul(d_cur, t_next - t_hat)
 
     # Apply 2nd order correction
-    denoised = self.forward_edm_denoising_function(x_next, t_next, train=False)
+    denoised = self.forward_edm_denoising_function(x_next, t_next, train=False, y=y)
     d_prime = batch_mul(x_next - denoised, 1. / jnp.maximum(t_next, 1e-8))  # won't take effect if t_next is 0 (last step)
     x_next_ = x_hat + batch_mul(0.5 * d_cur + 0.5 * d_prime, t_next - t_hat)
 
@@ -1035,7 +1036,7 @@ class SimDDPM(nn.Module):
   def forward_prediction_function(self, z, t, augment_label=None,y=None, train: bool = True):  # EDM
 
     if not self.class_conditional:
-      y = None
+      assert y is None
     t_cond = self.t_preprocess_fn(t).astype(self.dtype)
     u_pred = self.net(z, t_cond, augment_label=augment_label, train=train, y=y)
     if self.learn_var:
@@ -1256,7 +1257,7 @@ class SimDDPM(nn.Module):
 
     return loss_train, dict_losses, images
   
-  def forward_edm_denoising_function(self, x, sigma, augment_label=None, train: bool = True):  # EDM
+  def forward_edm_denoising_function(self, x, sigma, augment_label=None, train: bool = True, y=None):  # EDM
     """
     code from edm
     ---
@@ -1286,7 +1287,7 @@ class SimDDPM(nn.Module):
     sigma = sigma.reshape(sigma.shape[0])
 
     # F_x = self.net(in_x, c_noise, augment_label=augment_label, train=train)
-    F_x = self.forward_prediction_function(in_x, sigma, augment_label=augment_label, train=train)
+    F_x = self.forward_prediction_function(in_x, sigma, augment_label=augment_label, train=train, y=y)
 
     D_x = batch_mul(x, c_skip) + batch_mul(F_x, c_out)
     return D_x

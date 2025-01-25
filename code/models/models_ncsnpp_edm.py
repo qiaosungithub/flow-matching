@@ -62,6 +62,7 @@ class NCSNpp(nn.Module):
         aug_label_dim = None,
         class_conditional = False,
         num_classes = 0,
+        use_sqa_class_conditional = False,
         **kwargs
     ):
 
@@ -80,6 +81,9 @@ class NCSNpp(nn.Module):
         self.use_aug_label = use_aug_label
         self.aug_label_dim = aug_label_dim
         self.class_conditional = class_conditional
+        self.num_classes = num_classes
+        self.use_sqa_class_conditional = use_sqa_class_conditional
+        logging.info(f"Using SQA class conditional: {use_sqa_class_conditional}")
 
         self.act = act = nn.swish
         self.conditional = conditional = True  # noise-conditional
@@ -120,7 +124,10 @@ class NCSNpp(nn.Module):
         #################### noise condition ############################
         #################### class condition ############################
         if class_conditional:
-            self.class_embed = nn.Embed(num_embeddings=num_classes,features=nf * 4, embedding_init=nn.initializers.normal(stddev=1),rngs=rngs)
+            if not self.use_sqa_class_conditional:
+                self.class_embed = nn.Embed(num_embeddings=num_classes,features=nf * 4, embedding_init=nn.initializers.normal(stddev=1),rngs=rngs)
+            else:
+                self.map_label = nn.Linear(num_classes, input_temb_dim, kernel_init=default_initializer(), use_bias=False, rngs=rngs)
         
         #################### noise condition ############################
         if conditional:
@@ -315,6 +322,8 @@ class NCSNpp(nn.Module):
         # assert x.shape[-1] == self.out_channels or x.shape[-1] * 2== self.out_channels # assert个牛魔王
         
         assert (y is None) == (not self.class_conditional)
+        if y is not None:
+            assert y.shape == (x.shape[0],)
         assert (augment_label is None) == ((not self.use_aug_label) or (not train)) # have augment label <=> training and using aug label
 
         logging_fn = logging.info if verbose else lambda x: None
@@ -341,6 +350,11 @@ class NCSNpp(nn.Module):
         # timestep/noise_level embedding; only for continuous training
         temb = self.temb_layer(time_cond)
 
+        if y is not None and self.use_sqa_class_conditional:
+            # transform into one-hot
+            y_one_hot = jax.nn.one_hot(y, self.num_classes)
+            temb += self.map_label(y_one_hot * jnp.sqrt(self.num_classes))
+
         if augment_label is not None:
             assert self.use_aug_label
             assert augment_label.shape == (x.shape[0], self.aug_label_dim)
@@ -353,11 +367,9 @@ class NCSNpp(nn.Module):
             raise NotImplementedError
             temb = None
         
-        if y is not None:
-            assert self.class_conditional
-            assert y.shape == (x.shape[0],)
-            temb += self.class_embed(y)
-
+        if y is not None and not self.use_sqa_class_conditional:
+                temb += self.class_embed(y)
+            
         # utility function to count number of parameters
         def pms(self, name):
             """
