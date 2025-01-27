@@ -37,6 +37,7 @@ FLAGS = flags.FLAGS
 
 flags.DEFINE_string('workdir', None, 'Directory to store model data.')
 flags.DEFINE_bool('debug', False, 'Debugging mode.')
+flags.DEFINE_bool('just_evaluate', False, 'Just evaluate the model.')
 config_flags.DEFINE_config_file(
     'config',
     None,
@@ -67,7 +68,7 @@ def main(argv):
     with jax.disable_jit():
       train.train_and_evaluate(FLAGS.config, FLAGS.workdir)
   else:
-    if FLAGS.config.get('just_evaluate', False):
+    if FLAGS.just_evaluate:
       train.just_evaluate(FLAGS.config, FLAGS.workdir)
     else:
       train.train_and_evaluate(FLAGS.config, FLAGS.workdir)
@@ -76,5 +77,5 @@ def main(argv):
 if __name__ == '__main__':
   logging_util.verbose_off()
   logging_util.set_time_logging(logging)
-  flags.mark_flags_as_required(['config', 'workdir'])
+  flags.mark_flags_as_required(['config', 'workdir', 'just_evaluate'])
   app.run(main)

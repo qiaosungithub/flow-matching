@@ -1,3 +1,6 @@
+VM_NAME=kmh-tpuvm-v3-32-preemptible-1
+ZONE=europe-west4-a
+
 echo 'To kill jobs in: '$VM_NAME 'in' $ZONE' after 2s...'
 sleep 2s
 

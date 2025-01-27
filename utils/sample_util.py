@@ -38,7 +38,10 @@ def generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_s
     samples = run_p_sample_step(p_sample_step, state, sample_idx=sample_idx, ema=ema)
     samples = float_to_uint8(samples)
     samples_all.append(samples)
+    break
+
   samples_all = np.concatenate(samples_all, axis=0)
+  logging.info(f'samples_all.shape: {samples_all.shape}')
   samples_all = samples_all[:config.fid.num_samples]
   return samples_all
 

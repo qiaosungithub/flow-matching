@@ -8,12 +8,13 @@ salt=`head /dev/urandom | tr -dc a-z0-9 | head -c6`
 commitid=`git show -s --format=%h`  # latest commit id; may not be exactly the same as the commit
 export STAGEDIR=/kmh-nfs-ssd-eu-mount/staging/sqa/debug-km-code/${now}-${salt}-${commitid}-code
 sudo mkdir -p $STAGEDIR
+sudo chmod 777 -R $STAGEDIR
 
 echo 'Staging files...'
 rsync -a . $STAGEDIR --exclude=tmp --exclude=.git  --exclude=cache --exclude=__pycache__
 echo 'Done staging.'
 
-chmod 777 $STAGEDIR
+sudo chmod 777 -R $STAGEDIR
 
 cd $STAGEDIR
 echo 'Current dir: '`pwd`
@@ -44,7 +45,8 @@ wd=0
 ep=4000
 warm=200
 width=128
-n_T=18
+n_T=100
+# n_T=18
 drop=0.2
 
 now=`date '+%Y%m%d_%H%M%S'`
@@ -54,9 +56,9 @@ JOBNAME=hvae/iddpm/${now}_${salt}_${TBNAME}
 
 LOGDIR=/kmh-nfs-ssd-eu-mount/logs/sqa/debug-km-code/$JOBNAME
 sudo mkdir -p ${LOGDIR}
-sudo chmod 777 ${LOGDIR}
+sudo chmod 777 -R ${LOGDIR}
 
-sudo chmod 777 /kmh-nfs-us-mount/data/cached  # for saving cached data
+# sudo chmod 777 /kmh-nfs-us-mount/data/cached  # for saving cached data
 
 echo 'Log dir: '$LOGDIR
 echo 'tb entry: '${TBNAME:10}:$LOGDIR  # remove the first 10 characters 'kmh-tpuvm-'
@@ -100,7 +102,10 @@ python3 main.py \
     --config.model.use_aug_label=True \
     --config.model.dropout=${drop} \
     --config.model.net_type='ncsnppedm' \
-    --config.model.t_conditioned=True \
+    --config.model.t_conditioned=False \
     --config.model.M=1000 \
+    --config.fid.device_batch_size=256 \
+    --config.restore=/kmh-nfs-ssd-eu-mount/logs/kaiminghe/hvae/iddpm/20250101_023656_4ht1e4_kmh-tpuvm-v4-8-8_tpu_b512_constlr0.0004_wd0_adam_ep4000wm200_w128_n18_dp0.2_uncond_fid_ncsnppedm_auglabel_0tcond_iddpm_b0.95_edmsampler_edmtrainer_edmweight_dbg1 \
+    --just_evaluate \
 " 2>&1 | tee -a $LOGDIR/output.log
 

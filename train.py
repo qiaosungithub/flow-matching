@@ -574,13 +574,13 @@ def just_evaluate(
   if local_batch_size % jax.local_device_count() > 0:
     raise ValueError('Local batch size must be divisible by the number of local devices')
 
-  train_loader, steps_per_epoch = input_pipeline.create_split(
-    config.dataset,
-    local_batch_size,
-    split='train',
-    # split='val',
-  )
-  logging.info('steps_per_epoch: {}'.format(steps_per_epoch))
+  # train_loader, steps_per_epoch = input_pipeline.create_split(
+  #   config.dataset,
+  #   local_batch_size,
+  #   split='train',
+  #   # split='val',
+  # )
+  # logging.info('steps_per_epoch: {}'.format(steps_per_epoch))
 
   # base_learning_rate = config.learning_rate * config.batch_size / 256.0
   logging.warning('No lr scaling.')
@@ -588,9 +588,9 @@ def just_evaluate(
 
   model = create_model(model_cls=models_ddpm.SimDDPM, half_precision=config.half_precision, **config.model)
 
-  learning_rate_fn = create_learning_rate_fn(config, base_learning_rate, steps_per_epoch)
+  # learning_rate_fn = create_learning_rate_fn(config, base_learning_rate, steps_per_epoch)
 
-  state = create_train_state(rng, config, model, image_size, learning_rate_fn)
+  state = create_train_state(rng, config, model, image_size, lambda:114514)
 
   if config.restore != '':
     logging.info('Restoring from: {}'.format(config.restore))
@@ -601,18 +601,21 @@ def just_evaluate(
 
   # step_offset > 0 if restarting from checkpoint
   step_offset = int(state.step)
-  epoch_offset = step_offset // steps_per_epoch  # sanity check for resuming
-  if not config.fid.eval_only:
-    assert epoch_offset * steps_per_epoch == step_offset
+  # epoch_offset = step_offset // steps_per_epoch  # sanity check for resuming
+  # if not config.fid.eval_only:
+  #   assert epoch_offset * steps_per_epoch == step_offset
   state = jax_utils.replicate(state)
 
-  ema_scales_fn = functools.partial(edm_ema_scales_schedules, steps_per_epoch=steps_per_epoch, config=config)
-  p_train_step = jax.pmap(
-    functools.partial(train_step, rng_init=rng, learning_rate_fn=learning_rate_fn, ema_scales_fn=ema_scales_fn, config=config),
-    axis_name='batch',
-  )
+  # ema_scales_fn = functools.partial(edm_ema_scales_schedules, steps_per_epoch=steps_per_epoch, config=config)
+  # p_train_step = jax.pmap(
+  #   functools.partial(train_step, rng_init=rng, learning_rate_fn=learning_rate_fn, ema_scales_fn=ema_scales_fn, config=config),
+  #   axis_name='batch',
+  # )
   p_sample_step = jax.pmap(
-    functools.partial(sample_step, model=model, rng_init=rng, device_batch_size=config.fid.device_batch_size,),
+    functools.partial(sample_step, model=model, rng_init=jax.random.PRNGKey(0),
+                       device_batch_size=config.fid.device_batch_size,
+                      #  device_batch_size=256,
+                      ),
     axis_name='batch',
   )
   vis_sample_idx = jax.process_index() * jax.local_device_count() + jnp.arange(jax.local_device_count())  # for visualization
@@ -670,96 +673,33 @@ def just_evaluate(
   #   hooks += [periodic_actions.Profile(num_profile_steps=5, logdir=workdir)]
   train_metrics_last_t = time.time()
   logging.info('Initial compilation, this might take some minutes...')
-  for epoch in range(epoch_offset, config.num_epochs):
-    train_loader.sampler.set_epoch(epoch)
-    logging.info('epoch {}...'.format(epoch))
-    for n_batch, batch in enumerate(train_loader):
-      step = epoch * steps_per_epoch + n_batch
-      batch = prepare_batch_data(batch, config)
-      state, metrics, vis = p_train_step(state, batch)
-      
-      if epoch == epoch_offset and n_batch == 0:
-        logging.info('p_train_step compiled in {}s'.format(time.time() - train_metrics_last_t))
-        logging.info('Initial compilation completed. Reset timer.')
-        train_metrics_last_t = time.time()
-      
-      for h in hooks:
-        h(step)
 
-      ep = step / steps_per_epoch
+  # samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step, ema=False)
+  # mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
+  # fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
+  # logging.info(f'w/o ema: FID at {samples_all.shape[0]} samples: {fid_score}')
 
-      if config.get('log_per_step'):
-        train_metrics.append(metrics)
-        if (step + 1) % config.log_per_step == 0:
-          train_metrics = common_utils.get_metrics(train_metrics)
-          summary = {
-              f'{k}': v
-              for k, v in jax.tree_util.tree_map(
-                  lambda x: float(x.mean()), train_metrics
-              ).items()
-          }
-          summary['steps_per_second'] = config.log_per_step / (time.time() - train_metrics_last_t)
-          # summary['seconds_per_step'] = (time.time() - train_metrics_last_t) / config.log_per_step
+  # ema results are much better
+  samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step, ema=True)
+  # mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
+  # fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
+  # logging.info(f' w/ ema: FID at {samples_all.shape[0]} samples: {fid_score}')
 
-          # step for tensorboard
-          summary["ep"] = ep
+  vis = make_grid_visualization(samples_all, to_uint8=False, grid=16, max_bz=16) # np array
 
-          writer.write_scalars(step + 1, summary)
-          train_metrics = []
-          train_metrics_last_t = time.time()
+  import os
+  os.makedirs(os.path.join(workdir, 'zhh_samples'), exist_ok=True)
+  # save as png image
+  from PIL import Image
+  vis = jax.device_get(vis)[0]
+  # print statistics of vis
+  logging.info(f'vis.shape: {vis.shape}')
+  logging.info(f'vis.dtype: {vis.dtype}')
+  logging.info(f'vis.min(): {vis.min()}')
+  logging.info(f'vis.max(): {vis.max()}')
+  # assert False
 
-    # logging
-    if (epoch + 1) % config.visualize_per_epoch == 0:
-      vis = visualize_cifar_batch(vis)
-      writer.write_images(epoch + 1, {'vis_train': vis})
-
-    # Show samples (eval)
-    if (epoch + 1) % config.eval_per_epoch == 0:
-      logging.info('Sample epoch {}...'.format(epoch))
-      # ------------------------------------------------------------
-      vis = run_p_sample_step(p_sample_step, state, vis_sample_idx, ema=False)
-      vis = make_grid_visualization(vis)
-      # vis_ema = run_p_sample_step(p_sample_step, state, vis_sample_idx, ema=True)
-      # vis_ema = make_grid_visualization(vis_ema)
-      # sep = jnp.zeros_like(vis)[:, :8,]  # separator
-      # vis = jnp.concatenate([vis, sep, vis_ema], axis=1)
-      writer.write_images(epoch + 1, {'vis_sample': vis})
-      # ------------------------------------------------------------
-      writer.flush()
-
-    # save checkpoint
-    if (
-      (epoch + 1) % config.checkpoint_per_epoch == 0
-      or epoch == config.num_epochs
-      or epoch == 0  # saving at the first epoch for sanity check
-    ):
-      state = sync_batch_stats(state)
-      # TODO{km}: suppress the annoying warning.
-      save_checkpoint(state, workdir)
-      logging.info(f'Work dir: {workdir}')  # for monitoring
-
-    if config.fid.on_use and (
-      (epoch + 1) % config.fid.fid_per_epoch == 0
-      or epoch == config.num_epochs
-      # or epoch == 0
-    ):
-      samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step, ema=False)
-      mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
-      fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
-      logging.info(f'w/o ema: FID at {samples_all.shape[0]} samples: {fid_score}')
-      writer.write_scalars(epoch + 1, {'FID': fid_score})
-      writer.flush()
-
-      # ema results are much better
-      samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step, ema=True)
-      mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
-      fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
-      logging.info(f' w/ ema: FID at {samples_all.shape[0]} samples: {fid_score}')
-      writer.write_scalars(epoch + 1, {'FID_ema': fid_score})
-      writer.flush()
-
-      vis = make_grid_visualization(samples_all, to_uint8=False)
-      writer.write_images(epoch + 1, {'vis_sample_ema': vis})
+  Image.fromarray(vis).save(os.path.join(workdir, 'zhh_samples', 'samples.png'))
 
   # Wait until computations are done before exiting
   jax.random.normal(jax.random.key(0), ()).block_until_ready()

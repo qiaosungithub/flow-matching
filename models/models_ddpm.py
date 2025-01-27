@@ -73,6 +73,7 @@ def generate(params, model, rng, n_sample):
 
   # prepare schedule
   num_steps = model.n_T
+  logging.info(f'Generating {n_sample} samples with {num_steps} steps')
   step_indices = jnp.arange(num_steps, dtype=model.dtype)
   t_steps = model.apply(
       {},
@@ -208,12 +209,12 @@ class SimDDPM(nn.Module):
     d_cur = batch_mul(x_hat - denoised, 1. / t_hat)
     x_next = x_hat + batch_mul(d_cur, t_next - t_hat)
 
-    # Apply 2nd order correction
-    denoised = self.forward_iddpm_denoising_function(x_next, t_next, train=False)
-    d_prime = batch_mul(x_next - denoised, 1. / jnp.maximum(t_next, 1e-8))  # won't take effect if t_next is 0 (last step)
-    x_next_ = x_hat + batch_mul(0.5 * d_cur + 0.5 * d_prime, t_next - t_hat)
+    # # Apply 2nd order correction
+    # denoised = self.forward_iddpm_denoising_function(x_next, t_next, train=False)
+    # d_prime = batch_mul(x_next - denoised, 1. / jnp.maximum(t_next, 1e-8))  # won't take effect if t_next is 0 (last step)
+    # x_next_ = x_hat + batch_mul(0.5 * d_cur + 0.5 * d_prime, t_next - t_hat)
 
-    x_next = jnp.where(i < self.n_T - 1, x_next_, x_next)
+    # x_next = jnp.where(i < self.n_T - 1, x_next_, x_next)
 
     return x_next
 
