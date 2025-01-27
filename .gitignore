@@ -1,0 +1,10 @@
+tmp/
+cache/
+
+__pycache__
+
+.nfs*
+data/
+
+results/
+results

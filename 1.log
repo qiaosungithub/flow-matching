@@ -1,0 +1,419 @@
+Only in /kmh-nfs-ssd-eu-mount/code/zhichengjiang/working/edm_jax: .git
+diff ./.gitignore /kmh-nfs-ssd-eu-mount/code/zhichengjiang/working/edm_jax/.gitignore
+8a9
+> log
+10c11
+< results
+\ No newline at end of file
+---
+> results
+Only in .: 1.log
+Only in .: __pycache__
+Common subdirectories: ./configs and /kmh-nfs-ssd-eu-mount/code/zhichengjiang/working/edm_jax/configs
+diff ./input_pipeline.py /kmh-nfs-ssd-eu-mount/code/zhichengjiang/working/edm_jax/input_pipeline.py
+139c139
+<           # transforms.RandomHorizontalFlip(p=0.5),
+---
+>           transforms.RandomHorizontalFlip(p=0.5),
+145,148c145,150
+<     else:
+<       raise NotImplementedError
+<       ds = datasets.ImageFolder(
+<         os.path.join(dataset_cfg.root, split),
+---
+>   else:
+>     if dataset_cfg.root == "MNIST":
+>       ds = datasets.MNIST(
+>         root='~/cache',
+>         train=False,
+>         download=True,
+150,151c152,153
+<           transforms.RandomResizedCrop(IMAGE_SIZE, interpolation=3),
+<           transforms.RandomHorizontalFlip(),
+---
+>           # transforms.Resize((32, 32)),  # Resize images to 32x32 pixels
+>           transforms.Grayscale(num_output_channels=num_output_channels),  # Convert to three channels
+153c155
+<           transforms.Normalize(mean=MEAN_RGB, std=STDDEV_RGB),
+---
+>           transforms.Normalize((0.5,), (0.5,)),
+155d156
+<         loader=loader,
+157,175c158,187
+<     logging.info(ds)
+<     sampler = DistributedSampler(
+<       ds,
+<       num_replicas=jax.process_count(),
+<       rank=rank,
+<       shuffle=True,
+<     )
+<     it = DataLoader(
+<       ds, batch_size=batch_size, drop_last=True,
+<       worker_init_fn=partial(worker_init_fn, rank=rank),
+<       sampler=sampler,
+<       num_workers=dataset_cfg.num_workers,
+<       prefetch_factor=dataset_cfg.prefetch_factor if dataset_cfg.num_workers > 0 else None,
+<       pin_memory=dataset_cfg.pin_memory,
+<       persistent_workers=True if dataset_cfg.num_workers > 0 else False,
+<     )
+<     steps_per_epoch = len(it)
+<   else:
+<     raise NotImplementedError
+---
+>     elif dataset_cfg.root == "CIFAR":
+>       ds = datasets.CIFAR10(
+>         root='~/cache',
+>         train=False,
+>         download=True,
+>         transform=transforms.Compose([
+>           # transforms.RandomResizedCrop(32, scale=(0.8, 1.0), ratio=(3.0 / 4.0, 4.0 / 3.0),),
+>           transforms.RandomHorizontalFlip(p=0.5),
+>           # transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
+>           transforms.ToTensor(),
+>           transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+>         ]),
+>       )
+>   logging.info(ds)
+>   sampler = DistributedSampler(
+>     ds,
+>     num_replicas=jax.process_count(),
+>     rank=rank,
+>     shuffle=True,
+>   )
+>   it = DataLoader(
+>     ds, batch_size=batch_size, drop_last=True,
+>     worker_init_fn=partial(worker_init_fn, rank=rank),
+>     sampler=sampler,
+>     num_workers=dataset_cfg.num_workers,
+>     prefetch_factor=dataset_cfg.prefetch_factor if dataset_cfg.num_workers > 0 else None,
+>     pin_memory=dataset_cfg.pin_memory,
+>     persistent_workers=True if dataset_cfg.num_workers > 0 else False,
+>   )
+>   steps_per_epoch = len(it)
+diff ./main.py /kmh-nfs-ssd-eu-mount/code/zhichengjiang/working/edm_jax/main.py
+21a22
+> import wandb
+65a67,70
+>   if jax.process_index() == 0:
+>     wandb.init(project='JZC_edm',name=f'lr{FLAGS.config.learning_rate}-{FLAGS.config.model.n_T}')
+>     wandb.config.update(FLAGS) 
+> 
+73c78
+< if __name__ == '__main__':
+---
+> if __name__ == '__main__':  
+Common subdirectories: ./models and /kmh-nfs-ssd-eu-mount/code/zhichengjiang/working/edm_jax/models
+diff ./run_init_remote.sh /kmh-nfs-ssd-eu-mount/code/zhichengjiang/working/edm_jax/run_init_remote.sh
+3,4c3,4
+< # VM_NAME=kmh-tpuvm-v3-8-2
+< # ZONE=europe-west4-a  # v3
+---
+> VM_NAME=kmh-tpuvm-v3-32-3
+> ZONE=europe-west4-a  # v3
+9,11d8
+< VM_NAME=kmh-tpuvm-v4-8-8
+< ZONE=us-central2-b
+< 
+29d25
+< pip3 install jax[tpu]==0.4.25 -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
+37,38d32
+< pip install tpu-info
+< /home/kaiminghe/.local/bin/tpu-info
+diff ./run_kill_remote.sh /kmh-nfs-ssd-eu-mount/code/zhichengjiang/working/edm_jax/run_kill_remote.sh
+0a1,3
+> VM_NAME=kmh-tpuvm-v2-32-5
+> ZONE=us-central1-a
+> 
+Only in /kmh-nfs-ssd-eu-mount/code/zhichengjiang/working/edm_jax: run_remote copy.sh
+diff ./run_remote.sh /kmh-nfs-ssd-eu-mount/code/zhichengjiang/working/edm_jax/run_remote.sh
+3d2
+< 
+5,6c4
+< # VM_NAME=kmh-tpuvm-v3-128-1
+< # VM_NAME=kmh-tpuvm-v3-8-2
+---
+> # # VM_NAME=kmh-tpuvm-v3-128-1
+9,10c7,8
+< VM_NAME=kmh-tpuvm-v4-8-8
+< ZONE=us-central2-b
+---
+> # VM_NAME=kmh-tpuvm-v4-8-7
+> # ZONE=us-central2-b
+12,13c10,11
+< # VM_NAME=kmh-tpuvm-v2-32-3
+< # ZONE=us-central1-a
+---
+> VM_NAME=kmh-tpuvm-v2-32-2
+> ZONE=us-central1-a
+21c19
+< lr=0.0004
+---
+> lr=0.001
+26,27c24,25
+< n_T=18
+< drop=0.2
+---
+> n_T=100
+> drop=0.13
+31,32c29,30
+< TBNAME=${VM_NAME}_${CONFIG}_b${batch}_constlr${lr}_wd${wd}_adam_ep${ep}wm${warm}_w${width}_n${n_T}_dp${drop}_uncond_fid_ncsnppedm_auglabel_0tcond_iddpm_b0.95_edmsampler_edmtrainer_edmweight_dbg1 # _endpre_iddpmcin
+< JOBNAME=hvae/iddpm/${now}_${salt}_${TBNAME}
+---
+> TBNAME=${VM_NAME}_${CONFIG}_b${batch}_constlr${lr}_wd${wd}_adam_ep${ep}wm${warm}_w${width}_n${n_T}_dp${drop}_uncond_fid_ncsnppedm_auglabel_sanity
+> JOBNAME=jzc_edm_icml/${now}_${salt}_${TBNAME}
+61c59
+<     --config.adam_b2=0.95 \
+---
+>     --config.adam_b2=0.999 \
+68c66
+<     --config.fid.fid_per_epoch=100 \
+---
+>     --config.fid.fid_per_epoch=250 \
+76,77d73
+<     --config.model.t_conditioned=False \
+<     --config.model.M=1000 \
+diff ./run_script.sh /kmh-nfs-ssd-eu-mount/code/zhichengjiang/working/edm_jax/run_script.sh
+1,2d0
+< conda activate resnet_jax
+< 
+13,16c11,14
+<     --config.dataset.root=MNIST \
+<     --config.model.image_size=28 \
+<     --config.model.out_channels=1 \
+<     --config.batch_size=32 \
+---
+>     --config.dataset.root=CIFAR \
+>     --config.model.image_size=32 \
+>     --config.model.out_channels=3 \
+>     --config.batch_size=512 \
+29,31c27,29
+<     --config.model.base_width=32 \
+<     --config.model.n_T=32 \
+<     --config.fid.on_use=False \
+---
+>     --config.model.base_width=128 \
+>     --config.model.n_T=18 \
+>     --config.fid.on_use=True \
+33,34c31
+<     --config.fid.fid_per_epoch=1 \
+<     --config.fid.num_samples=5000 \
+---
+>     --config.fid.fid_per_epoch=250 \
+36,37c33,34
+<     --config.model.net_type='context' \
+<     --config.model.dropout=0.2 \
+---
+>     --config.model.net_type='ncsnppedm' \
+>     --config.model.dropout=0.13 \
+40,43c37,41
+<     --config.model.t_conditioned=True \
+<     # --config.restore=/kmh-nfs-ssd-eu-mount/logs/kaiminghe/hvae/iddpm/20241230_191454_6b0964_kmh-tpuvm-v3-32-5_tpu_b512_constlr0.0004_wd0_adam_ep4000wm200_w128_n18_dp0.2_uncond_fid_ncsnppedm_auglabel_0tcond_iddpm_b0.95_edmsampler
+<     # --config.restore=/kmh-nfs-ssd-eu-mount/logs/kaiminghe/hvae/dbg/20241229_043447_s8mrhy_kmh-tpuvm-v4-8-8_tpu_b512_constlr0.0004_wd0_adam_ep4000wm200_w128_n128_dp0.2_uncond_fid_ncsnppedm_auglabel_1tcond_iddpm_b0.95_rangeM/checkpoint_135800
+<     # --config.restore=/kmh-nfs-ssd-eu-mount/logs/kaiminghe/hvae/dbg/20241229_022410_bf58l4_kmh-tpuvm-v3-32-5_tpu_b512_constlr0.0004_wd0_adam_ep4000wm200_w128_n128_dp0.2_uncond_fid_ncsnppedm_NOauglabel_1tcond_iddpm_b0.95_rangeM/checkpoint_58200    
+---
+> 
+>     # --config.restore=/kmh-nfs-ssd-eu-mount/logs/kaiminghe/hvae/edm/20240821_061448_xnrl14_kmh-tpuvm-v4-8-7_tpu_b512_constlr0.001_wd0_adam_ep4000wm200_w128_n18_uncond_fid_dense100/checkpoint_58200
+>     # --config.restore=/kmh-nfs-ssd-eu-mount/logs/kaiminghe/hvae/edm/20240821_021434_1mcmpd_kmh-tpuvm-v4-8-7_tpu_b512_constlr0.001_wd0_adam_ep4000wm200_w128_n35_uncond_vis_fid/checkpoint_58200
+>     # --config.restore=/kmh-nfs-ssd-eu-mount/logs/kaiminghe/hvae/edm/20240820_042616_wjfafl_kmh-tpuvm-v3-32-5_tpu_b512_constlr0.001_wd0_adam_ep4000wm200_w128_n35_uncond_vis
+>     # --config.restore=/kmh-nfs-ssd-eu-mount/logs/kaiminghe/hvae/edm/20240821_011215_kz4y20_kmh-tpuvm-v3-128-1_tpu_b512_constlr0.001_wd0_adam_ep4000wm200_w128_n35_uncond_vis_fid/checkpoint_97000
+47d44
+<     # --config.model.net_type='ncsnppedm' \
+Only in .: scripts
+diff ./train.py /kmh-nfs-ssd-eu-mount/code/zhichengjiang/working/edm_jax/train.py
+23a24
+> import wandb
+39d39
+< 
+153c153
+<         train=True,
+---
+>         scales,
+185,187c185,188
+<   params = {
+<     'net': new_state.params['net'],
+<     'net_ema': jax.tree_map(
+---
+>   params = {}
+>   for k, v in new_state.params.items():
+>     if k == 'net_ema':
+>       params[k] = jax.tree_map(
+191c192,194
+<   }
+---
+>     else:
+>       params[k] = new_state.params[k]
+>   
+216a220,236
+> def test_step(state, batch, rng_init):
+>   """Perform a single evaluation step."""  
+>   rng_step = random.fold_in(rng_init, state.step)
+>   rng_device = random.fold_in(rng_step, lax.axis_index(axis_name='batch'))
+>   rng_gen, rng_dropout = random.split(rng_device)
+> 
+>   outputs = state.apply_fn(
+>       {'params': state.params, 'batch_stats': state.batch_stats},
+>       batch['image'],
+>       batch['label'],
+>       batch['augment_label'],
+>       mutable=False,
+>       rngs=dict(gen=rng_gen, dropout=rng_dropout),
+>   )
+>   loss, dict_losses, images = outputs
+>   metrics = compute_metrics(dict_losses)
+>   return metrics, images
+246c266
+<   trainable_prefixes = ['net/',]
+---
+>   trainable_prefixes = ['net/','t_net/']
+272,273c292,295
+<   logging.info("Info of params['net']:")
+<   print_params(params['net'])
+---
+>   for k, v in params.items():
+>     if k != 'net_ema':
+>       logging.info(f'Info of params[{k}]:')
+>       print_params(v)
+302a325,331
+>   elif config.optimizer == 'adam':
+>     logging.info('Using Adam')
+>     tx = optax.adam(
+>         learning_rate=learning_rate_fn,
+>         b1=config.adam_b1,
+>         b2=config.adam_b2,
+>     )
+331,333c360,362
+<   writer = metric_writers.create_default_writer(
+<       logdir=workdir, just_logging=jax.process_index() != 0
+<   ) # if not config.fid.eval_only else None
+---
+>   # writer = metric_writers.create_default_writer(
+>   #     logdir=workdir, just_logging=jax.process_index() != 0
+>   # ) if not config.fid.eval_only else None
+358a388,393
+>   test_loader, _ = input_pipeline.create_split(
+>     config.dataset,
+>     local_batch_size,
+>     split='test',
+>   )
+> 
+379,380c414
+<   if not config.fid.eval_only:
+<     assert epoch_offset * steps_per_epoch == step_offset
+---
+>   assert epoch_offset * steps_per_epoch == step_offset
+391a426,429
+>   p_test_step = jax.pmap(
+>     functools.partial(test_step, rng_init=rng),
+>     axis_name='batch',
+>   )
+399a438,441
+>   params = {}
+>   for k,v in state.params.items():
+>     if k != 'net_ema':
+>       params[k] = v
+401c443
+<     params={'params': {'net': state.params['net']}, 'batch_stats': {}},
+---
+>     params={'params': params, 'batch_stats': {}},
+409c451,456
+<     images = p_sample_step(params={'params': {'net': state.params[net_key]}, 'batch_stats': {}}, sample_idx=sample_idx)
+---
+>     params = {}
+>     for k,v in state.params.items():
+>       if k != 'net_ema' and k != 'net':
+>         params[k] = v
+>     params['net'] = state.params[net_key]
+>     images = p_sample_step(params={'params': params, 'batch_stats': {}}, sample_idx=sample_idx)
+441a489
+>   test_metrics = []
+447c495
+<   for epoch in range(epoch_offset, config.num_epochs):
+---
+>   for epoch in range(epoch_offset, config.num_epochs + 1):
+481c529,531
+<           writer.write_scalars(step + 1, summary)
+---
+>           # writer.write_scalars(step + 1, summary)
+>           if jax.process_index() == 0:
+>             wandb.log(summary, step=step + 1)
+483a534,549
+>     test_metrics = []
+>     for n_batch, batch in enumerate(test_loader):
+>       batch = prepare_batch_data(batch, config)
+>       metrics, _ = p_test_step(state, batch)
+>       test_metrics.append(metrics)
+>     test_metrics = common_utils.get_metrics(test_metrics)
+>     test_metrics = jax.tree_util.tree_map(lambda x: float(x.mean()), test_metrics)
+>     log_test_metrics = {f'test_{k}': v for k, v in test_metrics.items()}
+>     # writer.write_scalars(epoch + 1, log_test_metrics)
+>     if jax.process_index() == 0:
+>       wandb.log(log_test_metrics, step=step + 1)
+> 
+>       
+> 
+> 
+> 
+486,488c552,556
+<     if (epoch + 1) % config.visualize_per_epoch == 0:
+<       vis = visualize_cifar_batch(vis)
+<       writer.write_images(epoch + 1, {'vis_train': vis})
+---
+>     if epoch == 0 or (epoch + 1) % config.visualize_per_epoch == 0:
+>         # vis = run_p_sample_step(p_sample_step, state, vis_sample_idx, ema=True)
+>       vis = visualize_cifar_batch(vis)[0]
+>       # writer.write_images(epoch + 1, {'vis_train': vis})
+>       if jax.process_index() == 0: wandb.log({'vis_train': [wandb.Image(vis)]}, step=step + 1)
+491c559
+<     if (epoch + 1) % config.eval_per_epoch == 0:
+---
+>     if epoch == 0 or (epoch + 1) % config.eval_per_epoch == 0:
+496,500c564,570
+<       # vis_ema = run_p_sample_step(p_sample_step, state, vis_sample_idx, ema=True)
+<       # vis_ema = make_grid_visualization(vis_ema)
+<       # sep = jnp.zeros_like(vis)[:, :8,]  # separator
+<       # vis = jnp.concatenate([vis, sep, vis_ema], axis=1)
+<       writer.write_images(epoch + 1, {'vis_sample': vis})
+---
+>       vis_ema = run_p_sample_step(p_sample_step, state, vis_sample_idx, ema=True)
+>       vis_ema = make_grid_visualization(vis_ema)
+>       sep = jnp.zeros_like(vis)[:, :8,]  # separator
+>       vis = jnp.concatenate([vis, sep, vis_ema], axis=1)
+>       vis = np.asarray(vis)[0]
+>       # writer.write_images(epoch + 1, {'vis_sample': vis})
+>       if jax.process_index() == 0: wandb.log({'vis_sample': [wandb.Image(vis)]}, step=step + 1)
+502c572
+<       writer.flush()
+---
+>       # writer.flush()
+508c578
+<       or epoch == 0  # saving at the first epoch for sanity check
+---
+>       # or epoch == 0  # saving at the first epoch for sanity check
+524,525c594,597
+<       writer.write_scalars(epoch + 1, {'FID': fid_score})
+<       writer.flush()
+---
+>       # writer.write_scalars(epoch + 1, {'FID': fid_score})
+>       # writer.flush()
+>       if jax.process_index() == 0: wandb.log({'FID': fid_score}, step=step + 1)
+> 
+532,533c604,606
+<       writer.write_scalars(epoch + 1, {'FID_ema': fid_score})
+<       writer.flush()
+---
+>       # writer.write_scalars(epoch + 1, {'FID_ema': fid_score})
+>       # writer.flush()
+>       if jax.process_index() == 0: wandb.log({'FID_ema': fid_score}, step=step + 1)
+536c609,612
+<       writer.write_images(epoch + 1, {'vis_sample_ema': vis})
+---
+>       vis = vis[0]
+>       vis = np.asarray(vis)
+>       # writer.write_images(epoch + 1, {'vis_sample_ema': vis})
+>       if jax.process_index() == 0: wandb.log({'vis_sample_ema': [wandb.Image(vis)]}, step=step + 1)
+540c616,617
+< 
+---
+>   if jax.process_index() == 0:
+>     wandb.finish()
+Common subdirectories: ./utils and /kmh-nfs-ssd-eu-mount/code/zhichengjiang/working/edm_jax/utils
