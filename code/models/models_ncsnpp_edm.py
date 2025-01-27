@@ -353,7 +353,7 @@ class NCSNpp(nn.Module):
         if y is not None and self.use_sqa_class_conditional:
             # transform into one-hot
             y_one_hot = jax.nn.one_hot(y, self.num_classes)
-            temb += self.map_label(y_one_hot * jnp.sqrt(self.num_classes))
+            temb = self.map_label(y_one_hot * jnp.sqrt(self.num_classes))
 
         if augment_label is not None:
             assert self.use_aug_label
@@ -368,7 +368,7 @@ class NCSNpp(nn.Module):
             temb = None
         
         if y is not None and not self.use_sqa_class_conditional:
-                temb += self.class_embed(y)
+            temb += self.class_embed(y)
             
         # utility function to count number of parameters
         def pms(self, name):

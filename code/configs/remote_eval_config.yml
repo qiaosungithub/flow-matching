@@ -7,13 +7,14 @@ continue_training: False # this is for resuming training
 # load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241210_003719_b663n5_kmh-tpuvm-v2-32-7__b_lr_ep_eval/best_fid # ADM class-conditional model (w/ t)
 # load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241209_004559_gihhxu_kmh-tpuvm-v2-32-1__b_lr_ep_eval/checkpoint_194000 # DDIM model (w/ t); diffusion schedule is "linear"
 # load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241211_185022_1p9khj_kmh-tpuvm-v2-32-7__b_lr_ep_eval # EDM model (w/ t)
-# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241210_185646_e19l8l_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_145500 # DDIM model (w/o t)
+load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241220_192218_apfh37_kmh-tpuvm-v2-32-2__b_lr_ep_eval # EDM model (w/o t)
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241210_185646_e19l8l_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_145500 # DDIM model (w/o t)
 # load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241208_145127_x40660_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_48000 # DDPM (w/o t)
 
 ### class conditional
 
-load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20250116_105106_9cybij_kmh-tpuvm-v2-32-preemptible-1__b_lr_ep_eval # FM cond w/o t
+# load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20250121_070128_wwgd09_kmh-tpuvm-v2-32-3__b_lr_ep_eval # FM cond w/ t
+# load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20250116_105106_9cybij_kmh-tpuvm-v2-32-preemptible-1__b_lr_ep_eval # FM cond w/o t
 # load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20250113_140509_f3s1vu_kmh-tpuvm-v2-32-3__b_lr_ep_eval # EDM cond w/ t
 # load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20250116_083056_vjp2mo_kmh-tpuvm-v2-32-3__b_lr_ep_eval # EDM cond w/o t
 
@@ -23,8 +24,8 @@ load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20250116_105106_9cybij_k
 # wandb: False
 model:
     ##### T-conditioning #####
-    t_condition_method: not # options: [direct, log999, dot25log, not (i.e. no t)] # note: edm must use "dot25log"
-    # t_condition_method: not
+    # t_condition_method: dot25log # options: [direct, log999, dot25log, not (i.e. no t)] # note: edm must use "dot25log"
+    t_condition_method: not
     
     ##### Common Configs (rarely changes) #####
     image_size: 32
@@ -39,6 +40,7 @@ model:
     embedding_type: fourier # options: [positional, fourier]
     # embedding_type: positional
     task: EDM # options: [FM, Diffusion, EDM]
+    # task: Diffusion
     # task: FM
 
     ##### FM-specific configs #####
@@ -47,15 +49,17 @@ model:
     # learn_var: True # default: False
 
     ##### Conditional Generation #####
-    class_conditional: True
+    class_conditional: False
 
     ##### Sampling Configs #####
-    n_T: 18 # num of sample steps, matches "diffusion_nT"
+    # n_T: 18 # num of sample steps, matches "diffusion_nT"
+    n_T: 100 # num of sample steps, matches "diffusion_nT"
     
     # # --- Flow Matching / EDM --- #
     # sampler: euler
     # # sampler: heun
-    sampler: edm
+    sampler: edm-euler
+    # sampler: edm
     # # sampler: edm-sde
     ode_solver: jax
     # ode_solver: O
@@ -69,8 +73,8 @@ model:
     # use_posterior_variance: True
 
 diffusion:
-    diffusion_nT: 500
-    diffusion_schedule: cosine
+    diffusion_nT: 1000
+    diffusion_schedule: linear
 
 dataset:
     name: cifar10
@@ -80,7 +84,7 @@ dataset:
     cache: True
 
 aug: 
-    use_edm_aug: False # NOTE: if you want to turn on this, you must also turn on model.use_aug_label
+    use_edm_aug: True # NOTE: if you want to turn on this, you must also turn on model.use_aug_label
 
 fid:
     on_use: False

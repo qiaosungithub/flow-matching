@@ -322,7 +322,7 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
       'heun': 2 * num_steps - 1,
     }[model.sampler] # heun has two steps per iteration
   
-  elif model.sampler in ['edm', 'edm-sde']:
+  elif model.sampler in ['edm', 'edm-sde', 'edm-euler']:
     # raise NotImplementedError
     # assert y is None, NotImplementedError()
     assert classifier is None, NotImplementedError()
@@ -348,6 +348,7 @@ def generate(state: NNXTrainState, model, rng, n_sample, config, label_type='ran
     return images, {
       'edm': 2 * num_steps - 1,
       'edm-sde': 2 * num_steps - 1,
+      'edm-euler': num_steps,
     }[model.sampler]
     # # for debug
     # all_x = []
@@ -743,7 +744,7 @@ class SimDDPM(nn.Module):
   
   def sample_one_step_edm(self, x_i, rng, i, t_steps, y=None):
 
-    if self.sampler == 'edm':
+    if self.sampler in ['edm', 'edm-euler']:
       x_next = self.sample_one_step_edm_ode(x_i, i, t_steps, y=y) 
       # x_next, denoised = self.sample_one_step_edm_ode(x_i, i, t_steps) # for debug
     elif self.sampler == 'edm-sde':
@@ -822,16 +823,17 @@ class SimDDPM(nn.Module):
     d_cur = batch_mul(x_hat - denoised, 1. / t_hat)
     x_next = x_hat + batch_mul(d_cur, t_next - t_hat)
 
-    # Apply 2nd order correction
-    denoised = self.forward_edm_denoising_function(x_next, t_next, train=False, y=y)
-    d_prime = batch_mul(x_next - denoised, 1. / jnp.maximum(t_next, 1e-8))  # won't take effect if t_next is 0 (last step)
-    x_next_ = x_hat + batch_mul(0.5 * d_cur + 0.5 * d_prime, t_next - t_hat)
+    if self.sampler != 'edm-euler':
+      # Apply 2nd order correction
+      denoised = self.forward_edm_denoising_function(x_next, t_next, train=False)
+      d_prime = batch_mul(x_next - denoised, 1. / jnp.maximum(t_next, 1e-8))  # won't take effect if t_next is 0 (last step)
+      x_next_ = x_hat + batch_mul(0.5 * d_cur + 0.5 * d_prime, t_next - t_hat)
 
-    x_next = jnp.where(i < self.n_T - 1, x_next_, x_next)
+      x_next = jnp.where(i < self.n_T - 1, x_next_, x_next)
 
     # return x_next, denoised # for debug
     return x_next
-  
+
   def sample_one_step_edm_sde(self, x_i, rng, i, t_steps):
     raise NotImplementedError
     """
@@ -1271,7 +1273,7 @@ class SimDDPM(nn.Module):
     # in_x = batch_mul(x, c_in)
     # c_out = sigma / (sigma + 1)
 
-    # F_x = self.forward_flow_pred_function(in_x, c_in, augment_label=augment_label, train=train)
+    # F_x = self.forward_prediction_function(in_x, c_in, augment_label=augment_label, train=train, y=y)
 
     # D_x = in_x + batch_mul(F_x, c_out)
     # return D_x

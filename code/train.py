@@ -970,7 +970,8 @@ def just_evaluate(
       partial(sample_step, 
               model=model, 
               rng_init=random.PRNGKey(0), 
-              device_batch_size=100, 
+              device_batch_size=256, 
+              # device_batch_size=100, 
               config=config,
               option='vis',
               # MEAN_RGB=input_pipeline.MEAN_RGB, 
@@ -1026,7 +1027,8 @@ def just_evaluate(
     # sync batch statistics across replicas
     # eval_state = eval_state.replace(params=model_avg)
     vis, nfe = run_p_sample_step(p_visualize_sample_step, eval_state, vis_sample_idx)
-    vis = make_grid_visualization(vis,grid=10,max_bz=10)
+    vis = make_grid_visualization(vis,grid=16,max_bz=16)
+    # vis = make_grid_visualization(vis,grid=10,max_bz=10)
     vis = jax.device_get(vis) # np.ndarray
     vis = vis[0]
     # print(vis.shape)
