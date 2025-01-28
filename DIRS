@@ -1,2 +1,6 @@
+# DEBUG v1 w/o t
 /kmh-nfs-ssd-eu-mount/logs/sqa/debug-km-code/hvae/iddpm/20250127_194302_86ezw5_kmh-tpuvm-v3-32-preemptible-1_tpu_b512_constlr0.0004_wd0_adam_ep4000wm200_w128_n18_dp0.2_cond_fid_ncsnppedm_auglabel_0tc
 ond_iddpm_b0.95_edmsampler_edmtrainer_edmweight_dbg1
+
+# DEBUG v1 w/ t
+/kmh-nfs-ssd-eu-mount/logs/sqa/hvae/iddpm/20250127_191034_5t1xnj_kmh-tpuvm-v3-32-1_tpu_b512_constlr0.0004_wd0_adam_ep4000wm200_w128_n18_dp0.2_cond_fid_ncsnppedm_auglabel_0tcond_iddpm_b0.95_edmsampler_edmtrainer_edmweight_dbg1/checkpoint_349200
