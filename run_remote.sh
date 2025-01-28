@@ -38,10 +38,16 @@ sudo chmod 777 /kmh-nfs-us-mount/data/cached  # for saving cached data
 echo 'Log dir: '$LOGDIR
 echo 'tb entry: '${TBNAME:10}:$LOGDIR  # remove the first 10 characters 'kmh-tpuvm-'
 
+export CONDA_PATH=$(which conda)
+export CONDA_INIT_SH_PATH=$(dirname $CONDA_PATH)/../etc/profile.d/conda.sh
+
 gcloud compute tpus tpu-vm ssh $VM_NAME --zone $ZONE \
     --worker=all --command "
 cd $STAGEDIR
 echo Current dir: $(pwd)
+
+source $CONDA_INIT_SH_PATH
+conda activate NNXeval
 
 pip3 install tqdm
 
