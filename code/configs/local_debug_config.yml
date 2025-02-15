@@ -11,7 +11,7 @@ model:
     # sampler: edm
     # sampler: edm-sde
     sampler: edm-euler
-    no_condition_t: False
+    no_condition_t: True
     embedding_type: fourier # EDM
     double_temb: True # legacy
 dataset:
