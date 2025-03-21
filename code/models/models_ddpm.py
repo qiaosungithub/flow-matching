@@ -17,7 +17,7 @@
 # See issue #620.
 # pytype: disable=wrong-arg-count
 
-from typing import Any, Sequence
+from typing import Any
 
 import flax.nnx as nn
 import jax
@@ -25,48 +25,16 @@ import jax.numpy as jnp
 import numpy as np
 from flax.training.train_state import TrainState as FlaxTrainState
 
-from functools import partial
+from functools import partial, reduce
 
 # from models.models_unet import ContextUnet
 from models.models_ncsnpp_edm import NCSNpp as NCSNppEDM
 from models.jcm.sde_lib import batch_mul
 
-def get_beta_schedule(beta_schedule, *, beta_start, beta_end, num_diffusion_timesteps):
-    """
-    DDIM util function
-    """
-    raise NotImplementedError
-    def sigmoid(x):
-        return 1 / (jnp.exp(-x) + 1)
+from utils.logging_util import log_for_0
 
-    if beta_schedule == "quad":
-        betas = (
-            jnp.linspace(
-                beta_start ** 0.5,
-                beta_end ** 0.5,
-                num_diffusion_timesteps,
-                dtype=np.float64,
-            )
-            ** 2
-        )
-    elif beta_schedule == "linear":
-        betas = jnp.linspace(
-            beta_start, beta_end, num_diffusion_timesteps, dtype=np.float64
-        )
-    elif beta_schedule == "const":
-        betas = beta_end * jnp.ones(num_diffusion_timesteps, dtype=np.float64)
-    elif beta_schedule == "jsd":  # 1/T, 1/(T-1), 1/(T-2), ..., 1
-        betas = 1.0 / jnp.linspace(
-            num_diffusion_timesteps, 1, num_diffusion_timesteps, dtype=np.float64
-        )
-    elif beta_schedule == "sigmoid":
-        betas = jnp.linspace(-6, 6, num_diffusion_timesteps)
-        betas = sigmoid(betas) * (beta_end - beta_start) + beta_start
-    else:
-        raise NotImplementedError(beta_schedule)
-    assert betas.shape == (num_diffusion_timesteps,)
-    return betas
-
+def compose(*funcs):
+  return lambda x: reduce(lambda v, f: f(v), funcs, x)
 
 class NNXTrainState(FlaxTrainState):
   batch_stats: Any
@@ -74,22 +42,6 @@ class NNXTrainState(FlaxTrainState):
   graphdef: Any
   useless_variable_state: Any
   # NOTE: is_training can't be a attr, since it can't be replicated
-
-
-def ct_ema_scales_schedules(step, config, steps_per_epoch):
-  raise NotImplementedError
-  start_ema = float(config.ct.start_ema)
-  start_scales = int(config.ct.start_scales)
-  end_scales = int(config.ct.end_scales)
-  total_steps = config.num_epochs * steps_per_epoch
-
-  scales = jnp.ceil(jnp.sqrt((step / total_steps) * ((end_scales + 1) ** 2 - start_scales**2) + start_scales**2) - 1).astype(jnp.int32)
-  scales = jnp.maximum(scales, 1)
-  c = -jnp.log(start_ema) * start_scales
-  target_ema = jnp.exp(-c / scales)
-  scales = scales + 1
-  return target_ema, scales
-
 
 def edm_ema_scales_schedules(step, config, steps_per_epoch):
   ema_halflife_kimg = config.get("ema_kimg", 500)  # from edm
@@ -285,10 +237,9 @@ class SimDDPM(nn.Module):
     rngs=None,
     double_temb=False,
     rho=7.0,
-    # beta_schedule='linear',
-    # beta_start=1e-4,
-    # beta_end=0.02,
-    # num_diffusion_timesteps=1000,
+    t_cond_method: str = "edm", # options: ['edm', 'not']
+    train_t_dropout: float = 0.0,
+    sample_use_t: bool = True,
     **kwargs
   ):
     self.image_size = image_size
@@ -309,10 +260,11 @@ class SimDDPM(nn.Module):
     self.no_condition_t = no_condition_t
     self.rngs = rngs
     self.double_temb = double_temb
-    # self.beta_schedule = beta_schedule
-    # self.beta_start = beta_start
-    # self.beta_end = beta_end
-    # self.num_diffusion_timesteps = num_diffusion_timesteps
+    self.t_cond_method = t_cond_method
+    self.train_t_dropout = train_t_dropout
+    self.sample_use_t = sample_use_t
+
+    assert no_condition_t == False, "this is deprecated"
 
     if self.net_type == 'context':
       raise NotImplementedError
@@ -344,6 +296,17 @@ class SimDDPM(nn.Module):
     # self.num_timesteps = num_diffusion_timesteps
     self.net = net_fn()
 
+    if self.t_cond_method == "not": raise NotImplementedError
+    log_for_0(f"using train_t_dropout: {self.train_t_dropout}")
+    self.t_conder = (
+      log_for_0("Use t-cond: edm (0.25logt)")  or (lambda t: 0.25*jnp.log(t))
+    ) if self.t_cond_method == "edm" else (
+      log_for_0("Use t-cond: not")  or (lambda t: t * 0.0)
+    ) if self.t_cond_method == "not" else (
+      log_for_0("Use t-cond: ???") or exec(f"raise ValueError('Unknown t_cond_method: {self.t_cond_method}')")
+    )
+    self.t_conder = compose(self.t_conder, lambda x: x.reshape(x.shape[0]))
+
     self.data_std = 0.5
     self.t_min = 0.002
     self.t_max = 80.0
@@ -361,19 +324,13 @@ class SimDDPM(nn.Module):
     t = t**self.rho
     return t
 
-  def compute_alpha(self, t):
-    """
-    DDIM util function
-    """
-    raise NotImplementedError
-    betas = get_beta_schedule(self.beta_schedule, beta_start=self.beta_start, beta_end=self.beta_end, num_diffusion_timesteps=self.num_diffusion_timesteps)
-    alpha = jnp.cumprod(1 - betas, axis=0)
-    alpha = jnp.concatenate([jnp.ones((1,)), alpha], axis=0)
-    a = jnp.take(alpha, t + 1).reshape(-1, 1, 1, 1)
-    return a
+  def sample_t_conder(self, t):
+    if self.sample_use_t:
+      return self.t_conder(t)
+    return jnp.zeros_like(t)
 
   def sample_one_step(self, x_i, rng, i):
-
+    raise NotImplementedError
     if self.sampler == 'euler':
       x_next = self.sample_one_step_euler(x_i, i) 
     elif self.sampler == 'heun':
@@ -389,9 +346,11 @@ class SimDDPM(nn.Module):
       x_next = self.sample_one_step_edm_ode(x_i, i, t_steps) 
       # x_next, denoised = self.sample_one_step_edm_ode(x_i, i, t_steps) # for debug
     elif self.sampler == 'edm-sde':
+      raise NotImplementedError
       x_next = self.sample_one_step_edm_sde(x_i, rng, i, t_steps)
       # x_next, denoised = self.sample_one_step_edm_sde(x_i, rng, i, t_steps) # for debug
     elif self.sampler == 'edm-euler':
+      raise NotImplementedError
       x_next = self.sample_one_step_edm_euler(x_i, i, t_steps)
     else:
       raise NotImplementedError
@@ -460,13 +419,15 @@ class SimDDPM(nn.Module):
     t_next = jnp.repeat(t_next, x_hat.shape[0])
     
     # Euler step.
-    denoised = self.forward_edm_denoising_function(x_hat, t_hat, train=False)
+    t_cond_hat = self.sample_t_conder(t_hat)
+    denoised = self.forward_edm_denoising_function(x_hat, t_hat, train=False, t_cond=t_cond_hat)
     d_cur = batch_mul(x_hat - denoised, 1. / t_hat)
     x_next = x_hat + batch_mul(d_cur, t_next - t_hat)
 
     # Apply 2nd order correction
-    denoised = self.forward_edm_denoising_function(x_next, t_next, train=False)
-    d_prime = batch_mul(x_next - denoised, 1. / jnp.maximum(t_next, 1e-8))  # won't take effect if t_next is 0 (last step)
+    t_cond_next = self.sample_t_conder(t_next)
+    denoised = self.forward_edm_denoising_function(x_next, t_next, train=False, t_cond=t_cond_next)
+    d_prime = batch_mul(x_next - denoised, 1. / jnp.maximum(t_next, 1e-8)) # won't take effect if t_next is 0 (last step)
     x_next_ = x_hat + batch_mul(0.5 * d_cur + 0.5 * d_prime, t_next - t_hat)
 
     x_next = jnp.where(i < self.n_T - 1, x_next_, x_next)
@@ -540,64 +501,8 @@ class SimDDPM(nn.Module):
 
     # return x_next, denoised # for debug
     return x_next
-
-  def sample_one_step_DDIM(self, x_i, rng, t, next_t):
-    """
-    rng here is useless, if we set eta = 0
-    """
-    raise NotImplementedError
-    # we only implement 'generalized' here
-    # we only implement 'skip_type=uniform' here
-    at = self.compute_alpha(t.astype(jnp.int32))
-    at_next = self.compute_alpha(next_t.astype(jnp.int32))
-
-    eps = self.forward_DDIM_pred_function(x_i, t, train=False)
-    # x0_t = (x_i - eps * jnp.sqrt(1 - at)) / jnp.sqrt(at)
-    x0_t = batch_mul(x_i - batch_mul(eps, jnp.sqrt(1 - at)), 1. / jnp.sqrt(at))  # when eta=0, no need to add noise
-    # when eta=0, no need to add noise
-    c2 = jnp.sqrt(1 - at_next)
-    # x_next = jnp.sqrt(at_next) * x0_t + c2 * eps
-    x_next = batch_mul(x0_t, jnp.sqrt(at_next)) + batch_mul(eps, c2)
-    return x_next
-    # x_next = x0_t = x_i
-    # print(at, at_next) # debug
-    # return x_next, x0_t # debug
-
-  def forward_consistency_function(self, x, t, pred_t=None):
-    raise NotImplementedError
-    c_in = 1 / jnp.sqrt(t**2 + self.sde.data_std**2)
-    in_x = batch_mul(x, c_in)  # input scaling of edm
-    cond_t = 0.25 * jnp.log(t)  # noise cond of edm
-
-    # forward
-    denoiser = self.net(in_x, cond_t)
-
-    if pred_t is None:  # TODO: what's this?
-      pred_t = self.sde.t_min
-
-    c_out = (t - pred_t) * self.sde.data_std / jnp.sqrt(t**2 + self.sde.data_std**2)
-    denoiser = batch_mul(denoiser, c_out)
-
-    c_skip = self.sde.data_std**2 / ((t - pred_t) ** 2 + self.sde.data_std**2)
-    skip_x = batch_mul(x, c_skip)
-
-    denoiser = skip_x + denoiser
-
-    return denoiser
-
-  def forward_flow_pred_function(self, z, t, augment_label=None, train: bool = True):  # EDM
-    raise NotImplementedError
-    t_cond = jnp.zeros_like(t) if self.no_condition_t else jnp.log(t * 999)
-    u_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
-    return u_pred
-
-  def forward_DDIM_pred_function(self, z, t, augment_label=None, train: bool = True):  # DDIM
-    raise NotImplementedError
-    t_cond = jnp.zeros_like(t) if self.no_condition_t else t
-    eps_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
-    return eps_pred
   
-  def forward_edm_denoising_function(self, x, sigma, augment_label=None, train: bool = True):  # EDM
+  def forward_edm_denoising_function(self, x, sigma, t_cond, augment_label=None, train=True):  # EDM
     """
     code from edm
     ---
@@ -623,18 +528,18 @@ class SimDDPM(nn.Module):
 
     c_in = 1 / jnp.sqrt(sigma ** 2 + self.data_std ** 2)
     # c_in = 1 / jnp.sqrt(sigma ** 2 + 1) # Kaiming shenyi
-    c_noise = jnp.zeros_like(sigma) if self.no_condition_t else 0.25 * jnp.log(sigma)
+    # c_noise = jnp.zeros_like(sigma) if self.no_condition_t else 0.25 * jnp.log(sigma)
 
     # forward network
     in_x = batch_mul(x, c_in)
-    c_noise = c_noise.reshape(c_noise.shape[0])
+    # c_noise = c_noise.reshape(c_noise.shape[0])
 
-    F_x = self.net(in_x, c_noise, augment_label=augment_label, train=train)
+    F_x = self.net(in_x, t_cond, augment_label=augment_label, train=train)
 
     D_x = batch_mul(x, c_skip) + batch_mul(F_x, c_out)
     return D_x
 
-  def forward(self, imgs, labels, augment_label, noise_batch, t_batch, train: bool = True):
+  def forward(self, imgs, labels, augment_label, noise_batch, t_batch, t_mask):
     """
     edm version
     ---
@@ -657,7 +562,9 @@ class SimDDPM(nn.Module):
     weight = (sigma ** 2 + self.data_std ** 2) / (sigma * self.data_std) ** 2
 
     xn = x + batch_mul(noise_batch, sigma)
-    D_xn = self.forward_edm_denoising_function(xn, sigma, augment_label)
+    t_cond = self.t_conder(sigma)
+    t_cond = t_cond * t_mask
+    D_xn = self.forward_edm_denoising_function(xn, sigma, augment_label=augment_label, t_cond=t_cond)
 
     # loss
     loss = (D_xn - gt)**2

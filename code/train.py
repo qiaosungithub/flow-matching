@@ -113,7 +113,7 @@ class NNXTrainState(FlaxTrainState):
   # NOTE: is_training can't be a attr, since it can't be replicated
 
 
-def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learning_rate_fn, ema_scales_fn, config):
+def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, t_mask, learning_rate_fn, ema_scales_fn, config):
   """
   Perform a single training step.
   We will pmap this function
@@ -128,7 +128,7 @@ def train_step_compute(state: NNXTrainState, batch, noise_batch, t_batch, learni
   def loss_fn(params_to_train):
     """loss function used for training."""
     
-    outputs = state.apply_fn(state.graphdef, params_to_train, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'], batch['label'], batch['augment_label'], noise_batch, t_batch)
+    outputs = state.apply_fn(state.graphdef, params_to_train, state.rng_states, state.batch_stats, state.useless_variable_state, True, batch['image'], batch['label'], batch['augment_label'], noise_batch, t_batch, t_mask)
     loss, new_batch_stats, new_rng_states, dict_losses, images = outputs
 
     return loss, (new_batch_stats, new_rng_states, dict_losses, images)
@@ -207,9 +207,11 @@ def train_step(state: NNXTrainState, batch, rngs, train_step_compute_fn, model_c
   b1, b2 = images.shape[0], images.shape[1]
   noise_batch = jax.random.normal(rngs.train(), images.shape)
   # EDM: t_batch is normal
-  t_batch = jax.random.normal(rngs.train(), (b1, b2)) 
+  t_batch = jax.random.normal(rngs.train(), (b1, b2))
 
-  new_state, metrics, images = train_step_compute_fn(state, batch, noise_batch, t_batch)
+  t_mask = 1 - jax.random.bernoulli(rngs.train(), p=model_config.train_t_dropout, shape=(b1, b2))
+
+  new_state, metrics, images = train_step_compute_fn(state, batch, noise_batch, t_batch, t_mask)
 
   return new_state, metrics, images
 
@@ -356,7 +358,7 @@ def create_train_state(
 
   print_params(params)
 
-  def apply_fn(graphdef2, params2, rng_states2, batch_stats2, useless_, is_training, images, labels, augment_labels, noise_batch, t_batch):
+  def apply_fn(graphdef2, params2, rng_states2, batch_stats2, useless_, is_training, images, labels, augment_labels, noise_batch, t_batch, t_mask):
     """
     input:
       images
@@ -376,7 +378,7 @@ def create_train_state(
     else:
       merged_model.eval()
     del params2, rng_states2, batch_stats2, useless_
-    loss_train, dict_losses, images = merged_model.forward(images, labels, augment_labels, noise_batch, t_batch)
+    loss_train, dict_losses, images = merged_model.forward(images, labels, augment_labels, noise_batch, t_batch, t_mask)
     new_batch_stats, new_rng_states, _ = nn.state(merged_model, nn.BatchStat, nn.RngState, ...)
     return loss_train, new_batch_stats, new_rng_states, dict_losses, images
 

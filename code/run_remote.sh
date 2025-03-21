@@ -47,15 +47,7 @@ python3 main.py \
 }
 
 command
-# for i in {1..3}; do
-#     if grep -q 'Additional GRPC error information' $LOGDIR/output.log; then
-#         echo 'Get GRPC error, retrying...'
-#         echo > $LOGDIR/output.log
-#         bash re_apply.sh
-#         command
-#     else
-#         break
-#     fi
-# done
+
+unset -f command
 
 ############# No need to modify [END] #############

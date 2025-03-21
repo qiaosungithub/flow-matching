@@ -15,9 +15,13 @@ model:
 
     # rho: 7
     
-    no_condition_t: True
-    embedding_type: positional
-    # double_temb: True # legacy
+    no_condition_t: False # legacy, do not change
+    embedding_type: fourier # EDM
+    double_temb: True # legacy
+
+    t_cond_method: "edm" # option: ["edm", "not"]
+    train_t_dropout: 0.5
+    sample_use_t: True
 dataset:
     name: cifar10
     root: CIFAR # pytorch

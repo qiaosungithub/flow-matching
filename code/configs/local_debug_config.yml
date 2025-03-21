@@ -8,12 +8,16 @@ model:
     dropout: 0.13 # EDM
     net_type: ncsnppedm
     average_loss: False # use average or sum for loss
-    # sampler: edm
+    sampler: edm
     # sampler: edm-sde
-    sampler: edm-euler
-    no_condition_t: True
+    # sampler: edm-euler
+    no_condition_t: False # legacy, do not change
     embedding_type: fourier # EDM
     double_temb: True # legacy
+
+    t_cond_method: "edm" # option: ["edm", "not"]
+    train_t_dropout: 0.5
+    sample_use_t: True
 dataset:
     name: cifar10
     root: CIFAR # pytorch
@@ -23,29 +27,29 @@ dataset:
 aug: 
     use_edm_aug: True
 fid:
-    on_use: False # we don't want to initialize InceptionV3
-    eval_only: False
+    on_use: True # we don't want to initialize InceptionV3
+    eval_only: True
     fid_per_epoch: 100
     num_samples: 1000
     cache_ref: /kmh-nfs-us-mount/data/cached/cifar10_jax_stats_20240820.npz # pytorch
 evalu:
     ema: True
     sample: True
-batch_size: 512
+batch_size: 16
 num_epochs: 400
 learning_rate: 0.001 # EDM
 lr_schedule: const
 weight_decay: 0
 optimizer: adamw
-adam_b2: 0.999
+adam_b2: 0.95
 grad_clip: 0.0
 warmup_epochs: 200
 log_per_step: 30
 visualize_per_epoch: 100
 eval_per_epoch: 100
-# wandb: False
+wandb: False
 checkpoint_per_epoch: 100
-load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241220_192218_apfh37_kmh-tpuvm-v2-32-2__b_lr_ep_eval/checkpoint_388000
+# load_from: /kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20241220_192218_apfh37_kmh-tpuvm-v2-32-2__b_lr_ep_eval/checkpoint_388000
 
 
 # # Here is for IMAGENET32x32:

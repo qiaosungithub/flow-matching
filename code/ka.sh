@@ -21,13 +21,16 @@ fi
 # export VM_NAME=kmh-tpuvm-v2-32-2
 # export VM_NAME=kmh-tpuvm-v2-32-3
 # export VM_NAME=kmh-tpuvm-v2-32-4
-export VM_NAME=kmh-tpuvm-v2-32-5
+# export VM_NAME=kmh-tpuvm-v2-32-5
 # export VM_NAME=kmh-tpuvm-v2-32-6
 # export VM_NAME=kmh-tpuvm-v2-32-7
 # export VM_NAME=kmh-tpuvm-v3-32-1
 # export VM_NAME=kmh-tpuvm-v2-32-preemptible-1
 # export VM_NAME=kmh-tpuvm-v2-32-preemptible-2
 # export VM_NAME=kmh-tpuvm-v3-32-preemptible-1
+# export VM_NAME=kmh-tpuvm-v3-32-11
+export VM_NAME=kmh-tpuvm-v3-32-12
+# export VM_NAME=kmh-tpuvm-v3-32-13
 
 #####################################
 
@@ -64,7 +67,7 @@ else
     export DATA_ROOT="kmh-nfs-us-mount"
     export USE_CONDA=2
     # export TFDS_DATA_DIR='gs://kmh-gcp-us-central2/tensorflow_datasets'  # use this for imagenet
-    export TFDS_DATA_DIR='/kmh-nfs-us-mount/staging/zhh/data/tensorflow_datasets'
+    export TFDS_DATA_DIR='/kmh-nfs-us-mount/data/tensorflow_datasets'
 fi
 
 if [[ $USE_CONDA == 1 ]]; then
