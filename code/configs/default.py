@@ -44,7 +44,7 @@ def get_config():
   # Model
   config.model = model = ml_collections.ConfigDict()
   model.image_size = 32
-  model.out_channels = 1
+  model.out_channels = 3
 
   model.base_width = 64
   model.n_T = 18  # inference stepss
@@ -85,7 +85,7 @@ def get_config():
   dataset.pin_memory = False
   dataset.cache = False
   dataset.fake_data = False
-  dataset.out_channels = 0  # from model
+  dataset.out_channels = 3  # from model
   dataset.steps_per_epoch = -1
 
   # Eval fid
@@ -133,6 +133,7 @@ def get_config():
 
   config.wandb = True
   config.load_from = None
+  config.wandb_name = None
 
   # evalu
   evalu = config.evalu = ml_collections.ConfigDict()

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from functools import partial
-import time
+import time, torch, re, optax, ml_collections, jax, os, wandb
 from typing import Any
 
 from flax import jax_utils as ju
@@ -21,12 +21,8 @@ from flax.training import common_utils
 from flax.training.train_state import TrainState as FlaxTrainState
 from flax.training import checkpoints
 import orbax.checkpoint as ocp
-import jax, os, wandb
 from jax import lax, random
 import jax.numpy as jnp
-import ml_collections
-import optax
-import torch
 import numpy as np
 import flax.nnx as nn
 from PIL import Image
@@ -38,6 +34,7 @@ from utils.metric_utils import tang_reduce
 from utils.display_utils import show_dict, count_params
 import utils.fid_util as fid_util
 import utils.sample_util as sample_util
+from configs.load_config import sanity_check
 
 import models.models_ddpm as models_ddpm
 from models.models_ddpm import generate, edm_ema_scales_schedules
@@ -493,25 +490,23 @@ def train_and_evaluate(
   """
 
   ########### Initialize ###########
+  sanity_check(config)
+  log_for_0(config)
   rank = index = jax.process_index()
   config.dataset.out_channels = config.model.out_channels
   model_config = config.model 
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='LMCI', dir=workdir, tags=["SQA-EDM"])
-    # wandb.init(project='sqa_FM_compare', dir=workdir)
+    wandb.init(project='sqa-mix', dir=workdir, tags=["EDM"], name=config.wandb_name)
     wandb.config.update(config.to_dict())
+    ka = re.search(r"kmh-tpuvm-v[234]-(\d+)(-preemptible)?-(\d+)", workdir).group()
+    wandb.config.update({"ka": ka})
   global_seed(config.seed)
 
   image_size = model_config.image_size
 
   log_for_0('config.batch_size: {}'.format(config.batch_size))
-
-  # # print("save dir: ", sampling_config.save_dir)
-  # if sampling_config.save_dir is None:
-  #   sampling_config.save_dir = workdir + "/images/"
-  # log_for_0(f"save directory: {sampling_config.save_dir}")
 
   ########### Create DataLoaders ###########
   # input_pipeline = get_input_pipeline(dataset_config)
@@ -856,14 +851,17 @@ def just_evaluate(
   # assert the version of orbax-checkpoint is 0.4.4
   assert ocp.__version__ == '0.6.4', ValueError(f'orbax-checkpoint version must be 0.6.4, but got {ocp.__version__}')
   ########### Initialize ###########
+  sanity_check(config)
+  log_for_0(config)
   rank = index = jax.process_index()
   model_config = config.model 
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='LMCI-eval', dir=workdir, tags=["SQA-EDM"])
-    # wandb.init(project='sqa_edm_debug', dir=workdir)
+    wandb.init(project='sqa-mix', dir=workdir, tags=["EDM"], name=config.wandb_name)
     wandb.config.update(config.to_dict())
+    ka = re.search(r"kmh-tpuvm-v[234]-(\d+)(-preemptible)?-(\d+)", workdir).group()
+    wandb.config.update({"ka": ka})
   # dtype = jnp.bfloat16 if model_config.half_precision else jnp.float32
   global_seed(config.seed)
   image_size = model_config.image_size
@@ -959,22 +957,6 @@ def just_evaluate(
   if config.fid.on_use:  # we will evaluate fid    
     inception_net = fid_util.build_jax_inception()
     stats_ref = fid_util.get_reference(config.fid.cache_ref, inception_net)
-
-    # if config.fid.eval_only: # debug, this is tang
-    #   samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step)
-    #   mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
-    #   fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
-    #   log_for_0(f'w/o ema: FID at {samples_all.shape[0]} samples: {fid_score}')
-
-    #   samples_all = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step)
-    #   mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
-    #   fid_score = fid_util.compute_fid(mu, stats_ref["mu"], sigma, stats_ref["sigma"])
-    #   log_for_0(f' w/ ema: FID at {samples_all.shape[0]} samples: {fid_score}')
-    #   return None
-
-    # debugging here
-    # samples_dir = '/kmh-nfs-us-mount/logs/kaiminghe/results-edm/edm-cifar10-32x32-uncond-vp'
-    # samples = sample_util.get_samples_from_dir(samples_dir, config)
   # ------------------------------------------------------------------------------------
 
   ########### Gen ###########
