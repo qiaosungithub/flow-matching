@@ -739,7 +739,9 @@ def train_and_evaluate(
             wandb.log({
               'ema_decay': train_metrics['ema_decay'],
               'ep:': ep, 
-              'loss_train': loss_to_display, 
+              'loss_train': loss_to_display,
+              'mse_loss': train_metrics['mse_loss'],
+              'consistency_loss': train_metrics['con_loss'],
               'lr': train_metrics['lr'], 
               'step': step, 
               'step_per_sec': step_per_sec})

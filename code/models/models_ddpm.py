@@ -563,11 +563,19 @@ class SimDDPM(nn.Module):
 
     xn = x + batch_mul(noise_batch, sigma)
     t_cond = self.t_conder(sigma)
-    t_cond = t_cond * t_mask
-    D_xn = self.forward_edm_denoising_function(xn, sigma, augment_label=augment_label, t_cond=t_cond)
+    # t_cond = t_cond * t_mask
+
+    # make sure the dropout is the same for t forward and w/o t forward
+    rng_dropout_this_step = self.rngs.dropout()
+    nn.reseed(self, dropout=rng_dropout_this_step)
+    D_xn_t = self.forward_edm_denoising_function(xn, sigma, augment_label=augment_label, t_cond=t_cond)
+    nn.reseed(self, dropout=rng_dropout_this_step)
+    D_xn_wot = self.forward_edm_denoising_function(xn, sigma, augment_label=augment_label, t_cond=jnp.zeros_like(t_cond))
 
     # loss
-    loss = (D_xn - gt)**2
+    mse_loss = (D_xn_t - gt)**2
+    con_loss = (jax.lax.stop_gradient(D_xn_t) - D_xn_wot)**2
+    loss = mse_loss * t_mask + con_loss * (1 - t_mask)
     loss = batch_mul(loss, weight)
 
     if self.average_loss:
@@ -580,12 +588,13 @@ class SimDDPM(nn.Module):
     loss_train = loss
 
     dict_losses = {}
-    dict_losses['loss'] = loss  # legacy
+    dict_losses['mse_loss'] = mse_loss
+    dict_losses['con_loss'] = con_loss
     dict_losses['loss_train'] = loss_train
 
     # prepare some visualization
     # if we can pred u, then we can reconstruct x_data from x_prior
-    images = self.get_visualization([gt, xn, D_xn])
+    images = self.get_visualization([gt, xn, D_xn_t, D_xn_wot])
 
     return loss_train, dict_losses, images
 

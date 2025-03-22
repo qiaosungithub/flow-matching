@@ -21,7 +21,7 @@ model:
 
     t_cond_method: "edm" # option: ["edm", "not"]
     train_t_dropout: 0.5
-    sample_use_t: True
+    sample_use_t: False
 dataset:
     name: cifar10
     root: CIFAR # pytorch
