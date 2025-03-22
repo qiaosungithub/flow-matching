@@ -575,7 +575,8 @@ class SimDDPM(nn.Module):
     # loss
     mse_loss = (D_xn_t - gt)**2
     con_loss = (jax.lax.stop_gradient(D_xn_t) - D_xn_wot)**2
-    loss = mse_loss * t_mask + con_loss * (1 - t_mask)
+    # loss = mse_loss * t_mask + con_loss * (1 - t_mask)
+    loss = batch_mul(mse_loss, t_mask) + batch_mul(con_loss, 1 - t_mask)
     loss = batch_mul(loss, weight)
 
     if self.average_loss:
