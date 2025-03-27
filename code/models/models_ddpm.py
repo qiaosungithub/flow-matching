@@ -107,6 +107,45 @@ def edm_ema_scales_schedules(step, config, steps_per_epoch):
   scales = jnp.ones((1,), dtype=jnp.int32)
   return ema_beta, scales
 
+from models.dpm_solver_jax import NoiseScheduleVP, DPM_Solver
+
+def generate_with_dpm(state: NNXTrainState, model, rng, n_sample):
+  ns = NoiseScheduleVP('linear', continuous_beta_0=model.beta_start, continuous_beta_1=model.beta_end)
+  
+  merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
+
+  def dpm_solver_sampler(rng, state):
+    """ The DPM-Solver sampler funciton.
+
+    Args:
+      rng: A JAX random state
+      state: A `flax.struct.dataclass` object that represents the training state of a score-based model.
+    Returns:
+      Samples, number of function evaluations
+    """
+    # noise_pred_fn = get_noise_fn(sde, model, state.params_ema, state.model_state, train=False, continuous=True)
+    noise_pred_fn = partial(merged_model.forward_DDIM_pred_function, train=False)
+    dpm_solver = DPM_Solver(noise_pred_fn, ns, predict_x0=False, thresholding=False)
+    # Initial sample
+    rng, step_rng = jax.random.split(rng)
+    # x = sde.prior_sampling(step_rng, shape)
+    x = jax.random.normal(step_rng, (n_sample, model.image_size, model.image_size, model.out_channels), dtype=model.dtype)
+    x = dpm_solver.sample(
+      x,
+      steps=model.n_T - 1 if False else model.n_T,
+      t_start=1.,
+      t_end=model.dpm_eps,
+      order=model.order,
+      skip_type=model.skip,
+      method=model.method,
+      denoise=False,
+      atol=0.0078,
+      rtol=0.05,
+    )
+    return x
+    # return inverse_scaler(x), steps
+    
+  return dpm_solver_sampler(rng, state)
 
 # move this out from model for JAX compilation
 def generate(state: NNXTrainState, model, rng, n_sample):
@@ -118,6 +157,8 @@ def generate(state: NNXTrainState, model, rng, n_sample):
   ---
   return shape: (n_sample, 32, 32, 3)
   """
+  if model.sampler in ['DPM', 'DPMpp']:
+    return generate_with_dpm(state, model, rng, n_sample)
 
   # prepare schedule
   num_steps = model.n_T
@@ -205,6 +246,12 @@ class SimDDPM(nn.Module):
     num_diffusion_timesteps=1000,
     exp=None,
     disturb=None, 
+    
+    # dpm-solver
+    order=3,
+    skip='logSNR',
+    dpm_eps=1e-3,
+    method='singlestep',
     **kwargs
   ):
     self.image_size = image_size
@@ -231,6 +278,10 @@ class SimDDPM(nn.Module):
     self.beta_start = beta_start
     self.beta_end = beta_end
     self.num_diffusion_timesteps = num_diffusion_timesteps
+    self.dpm_eps = dpm_eps
+    self.order = order
+    self.skip = skip
+    self.method = method
 
     # sde = sde_lib.KVESDE(
     #   t_min=0.002,

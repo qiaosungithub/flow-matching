@@ -3,15 +3,21 @@ model:
     image_size: 32
     out_channels: 3
     base_width: 128
-    n_T: 100
+    n_T: 10
+    # n_T: 100
     use_aug_label: False
     dropout: 0.1 # DDIM
     net_type: ncsnppedm
     average_loss: True # use average or sum for loss
 
-    sampler: DDIM
-    # sampler: DPM
+    # sampler: DDIM
+    sampler: DPM
     # sampler: DPMpp
+
+    order: 3
+    skip: logSNR
+    dpm_eps: 0.001
+    method: singlestep
     
     no_condition_t: False
 

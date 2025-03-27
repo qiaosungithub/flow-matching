@@ -56,6 +56,11 @@ def get_config():
   model.sampler = 'euler' # or 'heun'
   model.ode_solver = 'jax'  # or 'scipy', which use RK45 solver
   model.net_type = 'ncsnpp'
+  
+  model.order = 3
+  model.skip = "logSNR"
+  model.dpm_eps = 1e-3
+  model.method = "singlestep"
 
   model.no_condition_t = False
 
