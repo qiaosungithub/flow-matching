@@ -588,6 +588,15 @@ class SimDDPM(nn.Module):
 
     loss_train = loss
 
+    # for mse loss and consistency loss
+    mse_loss = batch_mul(mse_loss, weight)
+    mse_loss = jnp.sum(mse_loss, axis=(1, 2, 3))  # mean over pixels
+    mse_loss = mse_loss.mean()  # mean over batch
+
+    con_loss = batch_mul(con_loss, weight)
+    con_loss = jnp.sum(con_loss, axis=(1, 2, 3))  # mean over pixels
+    con_loss = con_loss.mean()  # mean over batch
+
     dict_losses = {}
     dict_losses['mse_loss'] = mse_loss
     dict_losses['con_loss'] = con_loss
