@@ -616,7 +616,7 @@ def train_and_evaluate(
     p_sample_step = jax.pmap(
       partial(sample_step, 
               model=model, 
-              rng_init=random.PRNGKey(0), 
+              rng_init=random.PRNGKey(config.seed), 
               device_batch_size=config.fid.device_batch_size, 
               MEAN_RGB=input_pipeline.MEAN_RGB, 
               STDDEV_RGB=input_pipeline.STDDEV_RGB

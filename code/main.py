@@ -78,7 +78,7 @@ def main(argv):
     else:
       train.train_and_evaluate(FLAGS.config, FLAGS.workdir)
 
-  for i, seed in enumerate([0, 234, 114, 34, 4745]):
+  for i, seed in enumerate([1, 2, 3, 4]):
     c.seed = seed
     c.wandb_name = f'FM-wt-eval-{i}'
     f()
