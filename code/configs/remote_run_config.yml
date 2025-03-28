@@ -3,15 +3,15 @@ model:
     image_size: 32
     out_channels: 3
     base_width: 128
-    n_T: 18
+    n_T: 100
     use_aug_label: False
     dropout: 0.15 # FM
     net_type: ncsnppedm
     average_loss: True # use average or sum for loss
 
-    # sampler: euler
+    sampler: euler
     # sampler: heun
-    sampler: edm
+    # sampler: edm
     # sampler: edm-sde
     # sampler: edm-euler
     ode_solver: jax
@@ -19,8 +19,8 @@ model:
     
     # rho: 7
 
-    # embedding_type: positional # FM
-    embedding_type: zero # no t
+    embedding_type: positional # FM
+    # embedding_type: zero # no t
 dataset:
     name: cifar10
     root: CIFAR # pytorch
@@ -50,7 +50,8 @@ log_per_step: 100
 visualize_per_epoch: 50
 eval_per_epoch: 80
 checkpoint_per_epoch: 1000
-load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241211_150928_85yb5q_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/checkpoint_48000
+# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241211_150928_85yb5q_kmh-tpuvm-v3-32-preemptible-1__b_lr_ep_eval/checkpoint_48000 # wot
+load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20241206_001843_i2wyhh_kmh-tpuvm-v3-32-1__b_lr_ep_eval/checkpoint_48000 # w/ t
 
 # # Here is for IMAGENET32x32:
 

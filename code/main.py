@@ -68,18 +68,22 @@ def main(argv):
   # )
 
   log_for_0('FLAGS.config: \n{}'.format(FLAGS.config))
-  # if FLAGS.debug:
-  #   with jax.disable_jit():
-  #     train.train_and_evaluate(FLAGS.config, FLAGS.workdir)
-  # else:
-  if FLAGS.config.load_from is not None:
-    train.just_evaluate(FLAGS.config, FLAGS.workdir)
-  elif FLAGS.debug:
-    with jax.disable_jit():
+  c = FLAGS.config
+  def f():
+    if FLAGS.config.load_from is not None:
+      train.just_evaluate(FLAGS.config, FLAGS.workdir)
+    elif FLAGS.debug:
+      with jax.disable_jit():
+        train.train_and_evaluate(FLAGS.config, FLAGS.workdir)
+    else:
       train.train_and_evaluate(FLAGS.config, FLAGS.workdir)
-  else:
-    train.train_and_evaluate(FLAGS.config, FLAGS.workdir)
 
+  for i, seed in enumerate([0, 234, 114, 34, 4745]):
+    c.seed = seed
+    c.wandb_name = f'FM-wt-eval-{i}'
+    f()
+
+  # f()
 
 if __name__ == '__main__':
   # logging_util.verbose_off()

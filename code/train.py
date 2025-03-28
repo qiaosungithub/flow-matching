@@ -503,7 +503,7 @@ def train_and_evaluate(
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='LMCI', dir=workdir, tags=['Sanity_Check'])
+    wandb.init(project='LMCI', dir=workdir, tags=['Sanity_Check'], name=config.wandb_name)
     # wandb.init(project='sqa_FM_compare', dir=workdir)
     wandb.config.update(config.to_dict())
   global_seed(config.seed)
@@ -868,10 +868,9 @@ def just_evaluate(
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='LMCI-eval', dir=workdir, tags=['FM'])
+    wandb.init(project='LMCI-eval', dir=workdir, tags=['FM'], name=config.wandb_name)
     # wandb.init(project='sqa_edm_debug', dir=workdir)
     wandb.config.update(config.to_dict())
-  # dtype = jnp.bfloat16 if model_config.half_precision else jnp.float32
   global_seed(config.seed)
   image_size = model_config.image_size
 
