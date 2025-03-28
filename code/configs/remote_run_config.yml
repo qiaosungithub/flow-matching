@@ -14,11 +14,11 @@ model:
     sampler: edm
     # sampler: edm-sde
     
-    no_condition_t: False
+    no_condition_t: True
     embedding_type: fourier
 
     cond: True
-    label_dropout: 0.0
+    label_dropout: 0.1
     guidance: 0.0
 dataset:
     name: cifar10
@@ -49,7 +49,7 @@ log_per_step: 100
 visualize_per_epoch: 50
 eval_per_epoch: 50
 checkpoint_per_epoch: 500
-load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20250114_054719_jwtjbw_kmh-tpuvm-v2-32-4__b_lr_ep_eval/checkpoint_388000 # w/ t and w/ label-drop
+# load_from: /kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20250114_054719_jwtjbw_kmh-tpuvm-v2-32-4__b_lr_ep_eval/checkpoint_388000 # w/ t and w/ label-drop
 
 # # Here is for IMAGENET32x32:
 
