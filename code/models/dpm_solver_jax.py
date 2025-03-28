@@ -127,6 +127,9 @@ class NoiseScheduleVP:
         Compute log(alpha_t) of a given continuous-time label t in [0, T].
         """
         if self.schedule == 'discrete':
+            # assert isinstance(t, jnp.ndarray), type(t)
+            if not isinstance(t, jnp.ndarray):
+                t = jnp.array(t, dtype=jnp.float32)
             return interpolate_fn(t.reshape((-1, 1)), self.t_array, self.log_alpha_array).reshape((-1))
         elif self.schedule == 'linear':
             return -0.25 * t ** 2 * (self.beta_1 - self.beta_0) - 0.5 * t * self.beta_0
@@ -370,6 +373,8 @@ class DPM_Solver:
         [1] Chitwan Saharia, William Chan, Saurabh Saxena, Lala Li, Jay Whang, Emily Denton, Seyed Kamyar Seyed Ghasemipour, Burcu Karagol Ayan, S Sara Mahdavi, Rapha Gontijo Lopes, et al. Photorealistic text-to-image diffusion models with deep language understanding. arXiv preprint arXiv:2205.11487, 2022b.
         """
         self.model = model_fn
+        if noise_schedule.schedule == 'discrete':
+            self.model = model_wrapper(model_fn, noise_schedule)
         self.noise_schedule = noise_schedule
         self.predict_x0 = predict_x0
         self.thresholding = thresholding

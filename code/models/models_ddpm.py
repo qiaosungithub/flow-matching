@@ -110,11 +110,13 @@ def edm_ema_scales_schedules(step, config, steps_per_epoch):
 from models.dpm_solver_jax import NoiseScheduleVP, DPM_Solver
 
 def generate_with_dpm(state: NNXTrainState, model, rng, n_sample):
-  ns = NoiseScheduleVP('linear', continuous_beta_0=model.beta_start, continuous_beta_1=model.beta_end)
+  # ns = NoiseScheduleVP('linear', continuous_beta_0=model.beta_start, continuous_beta_1=model.beta_end)
+  # TODO{zhh}: check the usage
+  ns = NoiseScheduleVP('discrete', betas=get_beta_schedule(model.beta_schedule, beta_start=model.beta_start, beta_end=model.beta_end, num_diffusion_timesteps=model.num_diffusion_timesteps), alphas_cumprod=None)
   
   merged_model = nn.merge(state.graphdef, state.params, state.rng_states, state.batch_stats, state.useless_variable_state)
 
-  def dpm_solver_sampler(rng, state):
+  def dpm_solver_sampler(rng):
     """ The DPM-Solver sampler funciton.
 
     Args:
@@ -127,7 +129,7 @@ def generate_with_dpm(state: NNXTrainState, model, rng, n_sample):
     noise_pred_fn = partial(merged_model.forward_DDIM_pred_function, train=False)
     dpm_solver = DPM_Solver(noise_pred_fn, ns, predict_x0=False, thresholding=False)
     # Initial sample
-    rng, step_rng = jax.random.split(rng)
+    step_rng, rng = jax.random.split(rng)
     # x = sde.prior_sampling(step_rng, shape)
     x = jax.random.normal(step_rng, (n_sample, model.image_size, model.image_size, model.out_channels), dtype=model.dtype)
     x = dpm_solver.sample(
@@ -145,7 +147,7 @@ def generate_with_dpm(state: NNXTrainState, model, rng, n_sample):
     return x
     # return inverse_scaler(x), steps
     
-  return dpm_solver_sampler(rng, state)
+  return dpm_solver_sampler(rng)
 
 # move this out from model for JAX compilation
 def generate(state: NNXTrainState, model, rng, n_sample):
@@ -556,6 +558,7 @@ class SimDDPM(nn.Module):
     return u_pred
 
   def forward_DDIM_pred_function(self, z, t, augment_label=None, train: bool = True):  # DDIM
+    # assert t.dtype == int, f"t.dtype: {t.dtype}"
     t_cond = jnp.zeros_like(t) if self.no_condition_t else t
     eps_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
     return eps_pred
