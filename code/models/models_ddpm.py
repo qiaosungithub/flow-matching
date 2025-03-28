@@ -127,7 +127,7 @@ def generate_with_dpm(state: NNXTrainState, model, rng, n_sample):
     """
     # noise_pred_fn = get_noise_fn(sde, model, state.params_ema, state.model_state, train=False, continuous=True)
     noise_pred_fn = partial(merged_model.forward_DDIM_pred_function, train=False)
-    dpm_solver = DPM_Solver(noise_pred_fn, ns, predict_x0=False, thresholding=False)
+    dpm_solver = DPM_Solver(noise_pred_fn, ns, predict_x0=(model.sampler=='DPMpp'), thresholding=False)
     # Initial sample
     step_rng, rng = jax.random.split(rng)
     # x = sde.prior_sampling(step_rng, shape)
