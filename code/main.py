@@ -68,17 +68,21 @@ def main(argv):
   # )
 
   log_for_0('FLAGS.config: \n{}'.format(FLAGS.config))
-  # if FLAGS.debug:
-  #   with jax.disable_jit():
-  #     train.train_and_evaluate(FLAGS.config, FLAGS.workdir)
-  # else:
-  if FLAGS.config.load_from is not None:
-    train.just_evaluate(FLAGS.config, FLAGS.workdir)
-  elif FLAGS.debug:
-    with jax.disable_jit():
+  c = FLAGS.config
+  def f():
+    if FLAGS.config.load_from is not None:
+      train.just_evaluate(FLAGS.config, FLAGS.workdir)
+    elif FLAGS.debug:
+      with jax.disable_jit():
+        train.train_and_evaluate(FLAGS.config, FLAGS.workdir)
+    else:
       train.train_and_evaluate(FLAGS.config, FLAGS.workdir)
-  else:
-    train.train_and_evaluate(FLAGS.config, FLAGS.workdir)
+
+  for guidance in [0.0, 0.1, 0.2, 0.5]:
+    c.model.guidance = guidance
+    c.wandb_name = f"edm-cond-cfg-{guidance}"
+    f()
+  # f()
 
 
 if __name__ == '__main__':

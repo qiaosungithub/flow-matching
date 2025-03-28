@@ -872,7 +872,7 @@ def just_evaluate(
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='LMCI-eval', dir=workdir, tags=["SQA-EDM"])
+    wandb.init(project='LMCI-eval', dir=workdir, tags=["SQA-EDM"], name=config.wandb_name)
     # wandb.init(project='sqa_edm_debug', dir=workdir)
     wandb.config.update(config.to_dict())
   # dtype = jnp.bfloat16 if model_config.half_precision else jnp.float32
