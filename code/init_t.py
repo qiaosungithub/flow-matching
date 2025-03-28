@@ -16,7 +16,6 @@ from functools import partial
 import time
 from typing import Any
 
-from absl import logging
 from flax import jax_utils as ju
 from flax.training import common_utils
 from flax.training.train_state import TrainState as FlaxTrainState
@@ -33,20 +32,13 @@ import flax.nnx as nn
 import tensorflow as tf
 import tensorflow_datasets as tfds
 from PIL import Image
-from torch.utils.data import DataLoader
 
 from utils.info_util import print_params
 from utils.vis_util import make_grid_visualization, visualize_cifar_batch
 from utils.logging_util import log_for_0, Timer
 from utils.metric_utils import tang_reduce
 from utils.display_utils import show_dict, display_model, count_params
-import utils.fid_util as fid_util
-import utils.sample_util as sample_util
-
-# import models.models_ddpm as models_ddpm
 import models.t.t as t
-from models.models_ddpm import generate, edm_ema_scales_schedules
-from input_pipeline import create_split
 
 NUM_CLASSES = 10
 
@@ -652,6 +644,7 @@ def train_and_evaluate(
 def just_evaluate(
     config: ml_collections.ConfigDict, workdir: str
   ):
+  raise NotImplementedError
   from langevin import langevin_step
   ########### Initialize ###########
   rank = index = jax.process_index()
