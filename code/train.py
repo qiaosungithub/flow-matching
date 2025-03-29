@@ -671,7 +671,7 @@ def train_and_evaluate(
     p_sample_step = jax.pmap(
       partial(sample_step, 
               model=model, 
-              rng_init=random.PRNGKey(0), 
+              rng_init=random.PRNGKey(config.seed), 
               device_batch_size=config.fid.device_batch_size, 
               MEAN_RGB=input_pipeline.MEAN_RGB, 
               STDDEV_RGB=input_pipeline.STDDEV_RGB
@@ -935,10 +935,9 @@ def just_evaluate(
   dataset_config = config.dataset
   fid_config = config.fid
   if rank == 0 and config.wandb:
-    wandb.init(project='LMCI-eval', dir=workdir, tags=['SQA-FM-exp'])
+    wandb.init(project='LMCI-eval', dir=workdir, tags=['SQA-FM-exp'], name=config.wandb_name)
     # wandb.init(project='sqa_edm_debug', dir=workdir)
     wandb.config.update(config.to_dict())
-  # dtype = jnp.bfloat16 if model_config.half_precision else jnp.float32
   global_seed(config.seed)
   image_size = model_config.image_size
 
@@ -1008,7 +1007,7 @@ def just_evaluate(
     p_sample_step = jax.pmap(
       partial(sample_step, 
               model=model, 
-              rng_init=random.PRNGKey(0), 
+              rng_init=random.PRNGKey(config.seed), 
               device_batch_size=config.fid.device_batch_size, 
               # MEAN_RGB=input_pipeline.MEAN_RGB, 
               # STDDEV_RGB=input_pipeline.STDDEV_RGB,

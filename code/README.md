@@ -4,6 +4,10 @@ This code is copied from Kaiming's rectified flow, but we want to change it into
 
 This `FM-nnx` branch serves as the main branch of the repo. Any other modifications are based on this branch, and will merge useful stuff into this branch.
 
+This branch implements experiments, including alternative architectures (disturb, predict, joint)
+
+joint checkpoint: `/kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20250328_145902_qx9gd4_kmh-tpuvm-v2-32-5__b_lr_ep_eval/best_fid/checkpoint_34800`
+
 ## FID mu and sigma
 
 For CIFAR10:

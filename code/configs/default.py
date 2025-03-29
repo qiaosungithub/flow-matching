@@ -130,6 +130,7 @@ def get_config():
 
   config.wandb = True
   config.load_from = None
+  config.wandb_name = None
 
   # evalu
   evalu = config.evalu = ml_collections.ConfigDict()
