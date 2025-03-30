@@ -6,6 +6,8 @@ This branch is for class-conditional EDM, with cfg support.
 
 drop-label checkpoint: `/kmh-nfs-ssd-eu-mount/logs/sqa/sqa_Flow_matching/20250114_054719_jwtjbw_kmh-tpuvm-v2-32-4__b_lr_ep_eval/checkpoint_388000`
 
+wot: `/kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20250328_014102_3bvchn_kmh-tpuvm-v2-32-3__b_lr_ep_eval/checkpoint_388000`
+
 ## FID mu and sigma
 
 For CIFAR10:

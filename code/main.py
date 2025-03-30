@@ -78,11 +78,11 @@ def main(argv):
     else:
       train.train_and_evaluate(FLAGS.config, FLAGS.workdir)
 
-  # for guidance in [0.0, 0.1, 0.2, 0.5]:
-  #   c.model.guidance = guidance
-  #   c.wandb_name = f"edm-cond-cfg-{guidance}"
-  #   f()
-  f()
+  for guidance in [0.0, 0.1, 0.2, 0.5]:
+    c.model.guidance = guidance
+    c.wandb_name = f"edm-wot-cond-cfg-{guidance}"
+    f()
+  # f()
 
 
 if __name__ == '__main__':
