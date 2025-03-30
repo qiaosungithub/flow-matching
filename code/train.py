@@ -517,6 +517,8 @@ def train_and_evaluate(
     wandb.config.update(config.to_dict())
   global_seed(config.seed)
 
+  BEST_FID_UNTIL_NOW = float('inf')
+
   image_size = model_config.image_size
 
   log_for_0('config.batch_size: {}'.format(config.batch_size))
@@ -778,10 +780,9 @@ def train_and_evaluate(
       or epoch == config.num_epochs
       or epoch == 0  # saving at the first epoch for sanity check
       ):
-      # pass
-      # if index == 0:
       state = sync_batch_stats(state)
-      save_checkpoint(state, workdir, model_avg)
+      if not config.get('save_by_fid', False):
+        save_checkpoint(state, workdir, model_avg)
     if epoch == config.num_epochs - 1:
       state = state.replace(params=model_avg)
 
@@ -827,7 +828,7 @@ def train_and_evaluate(
     if config.fid.on_use and (
       (epoch + 1) % config.fid.fid_per_epoch == 0
       or epoch == config.num_epochs
-      # or epoch == 0
+      or epoch == 0
     ):
       samples_all, _ = sample_util.generate_samples_for_fid_eval(state, workdir, config, p_sample_step, run_p_sample_step)
       mu, sigma = fid_util.compute_jax_fid(samples_all, inception_net)
@@ -857,6 +858,19 @@ def train_and_evaluate(
       if config.wandb and index == 0:
         wandb.log({'gen_fid': wandb.Image(canvas)})
 
+      if config.get('save_by_fid', False):
+        if fid_score_ema < BEST_FID_UNTIL_NOW:
+          BEST_FID_UNTIL_NOW = fid_score_ema
+          # import shutil
+          # if os.path.exists(os.path.join(workdir, 'best_fid')):
+          #   shutil.rmtree(os.path.join(workdir, 'best_fid'))
+          os.makedirs(os.path.join(workdir, 'best_fid'), exist_ok=True)
+          if index == 0:
+            with open(os.path.join(workdir,'best_fid', 'FID.txt'), 'w') as f:
+              f.write(str(BEST_FID_UNTIL_NOW))
+          save_checkpoint(state, os.path.join(workdir, 'best_fid'), model_avg)
+          log_for_0(f'[BEST FID HAS CHANGED]: {BEST_FID_UNTIL_NOW}')
+
   # Wait until computations are done before exiting
   jax.random.normal(jax.random.key(0), ()).block_until_ready()
   if index == 0 and config.wandb:
@@ -878,7 +892,6 @@ def just_evaluate(
   if rank == 0 and config.wandb:
     wandb.init(project='LMCI-eval', dir=workdir, tags=['FM-cond'])
     wandb.config.update(config.to_dict())
-  # dtype = jnp.bfloat16 if model_config.half_precision else jnp.float32
   global_seed(config.seed)
   image_size = model_config.image_size
 
@@ -935,8 +948,7 @@ def just_evaluate(
   #       'denoised': wandb.Image(denoised_img),
   #       'noise_level': t[ep]
   #       })
-    
-
+  
   # exit("6.7900")
 
   ########### FID ###########
