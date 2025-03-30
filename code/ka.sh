@@ -24,10 +24,14 @@ fi
 # export VM_NAME=kmh-tpuvm-v2-32-5
 # export VM_NAME=kmh-tpuvm-v2-32-6
 # export VM_NAME=kmh-tpuvm-v2-32-7
-export VM_NAME=kmh-tpuvm-v3-32-1
+# export VM_NAME=kmh-tpuvm-v3-32-1
 # export VM_NAME=kmh-tpuvm-v2-32-preemptible-1
 # export VM_NAME=kmh-tpuvm-v2-32-preemptible-2
 # export VM_NAME=kmh-tpuvm-v3-32-preemptible-1
+export VM_NAME=kmh-tpuvm-v3-32-11
+# export VM_NAME=kmh-tpuvm-v3-32-12
+# export VM_NAME=kmh-tpuvm-v3-32-13
+# export VM_NAME=kmh-tpuvm-v4-8-6
 
 #####################################
 
@@ -49,6 +53,10 @@ fi
 
 if [[ $VM_NAME == *"v2-32-preemptible-1"* ]]; then
     export ZONE=us-central1-a
+fi
+
+if [[ $VM_NAME == *"v4"* ]]; then
+    export ZONE=us-central2-b
 fi
 
 # DATA_ROOT: the disk mounted

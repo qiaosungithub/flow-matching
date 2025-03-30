@@ -500,6 +500,7 @@ class SimDDPM(nn.Module):
     elif self.exp == "predict":
       assert self.embedding_type != "zero"
       assert self.t_predictor is not None
+      # self.t_predictor = sqa_t_ver1(rngs=rngs) # for restore checkpoints
 
   def get_visualization(self, list_imgs):
     vis = jnp.concatenate(list_imgs, axis=1)
@@ -771,50 +772,6 @@ class SimDDPM(nn.Module):
     # return x_next, denoised # for debug
     return x_next
 
-  def sample_one_step_DDIM(self, x_i, rng, t, next_t):
-    """
-    rng here is useless, if we set eta = 0
-    """
-    raise NotImplementedError
-    # we only implement 'generalized' here
-    # we only implement 'skip_type=uniform' here
-    at = self.compute_alpha(t.astype(jnp.int32))
-    at_next = self.compute_alpha(next_t.astype(jnp.int32))
-
-    eps = self.forward_DDIM_pred_function(x_i, t, train=False)
-    # x0_t = (x_i - eps * jnp.sqrt(1 - at)) / jnp.sqrt(at)
-    x0_t = batch_mul(x_i - batch_mul(eps, jnp.sqrt(1 - at)), 1. / jnp.sqrt(at))  # when eta=0, no need to add noise
-    # when eta=0, no need to add noise
-    c2 = jnp.sqrt(1 - at_next)
-    # x_next = jnp.sqrt(at_next) * x0_t + c2 * eps
-    x_next = batch_mul(x0_t, jnp.sqrt(at_next)) + batch_mul(eps, c2)
-    return x_next
-    # x_next = x0_t = x_i
-    # print(at, at_next) # debug
-    # return x_next, x0_t # debug
-
-  def forward_consistency_function(self, x, t, pred_t=None):
-    raise NotImplementedError
-    c_in = 1 / jnp.sqrt(t**2 + self.sde.data_std**2)
-    in_x = batch_mul(x, c_in)  # input scaling of edm
-    cond_t = 0.25 * jnp.log(t)  # noise cond of edm
-
-    # forward
-    denoiser = self.net(in_x, cond_t)
-
-    if pred_t is None:  # TODO: what's this?
-      pred_t = self.sde.t_min
-
-    c_out = (t - pred_t) * self.sde.data_std / jnp.sqrt(t**2 + self.sde.data_std**2)
-    denoiser = batch_mul(denoiser, c_out)
-
-    c_skip = self.sde.data_std**2 / ((t - pred_t) ** 2 + self.sde.data_std**2)
-    skip_x = batch_mul(x, c_skip)
-
-    denoiser = skip_x + denoiser
-
-    return denoiser
-
   def forward_flow_pred_function(self, z, t, augment_label=None, train: bool = True):  # EDM
 
     # calculate in_z
@@ -842,13 +799,6 @@ class SimDDPM(nn.Module):
 
     u_pred = self.net(in_z, t_cond, augment_label=augment_label, train=train)
     return u_pred
-
-  def forward_DDIM_pred_function(self, z, t, augment_label=None, train: bool = True):  # DDIM
-    raise NotImplementedError
-    t_cond = jnp.zeros_like(t) if self.no_condition_t else t
-    eps_pred = self.net(z, t_cond, augment_label=augment_label, train=train)
-    return eps_pred
-  
   def forward_edm_denoising_function(self, x, sigma, augment_label=None, train: bool = True):  # EDM
     """
     code from edm

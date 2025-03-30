@@ -8,6 +8,8 @@ This branch implements experiments, including alternative architectures (disturb
 
 joint checkpoint: `/kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20250328_145902_qx9gd4_kmh-tpuvm-v2-32-5__b_lr_ep_eval/best_fid/checkpoint_34800`
 
+predict checkpoint: `/kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20250328_174743_f7ie5l_kmh-tpuvm-v2-32-1__b_lr_ep_eval/best_fid/checkpoint_45600`
+
 ## FID mu and sigma
 
 For CIFAR10:

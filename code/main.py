@@ -80,7 +80,7 @@ def main(argv):
 
   for seed in [0, 1, 2, 3, 4]:
     c.seed = seed
-    c.wandb_name = f"FM-joint-eval-{seed}"
+    c.wandb_name = f"FM-predict-eval-{seed}"
     f()
 
   # f()

@@ -942,10 +942,15 @@ def just_evaluate(
   image_size = model_config.image_size
 
   ########### Create Model ###########
+  if model_config.get("exp", None) == "predict":
+    t_state = init_t_network(debug=True)
+    t_predictor = nn.merge(t_state.graphdef, t_state.params, t_state.rng_states, t_state.batch_stats, t_state.useless_variable_state)
+  else: t_predictor = None
+
   model_cls = models_ddpm.SimDDPM
   rngs = nn.Rngs(config.seed, params=config.seed + 114, dropout=config.seed + 514, train=config.seed + 1919)
   dtype = get_dtype(config.half_precision)
-  model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype)
+  model_init_fn = partial(model_cls, num_classes=NUM_CLASSES, dtype=dtype, t_predictor=t_predictor)
   model = model_init_fn(rngs=rngs, **model_config)
   show_dict(f'number of model parameters:{count_params(model)}')
   # show_dict(display_model(model))
