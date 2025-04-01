@@ -500,7 +500,7 @@ class SimDDPM(nn.Module):
     elif self.exp == "predict":
       assert self.embedding_type != "zero"
       assert self.t_predictor is not None
-      # self.t_predictor = sqa_t_ver1(rngs=rngs) # for restore checkpoints
+      self.t_predictor = sqa_t_ver1(rngs=rngs) # for restore checkpoints
 
   def get_visualization(self, list_imgs):
     vis = jnp.concatenate(list_imgs, axis=1)

@@ -78,9 +78,14 @@ def main(argv):
     else:
       train.train_and_evaluate(FLAGS.config, FLAGS.workdir)
 
-  for seed in [0, 1, 2, 3, 4]:
-    c.seed = seed
-    c.wandb_name = f"FM-predict-eval-{seed}"
+  # for seed in [0, 1, 2, 3, 4]:
+  #   c.seed = seed
+  #   c.wandb_name = f"FM-predict-eval-{seed}"
+  #   f()
+
+  for i, checkpoint in enumerate(["checkpoint_43200", "checkpoint_40800"]):
+    c.load_from = "/kmh-nfs-us-mount/logs/sqa/sqa_Flow_matching/20250328_174743_f7ie5l_kmh-tpuvm-v2-32-1__b_lr_ep_eval/best_fid/" + checkpoint
+    c.wandb_name = f"FM-predict-eval-checkpoint-{i}"
     f()
 
   # f()
