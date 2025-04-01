@@ -78,12 +78,12 @@ def main(argv):
     else:
       train.train_and_evaluate(FLAGS.config, FLAGS.workdir)
 
-  for i, seed in enumerate([0, 1, 2, 3, 4]):
-    c.seed = seed
-    c.wandb_name = f'FM-wot-eval-{i}'
-    f()
+  # for i, seed in enumerate([0, 1, 2, 3, 4]):
+  #   c.seed = seed
+  #   c.wandb_name = f'FM-wot-eval-{i}'
+  #   f()
 
-  # f()
+  f()
 
 if __name__ == '__main__':
   # logging_util.verbose_off()
